@@ -1,3 +1,7 @@
+import { BotReplyChip } from "../../bots/BotReplyChip";
+import { BotThreadContext } from "../../bots/context";
+import { quoteReply } from "../../bots/presentation";
+import { setBotReply, useBotUi } from "../../bots/ui";
 import { VoiceInputSetup } from "./VoiceInputSetup";
 import { useComposerTypingGuard } from "./useComposerTypingGuard";
 import { insertAttachmentReferencesForDraft } from "./composerAttachmentReferences";
@@ -61,6 +65,7 @@ import {
   memo,
   use,
   useEffect,
+  useContext,
   useEffectEvent,
   useId,
   useImperativeHandle,
@@ -212,6 +217,8 @@ import {
 } from "./ComposerAttachmentStrip";
 import { CollapsedComposerStopAction, ComposerPrimaryActions } from "./ComposerPrimaryActions";
 import { ComposerFooterPrimaryActions } from "./ComposerFooterControls";
+import { DictationButton } from "../../voice/DictationButton";
+import { useDictation } from "../../voice/useDictation";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
 import { resolveComposerMenuActiveItemId } from "./composerMenuHighlight";
 import { buildPullRequestReferenceContext } from "../pullRequest/pullRequestDetail.logic";
@@ -369,6 +376,7 @@ export interface ChatComposerProps {
   activeThreadRuns: ReadonlyArray<OrchestrationV2Run>;
   promptHistoryEntries: ReadonlyArray<TimelineEntry>;
   forceExpandedOnMobile: boolean;
+  idlePlaceholder?: string | undefined;
   projectSelectionRequired: boolean;
 
   phase: SessionPhase;
@@ -870,6 +878,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     supportsAttachmentUploads,
   ]);
 
+  // A bot's composer shows the bot's model (passed as the thread selection)
+  // and nothing else: no draft, runtime or fallback instance. When that
+  // instance is missing, the picker keeps the bot's model and send stays off.
+  const isBotThread = useContext(BotThreadContext);
   const {
     providerInstanceEntries,
     selectedProviderEntry,
@@ -898,11 +910,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     lockedProvider,
     lockedInstanceId:
       activeThread?.runtime?.providerInstanceId ?? activeThreadModelSelection?.instanceId,
+    threadSelectionOnly: isBotThread,
   });
   const noProviderAvailable =
     selectedProviderEntry === undefined && multipleModelSelections === null;
   const providerCatalogPending = noProviderAvailable && !providerCatalogKnown;
-  const showProviderUnavailable = noProviderAvailable && !providerCatalogPending;
+  const showProviderUnavailable = noProviderAvailable && !providerCatalogPending && !isBotThread;
+  const pickerShowsThreadSelection = providerCatalogPending || (isBotThread && noProviderAvailable);
   const providerSetupInstanceId = noProviderAvailable
     ? (unavailableProviderInstanceId ??
       (lockedProvider === null
@@ -931,8 +945,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     selectedProviderEntry?.snapshot,
     selectedModel,
   );
+  // A bot's model lives on its record, so a missing provider blocks that bot, not the environment.
+  const botModelMissing = isBotThread && noProviderAvailable;
   const sendDisabledReason =
     externalSendDisabledReason ??
+    (botModelMissing ? "Model unavailable" : null) ??
     (multipleModelSelections?.length === 0 ? "Select at least one model." : null) ??
     (activePendingProgress
       ? attachmentBlockReason
@@ -1021,6 +1038,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // A pending question stays expanded: its card moves into the banner dock,
   // so collapsing would leave the surface empty and squashed beneath it.
   const isComposerCollapsedMobile =
+    !isBotThread &&
     isMobileViewport &&
     !forceExpandedOnMobile &&
     !isComposerFocused &&
@@ -1860,7 +1878,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     (speechInput.preparing ? "Preparing voice input" : null);
   const primaryActionEnvironmentUnavailable =
     environmentUnavailable !== null ||
-    (!activePendingProgress && (noProviderAvailable || projectSelectionRequired));
+    (!activePendingProgress &&
+      ((noProviderAvailable && !botModelMissing) || projectSelectionRequired));
   const dictationShortcutLabel = useDictationShortcut({
     keybindings,
     speech: speechInput,
@@ -2160,6 +2179,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       onResume();
       return true;
     }
+    const typed = promptRef.current;
+    const reply = useBotUi.getState().reply;
+    const quoted =
+      isBotThread && !activePendingProgress && reply?.threadId === activeThreadId && typed.trim()
+        ? quoteReply(reply.text, typed)
+        : null;
+    if (quoted !== null) promptRef.current = quoted;
     const submission = submitComposerDraft({
       prompt: promptRef.current,
       submissionTarget,
@@ -2181,7 +2207,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       },
     });
     setComposerSubmissionError(submission.validationMessage);
-    if (!submission.didDispatch) return false;
+    if (!submission.didDispatch) {
+      if (quoted !== null && promptRef.current === quoted) promptRef.current = typed;
+      return false;
+    }
+    if (quoted !== null) setBotReply(null);
     onTypingGuardSend();
     if (shouldBlurMobileComposerOnSubmit()) {
       blurMobileComposerAfterSend();
@@ -2458,6 +2488,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       providerSetupInstanceId={providerSetupInstanceId}
       onOpenProviderSetup={onOpenProviderSetup}
       providerCatalogPending={providerCatalogPending}
+      pickerShowsThreadSelection={pickerShowsThreadSelection}
+      botComposer={isBotThread}
       isSendBusy={isSendBusy}
       multipleModelsEnabled={routeKind === "draft" && supportsMultipleModels}
       multipleModelSelections={multipleModelSelections}
@@ -2658,6 +2690,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     return inserted;
   };
   const insertComposerTextAtEndStable = useStableCallback(insertComposerTextAtEnd);
+  const dictation = useDictation({
+    environmentId,
+    session: composerSessionKey,
+    onText: (text) => insertComposerTextAtEnd(text, { ensureLeadingBoundary: true }),
+  });
+  const [promptAtDictationError, setPromptAtDictationError] = useState(prompt);
+  if (promptAtDictationError !== prompt) {
+    setPromptAtDictationError(prompt);
+    dictation.dismiss();
+  }
 
   const insertComposerFolders = async (
     folders: File[],
@@ -3367,14 +3409,19 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       }}
       className="mx-auto w-full min-w-0 max-w-(--chat-content-max-width)"
       data-chat-composer-form="true"
+      data-bot-composer={isBotThread ? "true" : undefined}
       {...threadContextDropTargetProps()}
     >
-      <ComposerBanner.Dock>
+      <ComposerBanner.Dock className={pendingUserInputs.length > 0 ? "w-full" : undefined}>
         <ComposerBanner.Column>
           <ComposerBannerStack items={shelfItems} />
           {showComposerTopDrawer ? (
             <ComposerBanner.Attachment>
-              <ComposerBanner.Root data-chat-composer-top-drawer="true" variant="info">
+              <ComposerBanner.Root
+                data-chat-composer-top-drawer="true"
+                variant="info"
+                className={pendingUserInputs.length > 0 ? "rounded-t-2xl bg-background" : undefined}
+              >
                 {pendingUserInputs.length > 0 ? (
                   <ComposerPendingUserInputPanel
                     pendingUserInputs={pendingUserInputs}
@@ -3422,6 +3469,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               composerProviderState.composerSurfaceClassName,
             )}
           >
+            {isBotThread ? <BotReplyChip threadId={activeThreadId} /> : null}
             {showCollapsedMobilePromptRow ? (
               <div className="flex items-center justify-between gap-2 px-3 py-2">
                 <button
@@ -3445,7 +3493,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   ) : showProviderUnavailable ? (
                     "Enable a provider in Settings"
                   ) : (
-                    "Ask anything..."
+                    (props.idlePlaceholder ?? "Ask anything...")
                   )}
                 </button>
                 {collapsedComposerImagePreviews}
@@ -3629,7 +3677,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                             ? "Choose a project above to start a thread"
                             : showProviderUnavailable
                               ? "Enable a provider in Settings to send a message"
-                              : (offeredPromptSuggestion ?? DEFAULT_COMPOSER_PLACEHOLDER)
+                              : (offeredPromptSuggestion ??
+                                props.idlePlaceholder ??
+                                DEFAULT_COMPOSER_PLACEHOLDER)
                     }
                     placeholderSuffix={
                       offeredPromptSuggestion !== null ? (
@@ -3672,7 +3722,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             </div>
 
             <ComposerPromptLengthValidation
-              message={providerInputSubmissionError ?? composerSubmissionError}
+              message={
+                providerInputSubmissionError ??
+                composerSubmissionError ??
+                (dictation.state.status === "error" ? dictation.state.message : null)
+              }
             />
 
             {speechInput.preview ? (
@@ -3697,7 +3751,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 )}
               >
                 {composerAttachButton && !dictationTakesFooter ? (
-                  <div className="me-2">{composerAttachButton}</div>
+                  <div data-chat-composer-attach className="me-2">
+                    {composerAttachButton}
+                  </div>
+                ) : null}
+                {/* Bot chats keep the server dictation; other threads use the speech input below. */}
+                {canOperateThread && isBotThread ? (
+                  <DictationButton state={dictation.state} onToggle={dictation.toggle} />
                 ) : null}
                 <div
                   data-chat-composer-actions="right"
@@ -3762,7 +3822,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     keepFullHistory={props.keepFullHistory}
                     onToggleKeepFullHistory={props.onToggleKeepFullHistory}
                   >
-                    {speechInput.available ? (
+                    {speechInput.available && !isBotThread ? (
                       <>
                         <ComposerSpeechRecordingPill
                           state={speechInput.state}

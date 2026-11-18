@@ -29,7 +29,12 @@ import * as EffectAcpErrors from "effect-acp/errors";
 import type * as EffectAcpSchema from "effect-acp/compat";
 import type * as EffectAcpProtocol from "effect-acp/protocol";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
-import { AgentScope, AgentScopeThreadId, RAISE_OOM_SCORE_LINE } from "@t3tools/shared/AgentScope";
+import {
+  AgentSandbox,
+  AgentScope,
+  AgentScopeThreadId,
+  RAISE_OOM_SCORE_LINE,
+} from "@t3tools/shared/AgentScope";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
 import { signalProcessGroup } from "@t3tools/provider-core/server/processGroup";
@@ -1428,6 +1433,8 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
           });
         });
   const agentScope = yield* AgentScope;
+  const threadId = yield* AgentScopeThreadId;
+  const launchEnvironment = { ...process.env, ...options.spawn.env };
   const scopedLaunch =
     linuxCgroupLease !== undefined || spawnCommand.shell
       ? undefined
@@ -1435,11 +1442,25 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
           command: spawnCommand.command,
           args: spawnCommand.args,
           name: "acp",
-          threadId: yield* AgentScopeThreadId,
-          env: { ...process.env, ...options.spawn.env },
+          threadId,
+          env: launchEnvironment,
         });
+  // `wrap` puts a bot's agent in its sandbox; the cgroup and shell launches skip it, so ask here.
+  const sandboxedLaunch =
+    scopedLaunch === undefined
+      ? yield* (yield* AgentSandbox).launch({
+          threadId,
+          command: containedTargetCommand,
+          args: spawnCommand.args,
+          env: launchEnvironment,
+        })
+      : undefined;
   const scopedSpawnCommand =
-    scopedLaunch === undefined ? spawnCommand : { ...scopedLaunch, shell: false };
+    scopedLaunch !== undefined
+      ? { ...scopedLaunch, shell: false }
+      : sandboxedLaunch !== undefined && sandboxedLaunch.command !== containedTargetCommand
+        ? { ...sandboxedLaunch, shell: false }
+        : spawnCommand;
   // Finalizers run in reverse order: reap detached work after terminating the agent.
   const scopeUnit = scopedLaunch?.unit;
   const stopScope =
@@ -1449,7 +1470,11 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
     linuxCgroupLease === undefined
       ? scopedSpawnCommand
       : {
-          ...wrapCommandForLinuxCgroup(linuxCgroupLease, containedTargetCommand, spawnCommand.args),
+          ...wrapCommandForLinuxCgroup(
+            linuxCgroupLease,
+            sandboxedLaunch?.command ?? containedTargetCommand,
+            sandboxedLaunch?.args ?? spawnCommand.args,
+          ),
           shell: false,
         };
   const spawnEnvironment =

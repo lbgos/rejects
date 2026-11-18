@@ -36,7 +36,7 @@ import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import * as EnvironmentAuth from "./EnvironmentAuth.ts";
 import * as SessionStore from "./SessionStore.ts";
 import { traceAuthenticatedRelayRequest, traceRelayRequest } from "../cloud/traceRelayRequest.ts";
-import { deriveAuthClientMetadata } from "./utils.ts";
+import { deriveAuthClientMetadata, isLocalBrowserRequest } from "./utils.ts";
 import { checkRequestDpopProof } from "./dpop.ts";
 import { requestUrl } from "../requestUrl.ts";
 
@@ -163,6 +163,28 @@ export function failEnvironmentNotFound(reason: EnvironmentResourceNotFoundReaso
  * authenticate the way the `/ws` upgrade does: a cookie for browser sessions, or a short-lived
  * `wsTicket` minted over authenticated HTTP for bearer and DPoP clients.
  */
+export const authenticateHttpScope = Effect.fn("authenticateHttpScope")(function* (
+  requiredScope: AuthEnvironmentScope,
+) {
+  const request = yield* HttpServerRequest.HttpServerRequest;
+  const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+  const session = yield* serverAuth.authenticateHttpRequest(request).pipe(
+    Effect.catchIf(EnvironmentAuth.isServerAuthCredentialError, (error) =>
+      failEnvironmentAuthInvalid(
+        EnvironmentAuth.serverAuthCredentialReason(error),
+        EnvironmentAuth.serverAuthDpopFailureReason(error),
+      ),
+    ),
+    Effect.catchIf(EnvironmentAuth.isServerAuthInternalError, (error) =>
+      failEnvironmentInternal("internal_error", error),
+    ),
+  );
+  if (!session.scopes.includes(requiredScope)) {
+    return yield* failEnvironmentScopeRequired(requiredScope);
+  }
+  return session;
+});
+
 export const authenticateMediaRequest =
   /* Request instrumentation already owns the span; keep this helper in that context. */
   Effect.fnUntraced(function* (requiredScope: AuthEnvironmentScope) {
@@ -289,6 +311,29 @@ export const layer = HttpApiBuilder.group(
             ) {
               yield* appendSessionCookie(sessions.cookieName, credential.token, result.expiresAt);
               yield* appendCredentialResponseHeaders;
+            }
+            // rejects: a loopback-only server signs in its own local browser without pairing.
+            if (
+              !result.authenticated &&
+              result.auth.policy === "loopback-browser" &&
+              isLocalBrowserRequest(request)
+            ) {
+              const created = yield* serverAuth.issueStartupPairingCredential().pipe(
+                Effect.flatMap((issued) =>
+                  serverAuth.createBrowserSession(
+                    issued.credential,
+                    deriveAuthClientMetadata({ request }),
+                  ),
+                ),
+                Effect.catch((error) => failEnvironmentInternal("internal_error", error)),
+              );
+              yield* appendSessionCookie(
+                created.cookieName ?? sessions.cookieName,
+                created.sessionToken,
+                created.response.expiresAt,
+              );
+              yield* appendCredentialResponseHeaders;
+              return { ...result, ...created.response };
             }
             return result;
           },

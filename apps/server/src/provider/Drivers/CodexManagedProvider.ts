@@ -264,7 +264,7 @@ export const makeManagedCodexProvider = Effect.fn("makeManagedCodexProvider")(fu
     models,
     resolveRuntime,
   );
-  const protect = <A>(operation: string, effect: Effect.Effect<A, TextGenerationError>) =>
+  const protect = <A, R>(operation: string, effect: Effect.Effect<A, TextGenerationError, R>) =>
     runtime.auth.controller.withAccess!(effect).pipe(
       Effect.scoped,
       Effect.mapError(
@@ -276,6 +276,8 @@ export const makeManagedCodexProvider = Effect.fn("makeManagedCodexProvider")(fu
       ),
     );
   const textGeneration: ProviderInstance["textGeneration"] = {
+    generateStructured: (value) =>
+      protect(value.operation, nativeGeneration.generateStructured(value)),
     generateCommitMessage: (value) =>
       protect("generateCommitMessage", nativeGeneration.generateCommitMessage(value)),
     generatePrContent: (value) =>

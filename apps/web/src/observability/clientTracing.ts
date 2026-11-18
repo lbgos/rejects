@@ -41,6 +41,19 @@ const browserResourceAttributes = (): Record<string, unknown> => {
   };
 };
 
+// Which build this page runs and how its document loaded. A transfer size of 0 means the HTML did
+// not come from the network (a stored copy, or a back-forward restore of type back_forward).
+const bundleResourceAttributes = (): Record<string, unknown> => {
+  const navigation = globalThis.performance?.getEntriesByType?.("navigation")[0];
+  return {
+    "t3code.client.bundle": new URL(import.meta.url).pathname,
+    ...(navigation instanceof PerformanceNavigationTiming && {
+      "t3code.document.transfer_size": navigation.transferSize,
+      "t3code.document.navigation_type": navigation.type,
+    }),
+  };
+};
+
 // PR previews can't mark themselves in APP_VERSION without breaking the version-skew check against the server.
 const RELEASE_CHANNEL =
   import.meta.env.DEV || import.meta.env.VITE_RELEASE_CHANNEL === "dev"
@@ -58,6 +71,7 @@ const CLIENT_TRACING_RESOURCE = {
     "t3code.client.surface": isElectron ? "desktop" : "web",
     "service.version": APP_VERSION,
     ...browserResourceAttributes(),
+    ...bundleResourceAttributes(),
   },
 } as const;
 

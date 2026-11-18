@@ -14,6 +14,7 @@ import {
 } from "@opencode-ai/sdk/v2";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -510,6 +511,7 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
   const hostPlatform = yield* HostProcess.Platform;
   const serverLedger = yield* OpenCodeServerLedger.OpenCodeServerLedger;
   const agentScope = yield* AgentScope;
+  const crypto = yield* SecureRandom.SecureRandom;
   // npm's Windows shim lets the child escape libuv kill-on-close; run its executable directly.
   const resolveCommand = (command: string, args: ReadonlyArray<string>, env?: NodeJS.ProcessEnv) =>
     resolveSpawnCommand(command, args, { ...(env ? { env } : {}), bypassNpmShim: true });
@@ -614,11 +616,24 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
       shared: true,
     });
     const spawnCommand = yield* resolveCommand(launch.command, launch.args, input.environment);
-    const serverPassword = resolveOpenCodeServerPassword({
-      external: false,
-      ...(input.serverPassword !== undefined ? { serverPassword: input.serverPassword } : {}),
-      ...(input.environment !== undefined ? { environment: input.environment } : {}),
-    });
+    // The server listens on loopback, which other local processes share; a server without a
+    // configured password gets a random one only this process knows.
+    const serverPassword =
+      resolveOpenCodeServerPassword({
+        external: false,
+        ...(input.serverPassword !== undefined ? { serverPassword: input.serverPassword } : {}),
+        ...(input.environment !== undefined ? { environment: input.environment } : {}),
+      }) ??
+      (yield* crypto.uuidV4().pipe(
+        Effect.mapError(
+          (cause) =>
+            new OpenCodeRuntimeError({
+              operation: "startOpenCodeServerProcess",
+              detail: "Failed to create the server password.",
+              cause,
+            }),
+        ),
+      ));
 
     // Scopes close in reverse order. Forking this before the group kill is
     // registered forgets the ledger entry only once the group is stopped.
@@ -630,7 +645,7 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
           shell: spawnCommand.shell,
           env: {
             ...input.environment,
-            ...(serverPassword !== undefined ? { OPENCODE_SERVER_PASSWORD: serverPassword } : {}),
+            OPENCODE_SERVER_PASSWORD: serverPassword,
             // The value is set explicitly (rather than relying on inheritance) because
             // `extendEnv` is false whenever `input.environment` is provided.
             OPENCODE_CONFIG_CONTENT: resolveOpenCodeConfigContent(input.environment),
@@ -773,7 +788,7 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
           createOpenCodeSdkClient({
             baseUrl: url,
             directory: input.directory,
-            ...(serverPassword !== undefined ? { serverPassword } : {}),
+            serverPassword,
           }),
           input.environment,
         )
@@ -781,7 +796,7 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
 
     return {
       url,
-      ...(serverPassword !== undefined ? { serverPassword } : {}),
+      serverPassword,
       version,
       isRunning: child.isRunning.pipe(Effect.orElseSucceed(() => false)),
       exitCode: child.exitCode.pipe(

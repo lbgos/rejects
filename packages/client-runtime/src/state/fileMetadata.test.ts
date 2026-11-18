@@ -31,7 +31,9 @@ const OTHER_ENVIRONMENT_ID = EnvironmentId.make("metadata-other-environment");
 
 const makeHarness = Effect.fnUntraced(function* () {
   const batches: string[][] = [];
+  const batchThreads: Array<ThreadId | undefined> = [];
   const values = new Map<string, FilesystemEntryMetadata | null>();
+  const mappedValues = new Map<string, FilesystemEntryMetadata | null>();
   const failure = { denied: false };
   const response = { wait: Effect.void as Effect.Effect<void> };
   const makeSession = () =>
@@ -40,12 +42,14 @@ const makeHarness = Effect.fnUntraced(function* () {
         [WS_METHODS.filesystemGetMetadata]: (input: FilesystemGetMetadataInput) =>
           Effect.gen(function* () {
             batches.push([...input.paths]);
+            batchThreads.push(input.threadId);
             if (failure.denied)
               return yield* new EnvironmentAuthorizationError({
                 requiredScope: AuthFilesystemReadScope,
                 message: "File access is not granted.",
               });
-            const entries = input.paths.map((path) => values.get(path) ?? null);
+            const source = input.threadId ? mappedValues : values;
+            const entries = input.paths.map((path) => source.get(path) ?? null);
             yield* response.wait;
             return { entries };
           }),
@@ -112,7 +116,9 @@ const makeHarness = Effect.fnUntraced(function* () {
       .pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
   return {
     batches,
+    batchThreads,
     values,
+    mappedValues,
     registry,
     atom,
     read,
@@ -127,6 +133,25 @@ const makeHarness = Effect.fnUntraced(function* () {
 });
 
 describe("file metadata", () => {
+  it.effect("keeps a bot chat's mapped answers out of other chats", () =>
+    Effect.gen(function* () {
+      const h = yield* makeHarness();
+      const bot = ThreadId.make("bot-thread");
+      h.registry.mount(h.atoms.retainThread({ environmentId: ENVIRONMENT_ID, threadId: bot }));
+      h.mappedValues.set("/home/shared/research", { kind: "directory" });
+      const mapped = h.atoms.metadata({
+        environmentId: ENVIRONMENT_ID,
+        input: { path: "/home/shared/research", threadId: bot, mapped: true },
+      });
+      expect(yield* AtomRegistry.getResult(h.registry, mapped, { suspendOnWaiting: true })).toEqual(
+        { kind: "directory" },
+      );
+      expect(yield* h.read("/home/shared/research")).toBeNull();
+      expect(yield* h.read("/home/shared/research", ENVIRONMENT_ID, bot)).toBeNull();
+      expect(h.batchThreads).toEqual([bot, undefined]);
+    }),
+  );
+
   it.effect("refreshes expired mounted misses while retaining known thread entries", () =>
     Effect.gen(function* () {
       vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });

@@ -425,7 +425,11 @@ const launchBrowser = Effect.fnUntraced(function* (input: {
     Schema.Struct({ browserContextId: Schema.String }),
   );
 
-  const openPage = Effect.fnUntraced(function* (width: number, appearance: ThemeAppearance) {
+  const openPage = Effect.fnUntraced(function* (
+    width: number,
+    appearance: ThemeAppearance,
+    scale: number,
+  ) {
     const { targetId } = yield* send(
       "Target.createTarget",
       { url: "about:blank", browserContextId },
@@ -479,7 +483,7 @@ const launchBrowser = Effect.fnUntraced(function* (input: {
     );
     yield* send(
       "Emulation.setDeviceMetricsOverride",
-      { width, height: VIEWPORT_HEIGHT, deviceScaleFactor: 1, mobile: false },
+      { width, height: VIEWPORT_HEIGHT, deviceScaleFactor: scale, mobile: false },
       Ignored,
       sessionId,
     );
@@ -577,6 +581,7 @@ export const captureHtmlScreenshot = Effect.fn("headlessChrome.captureHtmlScreen
     readonly width: number;
     readonly urlFragment: string;
     readonly appearance: ThemeAppearance;
+    readonly scale: number;
   }) {
     const path = yield* Path.Path;
     const directory = yield* scratchDirectory;
@@ -585,7 +590,7 @@ export const captureHtmlScreenshot = Effect.fn("headlessChrome.captureHtmlScreen
       noSandbox: input.noSandbox,
       profileDirectory: path.join(directory, "profile"),
     });
-    const page = yield* browser.openPage(input.width, input.appearance);
+    const page = yield* browser.openPage(input.width, input.appearance, input.scale);
     const contentHeight = yield* page.load(pageBody(input.html), input.urlFragment);
     const capturedHeight = Math.max(1, Math.min(contentHeight, MAX_CAPTURE_HEIGHT));
     const png = yield* page.screenshot(capturedHeight);
@@ -627,7 +632,7 @@ export const measureHtmlHeights = Effect.fn("headlessChrome.measureHtmlHeights")
   return yield* Effect.forEach(
     input.widths,
     (width) =>
-      browser.openPage(width, "dark").pipe(
+      browser.openPage(width, "dark", 1).pipe(
         Effect.flatMap((page) =>
           page.load(body, input.urlFragment).pipe(Effect.ensuring(page.close)),
         ),

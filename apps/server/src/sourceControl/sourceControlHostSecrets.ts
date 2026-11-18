@@ -12,15 +12,25 @@ import { resolveSettingsSecrets } from "../secrets/settingsSecretValue.ts";
 
 import { sourceControlDefinitions } from "./sourceControlDefinitions.ts";
 
+/**
+ * Hosts whose code was removed keep their stored secrets readable and redacted: the settings
+ * rows survive as opaque data, so their secret field names must too.
+ */
+const LEGACY_SOURCE_CONTROL_HOST_SECRET_FIELDS: Readonly<Record<string, readonly string[]>> = {
+  bitbucket: ["accessToken", "apiToken"],
+  gitcafe: ["token"],
+};
+
 export const SOURCE_CONTROL_HOST_SECRET_FIELDS: ReadonlyMap<
   string,
   ReadonlyArray<string>
-> = new Map(
-  sourceControlDefinitions.definitions.flatMap((definition) => {
+> = new Map([
+  ...Object.entries(LEGACY_SOURCE_CONTROL_HOST_SECRET_FIELDS),
+  ...sourceControlDefinitions.definitions.flatMap((definition) => {
     const fields = definition.settings ? secretSettingsFields(definition.settings) : [];
     return fields.length > 0 ? [[definition.kind, fields] as const] : [];
   }),
-);
+]);
 
 export interface SourceControlHostSecretSlot {
   readonly kind: string;

@@ -172,6 +172,46 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     -apple-system, BlinkMacSystemFont, "Inter Variable", "Segoe UI", system-ui, sans-serif;
   --font-mono:
     ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+
+  /* The bots app's surfaces (bots/bots.css): bot bubbles and cards, the user's bubbles and
+     secondary capsules, the unread dot, the swipe fills, the floating controls' fill, hairlines and
+     the dim behind dialogs. Surfaces step from the theme's background toward its text, so they
+     follow the user's theme: #1c1c1c and #2b2b2b on T3's black dark theme. sRGB, not oklab: a
+     perceptual mix this close to black paints #040404. */
+  --color-bot-bubble: color-mix(in srgb, var(--foreground) 11%, var(--background));
+  --color-bot-fill: color-mix(in srgb, var(--foreground) 17%, var(--background));
+  /* Swipe fills carry white labels at 4.5:1 or more; the unread blue keeps 3:1 as a dot on black
+     and on white. */
+  --color-bot-unread: #0071e3;
+  --color-bot-mute: #5e5ce6;
+  --color-bot-delete: #d70015;
+  --color-bot-glass: color-mix(in srgb, var(--foreground) 12%, var(--background));
+  --color-bot-hairline: color-mix(in srgb, var(--foreground) 20%, transparent);
+  --color-bot-scrim: rgb(0 0 0 / 0.62);
+  /* Variant C's type ramp for the bots app on a phone: size, line height and tracking. */
+  --text-bot-title: 34px;
+  --text-bot-title--line-height: 41px;
+  --text-bot-title--letter-spacing: 0.4px;
+  --text-bot-heading: 22px;
+  --text-bot-heading--line-height: 28px;
+  --text-bot-heading--letter-spacing: -0.26px;
+  --text-bot-body: 17px;
+  --text-bot-body--line-height: 22px;
+  --text-bot-body--letter-spacing: -0.43px;
+  --text-bot-message: 17px;
+  --text-bot-message--line-height: 23px;
+  --text-bot-message--letter-spacing: -0.43px;
+  --text-bot-callout: 15px;
+  --text-bot-callout--line-height: 20px;
+  --text-bot-callout--letter-spacing: -0.23px;
+  --text-bot-subhead: 14px;
+  --text-bot-subhead--line-height: 19px;
+  --text-bot-subhead--letter-spacing: -0.15px;
+  --text-bot-footnote: 13px;
+  --text-bot-footnote--line-height: 17px;
+  --text-bot-footnote--letter-spacing: -0.08px;
+  --text-bot-caption: 12px;
+  --text-bot-caption--line-height: 16px;
 }
 
 @theme inline {
@@ -203,6 +243,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
      shadow fading away from the seam. Inline, so the offsets resolve on the
      element. below: the context strip under the composer (1rem seam, faint
      white fill). above: an attached banner over it (its tint on top). */
+  --spacing-composer-seam: calc(var(--spacing) * 4 - 1px);
   --background-image-composer-seam-below:
     linear-gradient(
       to bottom,
@@ -362,7 +403,11 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 }
 
 @utility surface-glass {
-  background: color-mix(in srgb, var(--background) var(--glass-opacity), transparent);
+  background: color-mix(
+    in srgb,
+    var(--glass-surface, var(--background)) var(--glass-opacity),
+    transparent
+  );
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
 
@@ -1191,7 +1236,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
        states provide separation without milky gray fills. */
     --background: #000;
     --surface-raised: color-mix(in srgb, var(--color-neutral-950) 97%, var(--color-white));
-    --foreground: var(--color-neutral-100);
+    --foreground: #fff;
     --card: color-mix(in srgb, var(--color-neutral-950) 97%, var(--color-white));
     --card-foreground: var(--color-neutral-100);
     --popover: color-mix(in srgb, var(--color-neutral-950) 97%, var(--color-white));
@@ -1254,7 +1299,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 
   @variant dark {
     --background: #000;
-    --foreground: #f1f3f7;
+    --foreground: #fff;
     --card: #000;
     --card-foreground: var(--foreground);
     --accent: #191a1d;
@@ -2635,6 +2680,36 @@ code {
 ) {
   outline: 2px solid var(--ring);
   outline-offset: -2px;
+}
+
+/* The page and portaled sidebars paint the theme's canvas. Boot writes inline backgrounds before
+   CSS loads, so these use the same token. */
+html.dark,
+html.dark body {
+  background-color: var(--background) !important;
+  color: var(--foreground);
+}
+
+/* The standard dark theme is true black with white text; a named theme keeps its own palette. */
+html.dark:not([data-theme-id]:not([data-theme-id=""])),
+html.dark:not([data-theme-id]:not([data-theme-id=""])) [data-app-sidebar] {
+  --background: #000;
+  --app-chrome-background: #000;
+  --toolbar-background: #000;
+  --sidebar: #000;
+  --sidebar-stage-fade: #000;
+  --terminal-background: #000;
+  --foreground: #fff;
+  --toolbar-foreground: #fff;
+  --card-foreground: #fff;
+  --popover-foreground: #fff;
+  --sidebar-foreground: #fff;
+  --message-foreground: #fff;
+  --code-foreground: #fff;
+  --terminal-foreground: #fff;
+  --secondary-foreground: #fff;
+  --accent-foreground: #fff;
+  --surface-grain: none;
 }
 
 .messages-timeline-scroll:focus-visible {

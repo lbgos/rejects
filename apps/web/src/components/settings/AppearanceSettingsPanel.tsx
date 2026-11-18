@@ -18,12 +18,14 @@ import {
   type SidebarStageBackdropVariant,
   useEnvironmentStageLabel,
 } from "../SidebarStageBackdrop";
+import { useHolidayTheme } from "../../holiday/holidayTheme";
 import { useCustomThemes } from "../../hooks/useCustomThemes";
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { useTheme } from "../../hooks/useTheme";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
+import { ScopedSwitch } from "./ScopedSwitch";
 import { ThemeLibrary } from "./ThemeSettings";
 import {
   SettingResetButton,
@@ -45,8 +47,8 @@ const ENVIRONMENT_IDENTIFICATION_LABELS: Record<EnvironmentIdentificationMode, s
   none: "None",
 };
 
-// The default "artwork" follows the running channel, so it is labeled as that channel's art,
-// or as "None" on Latest. The other channel's art is offered as a fixed choice.
+// "artwork" follows the running channel, so it is labeled as that channel's art. The other
+// channel's art is a fixed choice. Latest has no art of its own: "None" or either fixed art.
 function environmentIdentificationOptions(
   stageVariant: SidebarStageBackdropVariant | null,
 ): ReadonlyArray<readonly [EnvironmentIdentificationMode, string]> {
@@ -67,10 +69,34 @@ function environmentIdentificationOptions(
     ];
   }
   return [
-    ["artwork", "None"],
+    ["none", "None"],
     ["nightly-artwork", "Nightly artwork"],
     ["dev-artwork", "Dev artwork"],
   ];
+}
+
+function HolidayThemeRow() {
+  const { offered } = useHolidayTheme();
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  if (!offered) return null;
+  return (
+    <SettingsRow
+      serverScoped
+      id="setting-holiday-theme"
+      title="Holiday theme"
+      settingKeys={["holidayTheme"]}
+      description="A festive look for bots in dark appearance, 1 December to 7 January, on every device of this server."
+      control={
+        <ScopedSwitch
+          settingKeys={["holidayTheme"]}
+          checked={settings.holidayTheme}
+          onCheckedChange={(checked) => updateSettings({ holidayTheme: Boolean(checked) })}
+          aria-label="Holiday theme"
+        />
+      }
+    />
+  );
 }
 
 const CHAT_WIDTH_LABELS: Record<ChatWidth, string> = {
@@ -163,6 +189,7 @@ export function AppearanceSettingsPanel() {
       </SettingsSection>
 
       <SettingsSection id="appearance-interface" title="Interface">
+        <HolidayThemeRow />
         <SettingsRow
           {...searchableSetting("setting-appearance-contrast")}
           description="Adjust the contrast of colors and borders across the interface."

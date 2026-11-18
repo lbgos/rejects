@@ -8,7 +8,6 @@ import {
 } from "@t3tools/contracts";
 import { isSvgAttachment } from "@t3tools/shared/image";
 import * as Clock from "effect/Clock";
-import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
@@ -147,15 +146,39 @@ export type StoreAttachmentUploadResult =
   | { readonly ok: true }
   | { readonly ok: false; readonly status: number; readonly detail: string };
 
+/** The bytes one request carries; a single-request upload is every byte from offset 0. */
+export interface AttachmentUploadChunk {
+  readonly offset: number;
+  readonly length: number;
+}
+
+// Chunks of one upload append to one part file, so only one request may write it at a time.
+const uploadsInFlight = new Set<string>();
+
 export const storeAttachmentUpload = Effect.fn("AttachmentUpload.store")(function* (
   claims: AttachmentUploadClaims,
   body: Uint8Array | HttpServerRequest.HttpServerRequest["stream"],
+  chunk: AttachmentUploadChunk = { offset: 0, length: claims.sizeBytes },
 ) {
-  if (body instanceof Uint8Array && body.byteLength !== claims.sizeBytes) {
+  const { offset, length } = chunk;
+  if (
+    !Number.isSafeInteger(offset) ||
+    !Number.isSafeInteger(length) ||
+    offset < 0 ||
+    length < 1 ||
+    offset + length > claims.sizeBytes
+  ) {
     return {
       ok: false,
       status: 400,
-      detail: `Body was ${body.byteLength} bytes, expected ${claims.sizeBytes}.`,
+      detail: `Bytes ${offset}+${length} are outside the ${claims.sizeBytes}-byte upload.`,
+    } satisfies StoreAttachmentUploadResult;
+  }
+  if (body instanceof Uint8Array && body.byteLength !== length) {
+    return {
+      ok: false,
+      status: 400,
+      detail: `Body was ${body.byteLength} bytes, expected ${length}.`,
     } satisfies StoreAttachmentUploadResult;
   }
 
@@ -169,11 +192,9 @@ export const storeAttachmentUpload = Effect.fn("AttachmentUpload.store")(functio
     attachmentsDir: config.attachmentsDir,
     relativePath,
   });
-  const random = yield* SecureRandom.SecureRandom;
-  const partId = yield* random.uuidV4();
   const partPath = resolveAttachmentRelativePath({
     attachmentsDir: config.attachmentsDir,
-    relativePath: `${relativePath}.${partId}.part`,
+    relativePath: `${relativePath}.part`,
   });
   if (!finalPath || !partPath) {
     return { ok: false, status: 500, detail: "Failed to resolve attachment path." };
@@ -181,26 +202,55 @@ export const storeAttachmentUpload = Effect.fn("AttachmentUpload.store")(functio
 
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const last = offset + length === claims.sizeBytes;
   let receivedBytes = 0;
+  let owner = false;
+  let appending = false;
   const bodyStream = body instanceof Uint8Array ? Stream.make(body) : body;
   return yield* Effect.gen(function* () {
+    if (uploadsInFlight.has(claims.attachmentId)) {
+      return {
+        ok: false,
+        status: 409,
+        detail: "This upload is already in progress.",
+      } satisfies StoreAttachmentUploadResult;
+    }
+    uploadsInFlight.add(claims.attachmentId);
+    owner = true;
     yield* fileSystem.makeDirectory(path.dirname(finalPath), { recursive: true });
+    if (offset > 0) {
+      const stored = yield* fileSystem.stat(partPath).pipe(
+        Effect.map((info) => Number(info.size)),
+        Effect.orElseSucceed(() => 0),
+      );
+      if (stored < offset) {
+        return {
+          ok: false,
+          status: 409,
+          detail: `The upload holds ${stored} bytes, not ${offset}.`,
+        } satisfies StoreAttachmentUploadResult;
+      }
+      // A retried chunk replaces whatever its failed attempt wrote.
+      if (stored > offset) yield* fileSystem.truncate(partPath, offset);
+    }
+    appending = true;
     yield* Stream.run(
       bodyStream.pipe(
-        Stream.takeWhile((chunk) => {
-          receivedBytes += chunk.byteLength;
-          return receivedBytes <= claims.sizeBytes;
+        Stream.takeWhile((bytes) => {
+          receivedBytes += bytes.byteLength;
+          return receivedBytes <= length;
         }),
       ),
-      fileSystem.sink(partPath),
+      fileSystem.sink(partPath, { flag: offset === 0 ? "w" : "a" }),
     );
-    if (receivedBytes !== claims.sizeBytes) {
+    if (receivedBytes !== length) {
       return {
         ok: false,
         status: 400,
-        detail: `Body was ${receivedBytes} bytes, expected ${claims.sizeBytes}.`,
+        detail: `Body was ${receivedBytes} bytes, expected ${length}.`,
       } satisfies StoreAttachmentUploadResult;
     }
+    if (!last) return { ok: true } satisfies StoreAttachmentUploadResult;
     // Publishing without replacement keeps an upload and its cached text immutable.
     const published = yield* fileSystem.link(partPath, finalPath).pipe(
       Effect.as(true),
@@ -229,7 +279,7 @@ export const storeAttachmentUpload = Effect.fn("AttachmentUpload.store")(functio
       }),
     );
     if (!published) {
-      if (Number((yield* fileSystem.stat(finalPath)).size) !== receivedBytes) {
+      if (Number((yield* fileSystem.stat(finalPath)).size) !== claims.sizeBytes) {
         return { ok: false, status: 409, detail: "Attachment already uploaded." };
       }
       const hashes = yield* Effect.forEach([partPath, finalPath], (file) =>
@@ -262,7 +312,14 @@ export const storeAttachmentUpload = Effect.fn("AttachmentUpload.store")(functio
       ),
     ),
     Effect.ensuring(
-      fileSystem.remove(partPath, { force: true }).pipe(Effect.orElseSucceed(() => undefined)),
+      Effect.suspend(() => {
+        if (!owner) return Effect.void;
+        uploadsInFlight.delete(claims.attachmentId);
+        // An unfinished upload keeps its part file for the next chunk; the pending sweep expires it.
+        return last && appending
+          ? fileSystem.remove(partPath, { force: true }).pipe(Effect.ignore)
+          : Effect.void;
+      }),
     ),
   );
 });
@@ -275,6 +332,26 @@ export const deletePendingAttachment = Effect.fn("AttachmentUpload.deletePending
   }
 
   const config = yield* ServerConfig.ServerConfig;
+  const fileSystem = yield* FileSystem.FileSystem;
+  // An abandoned chunked upload leaves only its part file, which can be hundreds of MB.
+  if (!/[./]/.test(attachmentId)) {
+    const entries = yield* fileSystem
+      .readDirectory(config.attachmentsDir)
+      .pipe(Effect.orElseSucceed((): string[] => []));
+    yield* Effect.forEach(
+      entries.filter((entry) => entry.startsWith(`${attachmentId}.`) && entry.endsWith(".part")),
+      (entry) => {
+        const partPath = resolveAttachmentRelativePath({
+          attachmentsDir: config.attachmentsDir,
+          relativePath: entry,
+        });
+        return partPath
+          ? fileSystem.remove(partPath, { force: true }).pipe(Effect.ignore)
+          : Effect.void;
+      },
+      { discard: true },
+    );
+  }
   const attachmentPath = resolveAttachmentPathById({
     attachmentsDir: config.attachmentsDir,
     attachmentId,
@@ -283,7 +360,6 @@ export const deletePendingAttachment = Effect.fn("AttachmentUpload.deletePending
     return;
   }
 
-  const fileSystem = yield* FileSystem.FileSystem;
   yield* fileSystem.remove(attachmentPath, { force: true }).pipe(Effect.orElseSucceed(() => {}));
   yield* fileSystem.remove(`${attachmentPath}.txt`, { force: true }).pipe(Effect.ignore);
 });

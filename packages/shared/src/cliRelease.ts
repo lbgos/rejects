@@ -1,15 +1,15 @@
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import { compareSemverVersions } from "./semver.ts";
-
-const CLI_RELEASE_REPOSITORY = "pingdotgg/t3code";
-export const CLI_RELEASES_PAGE_URL = `https://github.com/${CLI_RELEASE_REPOSITORY}/releases`;
+const CLI_RELEASE_REPOSITORY = "lbgos/rejects";
+/** The npm launcher package, published from `scripts/build-npm-launcher.ts`. */
+export const CLI_NPM_PACKAGE_NAME = "@lbgos/rejects";
+/** The command that package installs. User-facing hints name it; launcher and archive files stay `t3`. */
+export const CLI_COMMAND_NAME = "rejects";
 export const CLI_RELEASE_CHECKSUMS_FILE = "SHA256SUMS";
 export const CLI_RELEASE_BASE_URL_ENV = "T3CODE_RELEASE_BASE_URL";
 
-// Keep archive keys aligned with the Linux matrix, Windows ARM64 build, and cli_archive rows in release.yml,
-// and with the SSH runner's host check in packages/ssh/src/tunnel.ts.
+// Keep archive keys aligned with the Linux matrix, Windows ARM64 build, and cli_archive rows in release.yml.
 // Node single-executables do not support darwin-x64 and segfault at startup.
 const CLI_ARCHIVE_PLATFORM_KEYS = [
   "darwin-arm64",
@@ -44,12 +44,8 @@ export function cliArchiveFileName(version: string, platformKey: CliArchivePlatf
 
 const CLI_RELEASE_DEFAULT_BASE_URL = `https://github.com/${CLI_RELEASE_REPOSITORY}/releases/download`;
 
-export function cliReleaseDownloadBaseUrl(
-  version: string,
-  baseUrl: string | undefined = CLI_RELEASE_DEFAULT_BASE_URL,
-): string {
-  return `${(baseUrl?.trim() || CLI_RELEASE_DEFAULT_BASE_URL).replace(/\/+$/, "")}/v${version}`;
-}
+/** Where a remote host's owner learns to install rejects; SSH connections do not install it. */
+export const CLI_INSTALL_GUIDE_URL = `https://github.com/${CLI_RELEASE_REPOSITORY}/blob/main/docs/user/install.md`;
 
 /** `segments` added to `baseUrl`'s path, keeping its query, such as a signed mirror URL's token. */
 export function releaseAssetUrl(baseUrl: string, ...segments: ReadonlyArray<string>): string {
@@ -116,19 +112,6 @@ export function updateFeedFileName(
   if (platform === "linux")
     return arch === "arm64" ? `${channel}-linux-arm64.yml` : `${channel}-linux.yml`;
   return `${channel}.yml`;
-}
-
-/** Whether a track switch may install `found` after its database check cleared `checked`: any build
- * on the switch's track at least as new, since later releases only add migrations. */
-export function acceptsTrackSwitchRelease(
-  found: string,
-  channel: "latest" | "nightly",
-  checked: string,
-): boolean {
-  return (
-    cliReleaseChannelOf(found) === (channel === "nightly" ? "nightly" : "stable") &&
-    compareSemverVersions(found, checked) >= 0
-  );
 }
 
 /** Page until the channel matches; nightlies can push preview/stable releases past the first page. */

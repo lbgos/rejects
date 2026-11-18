@@ -128,47 +128,59 @@ function persistenceError(
   });
 }
 
+// After the page reloads, WebKit can leave an open request unanswered for good; a new request is answered.
+const OPEN_ATTEMPT_TIMEOUT = "3 seconds";
+
 const openDatabase = Effect.fn("web.connectionStorage.openDatabase")(function* () {
-  return yield* Effect.callback<IDBDatabase, ConnectionTransientError>((resume) => {
-    if (typeof indexedDB === "undefined") {
-      resume(
-        Effect.fail(catalogError("open", "IndexedDB is unavailable in this browser context.")),
-      );
-      return;
-    }
-    try {
-      const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
-      request.addEventListener("upgradeneeded", () => {
-        if (!request.result.objectStoreNames.contains(CATALOG_STORE_NAME)) {
-          request.result.createObjectStore(CATALOG_STORE_NAME);
-        }
-        if (!request.result.objectStoreNames.contains(SHELL_STORE_NAME)) {
-          request.result.createObjectStore(SHELL_STORE_NAME);
-        }
-        if (!request.result.objectStoreNames.contains(THREAD_STORE_NAME)) {
-          request.result.createObjectStore(THREAD_STORE_NAME);
-        }
-        if (!request.result.objectStoreNames.contains(SERVER_CONFIG_STORE_NAME)) {
-          request.result.createObjectStore(SERVER_CONFIG_STORE_NAME);
-        }
-        if (!request.result.objectStoreNames.contains(VCS_REFS_STORE_NAME)) {
-          request.result.createObjectStore(VCS_REFS_STORE_NAME);
-        }
-        if (!request.result.objectStoreNames.contains(QUERY_STORE_NAME)) {
-          request.result
-            .createObjectStore(QUERY_STORE_NAME)
-            .createIndex(QUERY_UPDATED_INDEX_NAME, ["environmentId", "updatedAt", "bytes"]);
-        }
-      });
-      request.addEventListener("error", () => {
-        resume(Effect.fail(catalogError("open", request.error ?? "Unknown IndexedDB error")));
-      });
-      request.addEventListener("success", () => {
-        resume(Effect.succeed(request.result));
-      });
-    } catch (cause) {
-      resume(Effect.fail(catalogError("open", cause)));
-    }
+  while (true) {
+    const opened = yield* openDatabaseOnce.pipe(Effect.timeoutOption(OPEN_ATTEMPT_TIMEOUT));
+    if (Option.isSome(opened)) return opened.value;
+    yield* Effect.logWarning("IndexedDB did not answer the open request; opening it again.");
+  }
+});
+
+const openDatabaseOnce = Effect.callback<IDBDatabase, ConnectionTransientError>((resume) => {
+  if (typeof indexedDB === "undefined") {
+    resume(Effect.fail(catalogError("open", "IndexedDB is unavailable in this browser context.")));
+    return;
+  }
+  let abandoned = false;
+  try {
+    const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
+    request.addEventListener("upgradeneeded", () => {
+      if (!request.result.objectStoreNames.contains(CATALOG_STORE_NAME)) {
+        request.result.createObjectStore(CATALOG_STORE_NAME);
+      }
+      if (!request.result.objectStoreNames.contains(SHELL_STORE_NAME)) {
+        request.result.createObjectStore(SHELL_STORE_NAME);
+      }
+      if (!request.result.objectStoreNames.contains(THREAD_STORE_NAME)) {
+        request.result.createObjectStore(THREAD_STORE_NAME);
+      }
+      if (!request.result.objectStoreNames.contains(SERVER_CONFIG_STORE_NAME)) {
+        request.result.createObjectStore(SERVER_CONFIG_STORE_NAME);
+      }
+      if (!request.result.objectStoreNames.contains(VCS_REFS_STORE_NAME)) {
+        request.result.createObjectStore(VCS_REFS_STORE_NAME);
+      }
+      if (!request.result.objectStoreNames.contains(QUERY_STORE_NAME)) {
+        request.result
+          .createObjectStore(QUERY_STORE_NAME)
+          .createIndex(QUERY_UPDATED_INDEX_NAME, ["environmentId", "updatedAt", "bytes"]);
+      }
+    });
+    request.addEventListener("error", () => {
+      resume(Effect.fail(catalogError("open", request.error ?? "Unknown IndexedDB error")));
+    });
+    request.addEventListener("success", () => {
+      if (abandoned) request.result.close();
+      else resume(Effect.succeed(request.result));
+    });
+  } catch (cause) {
+    resume(Effect.fail(catalogError("open", cause)));
+  }
+  return Effect.sync(() => {
+    abandoned = true;
   });
 });
 

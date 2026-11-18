@@ -17,6 +17,7 @@ import {
   SYNTHETIC_CLAUDE_COLLIDING_ALIAS,
   SYNTHETIC_CLAUDE_MODEL_CATALOG,
   SYNTHETIC_CLAUDE_STANDARD_MODEL,
+  SYNTHETIC_CLAUDE_THINKING_MODEL,
 } from "../provider/ClaudeModelCatalog.testFixtures.ts";
 import * as TextGeneration from "./TextGeneration.ts";
 import { sanitizeThreadTitle } from "@t3tools/provider-core/server/textGenerationUtils";
@@ -110,6 +111,124 @@ function withFakeClaudeEnv<A, E, R>(
 }
 
 it.layer(layerClaudeTextGenerationTest)("ClaudeTextGeneration", (it) => {
+  it.effect("generates structured output with tools disabled", () =>
+    withFakeClaudeEnv(
+      {
+        output: '{"type":"result","structured_output":{"count":2}}',
+        argsMustContain:
+          "--tools  --disable-slash-commands --no-session-persistence --strict-mcp-config --permission-mode dontAsk",
+        stdinMustContain: '"count"',
+      },
+      (generation) =>
+        Effect.gen(function* () {
+          const result = yield* generation.generateStructured({
+            cwd: process.cwd(),
+            prompt: "Count nodes",
+            operation: "extraction",
+            outputSchema: Schema.Struct({ count: Schema.Int }),
+            modelSelection: { instanceId: ProviderInstanceId.make("claudeAgent"), model: "sonnet" },
+          });
+          expect(result).toEqual({ count: 2 });
+        }),
+    ),
+  );
+
+  it.effect("reports the CLI's own usage for a structured call", () =>
+    withFakeClaudeEnv(
+      {
+        output:
+          '{"type":"result","structured_output":{"count":2},"usage":{"input_tokens":400,"cache_creation_input_tokens":200,"cache_read_input_tokens":100,"output_tokens":40}}',
+      },
+      (generation) =>
+        Effect.gen(function* () {
+          const usage = yield* Effect.sync(() => ({ reports: [] as Array<unknown> }));
+          const result = yield* generation.generateStructured({
+            cwd: process.cwd(),
+            prompt: "Count nodes",
+            operation: "extraction",
+            outputSchema: Schema.Struct({ count: Schema.Int }),
+            modelSelection: { instanceId: ProviderInstanceId.make("claudeAgent"), model: "sonnet" },
+            onUsage: (report) => usage.reports.push(report),
+          });
+          expect(result).toEqual({ count: 2 });
+          expect(usage.reports).toEqual([{ input: 700, cached: 100, output: 40 }]);
+        }),
+    ),
+  );
+
+  it.effect("forwards Claude thinking settings without passing unsupported effort", () =>
+    withFakeClaudeEnv(
+      {
+        output: JSON.stringify({
+          structured_output: {
+            subject: "Add important change",
+            body: "",
+          },
+        }),
+        argsMustContain: '--settings {"disableAllHooks":true,"alwaysThinkingEnabled":false}',
+        argsMustNotContain: "--effort",
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const generated = yield* textGeneration.generateCommitMessage({
+            cwd: process.cwd(),
+            branch: "feature/claude-effect",
+            stagedSummary: "M README.md",
+            stagedPatch: "diff --git a/README.md b/README.md",
+            modelSelection: {
+              ...createModelSelection(
+                ProviderInstanceId.make("claudeAgent"),
+                SYNTHETIC_CLAUDE_THINKING_MODEL,
+                [
+                  { id: "thinking", value: false },
+                  { id: "effort", value: "high" },
+                ],
+              ),
+            },
+          });
+
+          expect(generated.subject).toBe("Add important change");
+        }),
+    ),
+  );
+
+  it.effect("keeps a configured custom alias opaque to the Claude CLI", () =>
+    withFakeClaudeEnv(
+      {
+        output: JSON.stringify({
+          structured_output: {
+            title: "Keep custom model",
+            body: "",
+          },
+        }),
+        argsMustContain: `--model ${SYNTHETIC_CLAUDE_COLLIDING_ALIAS} --effort max --settings`,
+        claudeConfig: { customModels: [SYNTHETIC_CLAUDE_COLLIDING_ALIAS] },
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const generated = yield* textGeneration.generatePrContent({
+            cwd: process.cwd(),
+            baseBranch: "main",
+            headBranch: "feature/custom-model",
+            commitSummary: "Keep custom model",
+            diffSummary: "1 file changed",
+            diffPatch: "diff --git a/README.md b/README.md",
+            modelSelection: createModelSelection(
+              ProviderInstanceId.make("claudeAgent"),
+              SYNTHETIC_CLAUDE_COLLIDING_ALIAS,
+              [
+                { id: "effort", value: "max" },
+                { id: "fastMode", value: true },
+                { id: "contextWindow", value: "expanded" },
+              ],
+            ),
+          });
+
+          expect(generated.title).toBe("Keep custom model");
+        }),
+    ),
+  );
+
   it.effect(
     "keeps canonical built-in capabilities when a custom model collides with its alias",
     () =>

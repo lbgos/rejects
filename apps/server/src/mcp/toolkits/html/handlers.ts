@@ -16,7 +16,7 @@ const INVALID_PAGE_ERRORS = new Set([
   "HtmlRenderViewportHeightError",
 ]);
 
-const toFailure = (error: { readonly _tag: string; readonly message: string }) =>
+export const toFailure = (error: { readonly _tag: string; readonly message: string }) =>
   new OrchestratorMcpFailure({
     code: INVALID_PAGE_ERRORS.has(error._tag) ? "invalid_request" : "orchestration_error",
     message: error.message,
@@ -51,10 +51,16 @@ const handlers = {
   // Local-file access limits this host browser to T3-launched agents.
   html_preview: McpToolAccess.readsAsCaller((input) =>
     Effect.gen(function* () {
+      const { botThreadId } = yield* McpInvocationContext.McpInvocationContext;
       const htmlRender = yield* HtmlRender.HtmlRender;
       const source = yield* pageSource(input);
       const { png, ...preview } = yield* htmlRender
-        .preview({ ...source, width: input.width, appearance: input.appearance })
+        .preview({
+          ...source,
+          width: input.width,
+          appearance: input.appearance,
+          offline: botThreadId !== undefined,
+        })
         .pipe(Effect.mapError(toFailure));
       return {
         ...preview,
@@ -74,7 +80,14 @@ const handlers = {
       const htmlRender = yield* HtmlRender.HtmlRender;
       const source = yield* pageSource(input);
       const reference = yield* htmlRender
-        .publish({ ...source, threadId: thread.threadId, title: input.title, height: input.height })
+        .publish({
+          ...source,
+          threadId: thread.threadId,
+          title: input.title,
+          height: input.height,
+          // A bot reads mail, pages and files it must not leak through a URL in a chart.
+          offline: scope.botThreadId !== undefined,
+        })
         .pipe(Effect.mapError(toFailure));
       return {
         htmlRender: reference,

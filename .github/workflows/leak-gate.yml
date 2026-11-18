@@ -1,0 +1,115 @@
+# Private denylist check. LEAK_DENYLIST lives in the `leak-gate` environment, which only the
+# protected `main` branch can use, so a branch cannot add a step that prints it. This file runs
+# only from main: on push, or on pull_request_target, which runs main's copy for a pull request.
+# The pull request head is fetched as data and scanned by main's leak-scan.sh; nothing from the
+# pull request runs. Same-repo pull requests are scanned. Fork pull requests are not: a hit would
+# confirm a guessed value, and forks do not hold the maintainer's values.
+#
+# pull_request_target check runs belong to the base commit, so the job reports to the pull
+# request head as commit status `leak-gate/denylist`; branch protection requires that context.
+name: Leak gate
+
+on:
+  push:
+    branches: [main]
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number to scan; empty scans the dispatched branch
+        required: false
+        default: ""
+
+permissions: {}
+
+concurrency:
+  group: leak-gate-${{ github.event.pull_request.number || inputs.pr || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  denylist:
+    name: Denylist
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: leak-gate
+    permissions:
+      contents: read
+      statuses: write
+    steps:
+      # The default ref is the base branch on pull_request_target and the pushed commit on push.
+      # Credentials stay for the pull request fetch; the token can only read and set statuses.
+      - name: Checkout the base
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+      - name: Fetch what to scan
+        id: target
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr }}
+          FORK: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          case "$PR_NUMBER" in
+            '')
+              head=$(git rev-parse HEAD)
+              base=${PUSH_BEFORE:-$head^}
+              case "$base" in *[!0]*) ;; *) base="$head^" ;; esac
+              echo "range=$base..$head" >> "$GITHUB_OUTPUT"
+              ;;
+            *[!0-9]*)
+              echo "::error::pr must be a pull request number."
+              exit 1
+              ;;
+            *)
+              git fetch --no-tags origin "+refs/pull/$PR_NUMBER/head:refs/remotes/pr/head"
+              head=$(git rev-parse refs/remotes/pr/head)
+              echo "range=HEAD..$head" >> "$GITHUB_OUTPUT"
+              echo "status_sha=$head" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+          echo "head=$head" >> "$GITHUB_OUTPUT"
+          echo "fork=$FORK" >> "$GITHUB_OUTPUT"
+          echo "Scanning $head"
+      # The list is written to a 0600 temp file and never echoed; hits print as file:line.
+      - name: Private denylist
+        id: scan
+        env:
+          LEAK_DENYLIST: ${{ secrets.LEAK_DENYLIST }}
+          HEAD_SHA: ${{ steps.target.outputs.head }}
+          RANGE: ${{ steps.target.outputs.range }}
+          FORK: ${{ steps.target.outputs.fork }}
+        run: |
+          if [ "$FORK" = true ]; then
+            echo "Fork pull request: not scanned."
+            exit 0
+          fi
+          if [ -z "$LEAK_DENYLIST" ]; then
+            echo "::error::The leak-gate environment has no LEAK_DENYLIST secret."
+            exit 1
+          fi
+          list="$RUNNER_TEMP/leak-denylist"
+          (umask 077 && printf '%s\n' "$LEAK_DENYLIST" > "$list")
+          status=0
+          sh .github/scripts/leak-scan.sh denylist "$list" "$HEAD_SHA" "$RANGE" || status=$?
+          rm -f "$list"
+          exit "$status"
+      - name: Report to the pull request
+        if: ${{ always() && steps.target.outputs.status_sha != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.target.outputs.status_sha }}
+          OUTCOME: ${{ steps.scan.outcome }}
+          FORK: ${{ steps.target.outputs.fork }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ "$FORK" = true ]; then
+            state=success description="Not run for fork pull requests"
+          elif [ "$OUTCOME" = success ]; then
+            state=success description="No denylist hits"
+          else
+            state=failure description="Denylist hits or an error; see the run"
+          fi
+          gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/$SHA" \
+            -f state="$state" -f context=leak-gate/denylist \
+            -f description="$description" -f target_url="$RUN_URL" > /dev/null

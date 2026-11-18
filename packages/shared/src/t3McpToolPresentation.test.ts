@@ -5,6 +5,7 @@ import {
   resolveT3McpSummaryAction,
   resolveT3McpToolDefinition,
   resolveT3McpToolPresentation,
+  resolveT3McpToolName,
 } from "./t3McpToolPresentation.ts";
 
 describe("resolveT3McpToolPresentation", () => {
@@ -52,6 +53,23 @@ describe("resolveT3McpToolDefinition", () => {
     expect(resolveT3McpToolDefinition("preview_act", { action: "unknown" })?.labels[2]).toBe(
       "Used",
     );
+  });
+
+  it("labels a bot's tools on the T3 server without claiming their bare names", () => {
+    expect(resolveT3McpToolDefinition("mcp__t3-code__status")?.summaryAction).toBe("status");
+    expect(resolveT3McpToolDefinition("t3-code.web_search")?.summaryAction).toBe("web-search");
+    expect(resolveT3McpToolDefinition("mcp__t3-code__music_download")?.labels[2]).toBe(
+      "Downloaded",
+    );
+    expect(resolveT3McpToolDefinition("mcp__another-server__status")).toBeNull();
+    expect(resolveT3McpToolName("t3-code-thread_1_react")).toBe("react");
+    expect(resolveT3McpToolName("t3-code-thread_1_task_status")).toBe("task_status");
+    expect(resolveT3McpToolName("t3-code.offer_replies")).toBe("offer_replies");
+    expect(resolveT3McpToolDefinition("t3-code-thread_1_memory_search")?.summaryAction).toBe(
+      "memory-search",
+    );
+    expect(resolveT3McpToolName("web_search")).toBeNull();
+    expect(T3_MCP_TOOL_NAMES.has("status")).toBe(false);
   });
 });
 

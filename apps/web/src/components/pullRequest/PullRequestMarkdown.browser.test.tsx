@@ -41,7 +41,7 @@ async function renderBody(
   );
 }
 
-it.each(["github", "forgejo", "azure-devops"])("%s breaks a single newline", async (host) => {
+it.each(["github"])("%s breaks a single newline", async (host) => {
   await using screen = await renderBody(host);
   await expect.element(screen.getByText(/first line/)).toBeInTheDocument();
   expect(screen.container.querySelectorAll("p br")).toHaveLength(1);

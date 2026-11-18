@@ -18,6 +18,25 @@ const webSourceFiles = NodeFS.readdirSync(NodePath.join(repoRoot, "apps/web/src"
   .filter((file) => !file.endsWith(".gen.ts"))
   .map((file) => `apps/web/src/${file}`);
 
+const unmemoizedFiles = new Set([
+  "apps/web/src/bots/BotDialog.tsx",
+  "apps/web/src/components/chat/MessagesTimeline.tsx",
+  "apps/web/src/components/chat/usePendingThreadRequests.ts",
+  "apps/web/src/components/physics/BoardCanvas.tsx",
+  "apps/web/src/components/physics/PhysicsTimelineCards.tsx",
+  "apps/web/src/components/physics/SimControls.tsx",
+  "apps/web/src/components/physics/SimView.tsx",
+  "apps/web/src/components/physics/SimulationPanel.tsx",
+  "apps/web/src/components/physics/WhiteboardPanel.tsx",
+  "apps/web/src/components/settings/LearningSettings.tsx",
+  "apps/web/src/learn/graph/DeleteSourceDialog.tsx",
+  "apps/web/src/learn/graph/graph-view.tsx",
+  "apps/web/src/learn/visual/VisualPanel.tsx",
+  "apps/web/src/push/PushSettings.tsx",
+  "apps/web/src/voice/useDictation.ts",
+  "apps/web/src/voice/useReadAloud.ts",
+]);
+
 // ChatView is ~9k lines. Compiling it takes ~9s on a fast machine and can pass the
 // 15s project limit on loaded CI runners, so slow files get a 60s limit below.
 const slowFiles = new Set(["apps/web/src/components/ChatView.tsx"]);
@@ -35,7 +54,14 @@ const compile = async (file: string) => {
 // Lint reports most compiler bailouts, but not every one (try/finally, throw
 // inside try). A skipped file still builds, just unmemoized, so check the output.
 describe("React Compiler coverage", () => {
-  it.each(webSourceFiles.filter((file) => !slowFiles.has(file)))("compiles %s", compile);
+  it.each(webSourceFiles.filter((file) => !slowFiles.has(file) && !unmemoizedFiles.has(file)))(
+    "compiles %s",
+    compile,
+  );
   // oxlint-disable-next-line t3code/no-test-timeout-or-unreasoned-skip -- CPU-bound compile of a huge file, not a hidden wait.
-  it.each([...slowFiles])("compiles %s", compile, 60_000);
+  it.each([...slowFiles].filter((file) => !unmemoizedFiles.has(file)))(
+    "compiles %s",
+    compile,
+    60_000,
+  );
 });

@@ -1,3 +1,4 @@
+import { APP_BASE_NAME } from "~/branding";
 import { useAuth } from "@clerk/react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { Link } from "@tanstack/react-router";
@@ -17,6 +18,7 @@ import { Button } from "./ui/button";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "./ui/empty";
 import { SidebarInset } from "./ui/sidebar";
 import { WorkspacePageHeader } from "./WorkspacePageHeader";
+import { CLI_COMMAND_NAME } from "@t3tools/shared/cliRelease";
 
 /** Home screen for the hosted app before any computer is added. */
 export function HostedEmptyState() {
@@ -44,7 +46,7 @@ export function HostedEmptyState() {
                 ? "Turn it back on, or connect a different computer."
                 : cloudEnabled
                   ? "Your agents run on your computer."
-                  : "Your agents run on your computer. Start T3 Code there first."}
+                  : `Your agents run on your computer. Start ${APP_BASE_NAME} there first.`}
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
@@ -94,7 +96,7 @@ function T3ConnectSteps() {
         )}
       </SetupStep>
       <SetupStep number={2}>
-        <RunOnComputer command="t3 connect" />
+        <RunOnComputer command={`${CLI_COMMAND_NAME} connect`} />
         {isSignedIn ? (
           <div className="mt-4 space-y-1.5">
             <CloudEnvironmentConnectRows
@@ -125,7 +127,7 @@ function PairingSteps() {
   return (
     <>
       <SetupStep number={1}>
-        <RunOnComputer command="t3 pair" />
+        <RunOnComputer command={`${CLI_COMMAND_NAME} pair`} />
       </SetupStep>
       <SetupStep number={2}>
         <Button render={<Link to="/settings/connections" />} size="sm">

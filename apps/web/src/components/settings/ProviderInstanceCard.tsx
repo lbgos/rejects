@@ -1095,6 +1095,7 @@ export function ProviderInstanceCard({
     return (
       <div
         data-slot="settings-row"
+        data-provider-row
         className={cn(
           "group relative flex min-h-18 items-center gap-3 px-3 py-3 transition-colors sm:px-4",
           selected ? "bg-foreground/[0.06]" : "hover:bg-muted/25",

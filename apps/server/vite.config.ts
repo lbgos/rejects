@@ -84,6 +84,11 @@ export default mergeConfig(
   defineConfig({
     run: {
       tasks: {
+        typecheck: {
+          command: "effect-tsgo tsrs --noEmit --checkers 1 --incremental",
+          // tsc-rs rewrites the build info it reads on each check.
+          cache: { input: [{ auto: true }, "!*.tsbuildinfo"] },
+        },
         build: {
           command: "node scripts/cli.ts build",
           dependsOn: ["@t3tools/web#build"],
@@ -110,7 +115,11 @@ export default mergeConfig(
         ? ["src/bin.ts"]
         : packExecutable
           ? ["src/binMain.ts"]
-          : ["src/bin.ts", "src/claude-history-worker.ts"],
+          : {
+              // A deployment's own entry (see src/main.ts) builds in place of bin.ts.
+              bin: process.env.T3CODE_SERVER_ENTRY?.trim() || "src/bin.ts",
+              "claude-history-worker": "src/claude-history-worker.ts",
+            },
       outDir: packBootstrap ? "dist-exe" : packExecutable ? cliAssetDir : "dist",
       sourcemap: !packExecutable,
       clean: true,

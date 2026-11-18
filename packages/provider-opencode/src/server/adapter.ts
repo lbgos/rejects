@@ -291,6 +291,7 @@ interface ActiveOpenCodeTurn {
   readonly appThread: OrchestrationV2AppThread;
   readonly modelSelection: ModelSelection;
   readonly runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy;
+  readonly standingInstructions?: string | undefined;
   readonly providerTurnId: OrchestrationV2ProviderTurn["id"];
   readonly providerThreadId: OrchestrationV2ProviderTurn["providerThreadId"];
   readonly runOrdinal: number;
@@ -628,10 +629,19 @@ const OPENCODE_RESTRICTED_PERMISSIONS = [
   "doom_loop",
 ] as const;
 
+const T3_MCP_SERVER = "t3-code";
+
 /** OpenCode has no OS sandbox; permission rules must enforce non-interactive policies too. */
 export function openCodePermissionRules(
   runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy,
 ): PermissionRuleset {
+  // OpenCode drops a tool whose last matching rule denies "*", so only T3's MCP tools stay listed.
+  if (runtimePolicy.builtinTools === "none") {
+    return [
+      { permission: "*", pattern: "*", action: "deny" },
+      { permission: `${T3_MCP_SERVER}_*`, pattern: "*", action: "allow" },
+    ];
+  }
   const sandboxPolicy = recordValue(runtimePolicy, "sandboxPolicy");
   const sandboxType = recordString(sandboxPolicy, "type");
   const rawApprovalPolicy = runtimePolicy.approvalPolicy;
@@ -900,6 +910,13 @@ function openCodeErrorMessage(event: Extract<OpenCodeEvent, { type: "session.err
   );
 }
 
+// OpenCode retries a provider error until it clears, waiting out a usage limit's reset for hours.
+// A root turn whose retry is that far out, needs the user, or keeps failing ends with the reason.
+const OPENCODE_RETRY_WAIT_LIMIT_MS = 60_000;
+const OPENCODE_RETRY_ATTEMPT_LIMIT = 5;
+const USAGE_LIMIT_MESSAGE =
+  /usage limit|quota|rate.?limit|\b429\b|insufficient (?:balance|credits?|funds)/i;
+
 function terminalStatusForError(
   event: Extract<OpenCodeEvent, { type: "session.error" }>,
   turn: ActiveOpenCodeTurn,
@@ -1031,7 +1048,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
         if (hasT3Mcp) {
           yield* OpenCodeRuntime.runOpenCodeSdk("mcp.add", () =>
             client.mcp.add({
-              name: "t3-code",
+              name: T3_MCP_SERVER,
               config: {
                 type: "remote",
                 url: mcpSession.endpoint,
@@ -2813,16 +2830,58 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
                   busySessionIds.delete(sessionId);
                   break;
               }
-              const state = threads.get(sessionId);
+              const status = event.properties.status;
+              // A child can retry before its task part gives it a state; its owner's turn waits on it.
+              const state =
+                threads.get(sessionId) ??
+                (status.type === "retry" ? relatedSessionOwners.get(sessionId) : undefined);
               if (state === undefined) return;
               if (state.activeTurn?.admissionPending) {
                 state.activeTurn.admissionStatusSequence++;
               }
-              if (event.properties.status.type === "busy") {
+              const turn = state.activeTurn;
+              if (
+                status.type === "retry" &&
+                turn !== null &&
+                state.parentSubagent === null &&
+                !turn.finalized &&
+                !turn.interrupted
+              ) {
+                const now = DateTime.toEpochMillis(yield* DateTime.now);
+                if (
+                  status.action === undefined &&
+                  status.next - now <= OPENCODE_RETRY_WAIT_LIMIT_MS &&
+                  status.attempt < OPENCODE_RETRY_ATTEMPT_LIMIT
+                ) {
+                  return;
+                }
+                // Aborted first, so the abort's own events find the turn already finalized.
+                for (const id of new Set([sessionId, state.nativeSessionId]))
+                  yield* sdkCall("session.abort", { sessionID: id }, (signal) =>
+                    client.session.abort({ sessionID: id }, { signal }),
+                  ).pipe(Effect.timeout("10 seconds"), Effect.ignore({ log: true }));
+                yield* updateProviderSession("error", status.message);
+                // OpenCode's next retry is the reset time only when a limit is what it waits for.
+                const usageLimit = USAGE_LIMIT_MESSAGE.test(status.message);
+                yield* finalizeTurn(state, turn, "failed", {
+                  failure: makeProviderFailure({
+                    message: status.message,
+                    code: "retry",
+                    class: usageLimit ? "usage_limit" : "provider_error",
+                    retryable: true,
+                    ...(usageLimit
+                      ? { resetAt: DateTime.formatIso(DateTime.makeUnsafe(status.next)) }
+                      : {}),
+                  }),
+                  threadDisposition: "reusable",
+                });
+                return;
+              }
+              if (status.type === "busy") {
                 yield* updateProviderThread(state, { status: "active" });
                 return;
               }
-              if (event.properties.status.type === "idle" && state.activeTurn !== null) {
+              if (status.type === "idle" && state.activeTurn !== null) {
                 if (state.activeTurn.admissionPending) {
                   advanceOpenCodePromptAdmission(state.activeTurn, "idle");
                   return;
@@ -3189,6 +3248,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
             ...(agent === undefined ? {} : { agent }),
             ...(variant === undefined ? {} : { variant }),
             system: [
+              turn.standingInstructions,
               orchestrationSystemPrompt,
               buildRuntimeInstructions({ harness: "OpenCode", model: turn.modelSelection.model }),
             ]
@@ -3467,6 +3527,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
                 appThread: turnInput.appThread,
                 modelSelection: turnInput.modelSelection,
                 runtimePolicy: turnInput.runtimePolicy,
+                standingInstructions: turnInput.standingInstructions,
                 providerTurnId,
                 providerThreadId: turnInput.providerThread.id,
                 runOrdinal: turnInput.runOrdinal,

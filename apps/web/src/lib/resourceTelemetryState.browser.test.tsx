@@ -61,6 +61,7 @@ vi.mock("../state/server", () => ({
   },
 }));
 vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => monitor.retry }));
+vi.mock("../hooks/useMediaQuery", () => ({ useMediaQuery: () => false }));
 
 import { ResourceTelemetryDiagnostics } from "../components/settings/ResourceTelemetryDiagnostics";
 

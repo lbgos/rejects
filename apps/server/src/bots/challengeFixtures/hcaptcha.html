@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Create account</title>
+    <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
+  </head>
+  <body>
+    <form method="post" action="/signup">
+      <input name="username" placeholder="Username" />
+      <div class="h-captcha" data-sitekey="10000000-ffff-ffff-ffff-000000000001">
+        <iframe
+          src="https://newassets.hcaptcha.com/captcha/v1/a1b2c3d/static/hcaptcha.html#frame=checkbox&amp;id=0x1y2z&amp;host=signup.example&amp;sentry=true&amp;sitekey=10000000-ffff-ffff-ffff-000000000001&amp;theme=light&amp;size=normal"
+          tabindex="0"
+          frameborder="0"
+          scrolling="no"
+          title="Widget containing checkbox for hCaptcha security challenge"
+          style="width: 303px; height: 78px"
+        ></iframe
+        ><textarea
+          id="h-captcha-response-0x1y2z"
+          name="h-captcha-response"
+          style="display: none"
+        ></textarea>
+      </div>
+      <button>Create</button>
+    </form>
+  </body>
+</html>

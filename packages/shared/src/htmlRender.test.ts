@@ -21,6 +21,21 @@ describe("injectHtmlRenderBootstrap", () => {
     expect(injected).toContain('name="viewport"');
   });
 
+  it("lets an offline page load only data images and its own inline code", () => {
+    // Markup before the page's own <head> starts the body, where a <meta> policy is ignored.
+    const early = injectHtmlRenderBootstrap(
+      '<img src="https://example.test/?d=x"><head></head><p>x</p>',
+      true,
+    );
+    expect(early.indexOf("Content-Security-Policy")).toBeLessThan(early.indexOf("<img"));
+    const html = "<!doctype html><html><head><title>t</title></head><body>x</body></html>";
+    const offline = injectHtmlRenderBootstrap(html, true);
+    expect(offline).toMatch(
+      /^<!doctype html><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:/,
+    );
+    expect(injectHtmlRenderBootstrap(html)).not.toContain("Content-Security-Policy");
+  });
+
   it.each([
     "<html><head data-condition='x > 0'>",
     '<html><head data-condition="x > 0" data-label=\'it "works"\'>',

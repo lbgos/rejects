@@ -199,6 +199,39 @@ describe("AttachmentUpload", () => {
     }).pipe(Effect.provide(layerTest)),
   );
 
+  it.effect("assembles a chunked upload and replaces a failed chunk on retry", () =>
+    Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      const issued = yield* issueAttachmentUploadUrl({
+        type: "file",
+        name: "clip.mov",
+        mimeType: "video/quicktime",
+        sizeBytes: 6,
+      });
+      const claims = yield* validateAttachmentUploadToken(
+        issued.relativeUrl.slice(`${ATTACHMENT_UPLOAD_ROUTE_PREFIX}/`.length),
+      );
+      if (!claims) throw new Error("Expected valid upload claims.");
+      const finalPath = NodePath.join(config.attachmentsDir, `${issued.attachmentId}.mov`);
+      const chunk = (offset: number, ...bytes: number[]) =>
+        storeAttachmentUpload(claims, Stream.make(new Uint8Array(bytes)), { offset, length: 2 });
+
+      expect(yield* chunk(0, 1, 2)).toEqual({ ok: true });
+      expect(yield* chunk(4, 5, 6)).toMatchObject({ ok: false, status: 409 });
+      expect(yield* chunk(2, 9)).toMatchObject({ ok: false, status: 400 });
+      expect(NodeFS.existsSync(finalPath)).toBe(false);
+      expect(yield* chunk(2, 3, 4)).toEqual({ ok: true });
+      expect(yield* chunk(4, 5, 6)).toEqual({ ok: true });
+      expect(NodeFS.readFileSync(finalPath)).toEqual(Buffer.from([1, 2, 3, 4, 5, 6]));
+      expect(
+        NodeFS.readdirSync(config.attachmentsDir).filter((entry) => entry.endsWith(".part")),
+      ).toEqual([]);
+      expect(
+        yield* storeAttachmentUpload(claims, new Uint8Array(4), { offset: 4, length: 4 }),
+      ).toMatchObject({ ok: false, status: 400 });
+    }).pipe(Effect.provide(layerTest)),
+  );
+
   it.effect("streams generic files to a path with their original extension", () =>
     Effect.gen(function* () {
       const config = yield* ServerConfig.ServerConfig;
@@ -325,8 +358,12 @@ describe("AttachmentUpload", () => {
       const uuid = "00000000-0000-4000-8000-0000000000dd";
       const pendingPath = NodePath.join(config.attachmentsDir, `pending-${uuid}.png`);
       const claimedPath = NodePath.join(config.attachmentsDir, `thread-1-${uuid}.png`);
+      const abandonedPart = NodePath.join(config.attachmentsDir, `pending-${uuid}-mov.mov.part`);
       NodeFS.writeFileSync(pendingPath, Buffer.from("pixels"));
       NodeFS.writeFileSync(claimedPath, Buffer.from("pixels"));
+      NodeFS.writeFileSync(abandonedPart, Buffer.from("half a clip"));
+      yield* deletePendingAttachment(`pending-${uuid}-mov`);
+      expect(NodeFS.existsSync(abandonedPart)).toBe(false);
 
       yield* deletePendingAttachment(`pending-${uuid}`);
       yield* deletePendingAttachment(`pending-${uuid}`);

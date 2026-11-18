@@ -1,3 +1,14 @@
+import { BotChromeContext, BotReactionsContext, BotThreadContext } from "../../bots/context";
+import { timeSeparatorLabels, visibleBotEntries } from "../../bots/presentation";
+import { BotTurnOffers } from "../../bots/BotTurnOffers";
+import { BotUiTipsPublisher } from "../../bots/UiSpotlight";
+import { BotTypingBubble } from "../../bots/BotTypingBubble";
+import {
+  botAwaitsAnswer,
+  botReactions,
+  botStatusLine,
+  botToolActivity,
+} from "../../bots/presentation";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import type { ToolCallDiffTarget } from "../../diffPanelStore";
@@ -158,10 +169,17 @@ function timelineListStateFor(identity: string): {
   };
 }
 
+/** A row created in the last moment: the virtualized list remounts older rows while scrolling. */
+const isArrivingRow = (row: MessagesTimelineRow) =>
+  "createdAt" in row &&
+  typeof row.createdAt === "string" &&
+  Date.now() - Date.parse(row.createdAt) < 1500;
+
 const TIMELINE_LIST_HEADER = <div className="h-3 sm:h-4" />;
 const TIMELINE_LIST_FADE_HEADER = (
   <div className="h-[var(--workspace-titlebar-scroll-fade-height)]" />
 );
+const TIMELINE_LIST_BOT_HEADER = <div className="h-[calc(var(--bot-chat-header-height)+2rem)]" />;
 function TimelineListFooter({
   composerInset,
   onGrow,
@@ -292,7 +310,7 @@ interface MessagesTimelineProps {
   availableRevertTurnCounts?: ReadonlySet<number> | undefined;
   onRevertToTurnCount: (targetTurnCount: number, messageId: MessageId) => void;
   onUseArtifactTemplate?: (template: CodexArtifactTemplate) => void;
-  onSendAppMessage?: (text: string) => Promise<void>;
+  onSendAppMessage?: (text: string, messageId?: MessageId) => Promise<void>;
   onRunShellCommand?: (command: string) => void;
   isRevertingCheckpoint: boolean;
   onImageExpand: (preview: ExpandedImagePreview) => void;
@@ -366,7 +384,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   awaitingUser = null,
   awaitingRequestId = null,
   listRef,
-  timelineEntries,
+  timelineEntries: allTimelineEntries,
   findOpen = false,
   findExpanded = false,
   findQuery = "",
@@ -417,8 +435,20 @@ const ConversationTimeline = memo(function ConversationTimeline({
   hideEmptyPlaceholder = false,
   emptyPlaceholderInset,
   topFadeEnabled = false,
-  historyControls,
+  historyControls: loadedHistoryControls,
 }: MessagesTimelineProps) {
+  const collapseScheduledWakes = useContext(BotThreadContext);
+  const botChrome = useContext(BotChromeContext);
+  const botEmptyState = botChrome?.emptyState;
+  const timelineEntries = botChrome
+    ? visibleBotEntries(allTimelineEntries, botChrome.historyFrom)
+    : allTimelineEntries;
+  const historyFrom = botChrome?.historyFrom;
+  // Turns before a bot chat's clear stay hidden, so once they load there is nothing earlier to show.
+  const historyControls =
+    historyFrom !== undefined && allTimelineEntries.some((entry) => entry.createdAt < historyFrom)
+      ? undefined
+      : loadedHistoryControls;
   const listIdentityKey = displayThreadKey ?? routeThreadKey;
   // Snapshot restore positions on identity changes; ongoing scroll writes must not move them.
   // Find open at the opening is part of the snapshot: opening find later
@@ -736,6 +766,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   );
   const rawRows = useIncrementalTimelineRows(`${listIdentityKey}\0${workspaceRoot ?? ""}`, {
     timelineEntries,
+    collapseScheduledWakes,
     pendingApprovalRequestIds,
     latestRun,
     runningRunId,
@@ -754,6 +785,21 @@ const ConversationTimeline = memo(function ConversationTimeline({
     revealedMessageId,
   });
   const rows = useStableRows(rawRows, listIdentityKey);
+  // Labels pass through a string key, so the compiler rebuilds the map only when a label
+  // changes and streaming output does not re-render every row.
+  const botTimeLabelKey = collapseScheduledWakes ? botTimeLabelsKey(rows) : null;
+  const botTimeLabels = botTimeLabelKey === null ? null : labelsFromKey(botTimeLabelKey);
+  const botRunKey = botTimeLabels === null ? null : botRunContinuesKey(rows, botTimeLabels);
+  const botRunContinues = botRunKey === null ? null : new Set(botRunKey.split("\n"));
+  const botLive =
+    botChrome && rows.some((row) => row.kind === "working") ? botLiveWorkRows(rows) : null;
+  // Through a string key, like the labels: streaming output keeps the same map.
+  const botReactionKey = botChrome
+    ? [...botReactions(allTimelineEntries)].map(([id, emoji]) => `${id}\t${emoji}`).join("\n")
+    : "";
+  const botReacted = labelsFromKey(botReactionKey);
+  const botLiveKey = botLive?.key ?? null;
+  const botLiveWork = botLiveKey === null ? null : new Set(botLiveKey.split("\n"));
   const matchedApprovalRequestIds = new Set<string>();
   for (const row of pendingApprovalRequestIds.size > 0 ? rows : []) {
     const entries =
@@ -1128,7 +1174,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     renderHtmlRender,
     turnItemSource,
     workflowOpening,
-    onForkFromRun,
+    onForkFromRun: collapseScheduledWakes ? undefined : onForkFromRun,
     onToggleTurnFold,
     onToggleAttemptFold,
     onToggleWorkGroup,
@@ -1153,6 +1199,9 @@ const ConversationTimeline = memo(function ConversationTimeline({
     onWorktreeSetupWorkLocally: onWorktreeSetupWorkLocally ?? null,
     onOpenWorktreeSetupTerminal: onOpenWorktreeSetupTerminal ?? null,
     workGroupViewState,
+    botTimeLabels,
+    botRunContinues,
+    botLiveWork,
   };
   const compactionAwaitingRow =
     isCompacting &&
@@ -1197,7 +1246,9 @@ const ConversationTimeline = memo(function ConversationTimeline({
   );
   const listHeaderLeadingContent =
     parentThreadLink === null ? (
-      topFadeEnabled ? (
+      botChrome ? (
+        TIMELINE_LIST_BOT_HEADER
+      ) : topFadeEnabled ? (
         TIMELINE_LIST_FADE_HEADER
       ) : (
         TIMELINE_LIST_HEADER
@@ -1347,6 +1398,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     <TimelineRowCtx value={sharedState}>
       <div
         className="messages-timeline-row-frame"
+        data-row-enter={(botChrome && isArrivingRow(item)) || undefined}
         onPlayCapture={(event) => onAudioPlaybackChange(item.id, event)}
         onPauseCapture={(event) => onAudioPlaybackChange(item.id, event)}
         onEndedCapture={(event) => onAudioPlaybackChange(item.id, event)}
@@ -1364,11 +1416,44 @@ const ConversationTimeline = memo(function ConversationTimeline({
     </TimelineRowCtx>
   );
   const listExtraData = { identity: listIdentityKey, rowCount: rows.length, sharedState };
+  const botWorkingRow = botChrome ? rows.find((row) => row.kind === "working") : undefined;
   const timelineListFooter = (
     <TimelineListFooter
       composerInset={anchoredEndSpace ? 0 : contentInsetEndAdjustment}
       onGrow={onFooterGrow}
     >
+      {botChrome && citationThreadRef ? (
+        <BotUiTipsPublisher
+          environmentId={citationThreadRef.environmentId}
+          threadId={citationThreadRef.threadId}
+          entries={timelineEntries}
+          working={botWorkingRow !== undefined}
+        />
+      ) : null}
+      {botChrome && !botWorkingRow && citationThreadRef ? (
+        <div className="chat-content-lane">
+          <BotTurnOffers
+            environmentId={citationThreadRef.environmentId}
+            entries={timelineEntries}
+            onSend={onSendAppMessage}
+          />
+        </div>
+      ) : null}
+      {botChrome?.timelineEnd ? (
+        <div className="chat-content-lane">{botChrome.timelineEnd}</div>
+      ) : null}
+      {botWorkingRow && botAwaitsAnswer(rows) ? (
+        <div className="chat-content-lane">
+          {/* Its working timer reads the server clock offset from the row context. */}
+          <TimelineRowCtx value={sharedState}>
+            <BotTypingBubble
+              startedAt={botWorkingRow.createdAt ?? null}
+              status={botStatusLine(timelineEntries)}
+              activity={botLive?.activity ?? null}
+            />
+          </TimelineRowCtx>
+        </div>
+      ) : null}
       {footer}
       {unmatchedPendingApprovals.length > 0 ? (
         <TimelineRowCtx value={sharedState}>
@@ -1404,17 +1489,24 @@ const ConversationTimeline = memo(function ConversationTimeline({
       <>
         {activityAnnouncer}
         <div
-          className="flex h-full items-center justify-center ps-(--chat-lane-inset-start) pe-(--chat-lane-inset-end)"
+          className={cn(
+            "flex h-full items-center justify-center ps-(--chat-lane-inset-start) pe-(--chat-lane-inset-end)",
+            botChrome && "pt-(--bot-chat-header-height)",
+          )}
           style={{ paddingBottom: emptyPlaceholderInset }}
         >
-          <p className="text-sm text-muted-foreground">Send a message to start the conversation.</p>
+          {botEmptyState ?? (
+            <p className="text-sm text-muted-foreground">
+              Send a message to start the conversation.
+            </p>
+          )}
         </div>
       </>
     );
   }
 
   return (
-    <>
+    <BotReactionsContext value={botReacted}>
       {activityAnnouncer}
       <MarkdownFindContext value={findActive}>
         <TimelineRowActivityCtx value={activityState}>
@@ -1499,7 +1591,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
           </TooltipScrollDismissArea>
         </TimelineRowActivityCtx>
       </MarkdownFindContext>
-    </>
+    </BotReactionsContext>
   );
 });
 
@@ -1600,6 +1692,8 @@ function getItemType(item: MessagesTimelineRow) {
 }
 
 const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: TimelineRow }) {
+  const { botTimeLabels, botRunContinues, botLiveWork } = use(TimelineRowCtx);
+  const botTimeLabel = botTimeLabels?.get(row.id);
   const isExpandedToolGroup = row.kind === "work" && row.isExpandedToolGroup;
   const isSubagentGroup = row.kind === "event" && row.projectedItem.item.type === "subagent";
   const isWorkLogRow =
@@ -1643,7 +1737,21 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
         row.kind === "message" || row.kind === "assistant-meta" ? row.message.id : undefined
       }
       data-message-role={row.kind === "message" ? row.message.role : undefined}
+      data-run-continues={botRunContinues?.has(row.id) ? "true" : undefined}
+      data-live-work={botLiveWork?.has(row.id) ? "true" : undefined}
     >
+      {botTimeLabel ? (
+        <div
+          data-bot-time-label
+          data-holiday-stars
+          className="pt-4 pb-2.5 text-center text-xs leading-4 text-muted-foreground tabular-nums"
+        >
+          <span className="font-semibold">
+            {botTimeLabel.slice(0, botTimeLabel.lastIndexOf(" "))}
+          </span>
+          {botTimeLabel.slice(botTimeLabel.lastIndexOf(" "))}
+        </div>
+      ) : null}
       {isWorkLogRow ? (
         <WorkLogBlock
           continues={row.continuesWorkLog}
@@ -1687,6 +1795,69 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
     </div>
   );
 });
+
+/**
+ * Time labels for a bot chat, encoded one `<row id>\t<label>` per line. A group's label sits on
+ * its first row, which for a wake is the run's "Worked for" row rather than the reply.
+ */
+function botTimeLabelsKey(rows: ReadonlyArray<MessagesTimelineRow>): string {
+  return [
+    ...timeSeparatorLabels(
+      rows.flatMap((row) =>
+        row.kind === "message" || row.kind === "work-toggle" || row.kind === "turn-fold"
+          ? [{ id: row.id, at: Date.parse(row.createdAt) }]
+          : [],
+      ),
+    ),
+  ]
+    .map(([id, label]) => `${id}\t${label}`)
+    .join("\n");
+}
+
+function botLiveWorkRows(rows: ReadonlyArray<MessagesTimelineRow>) {
+  const start = rows.findLastIndex((row) => row.kind === "message" && row.message.role === "user");
+  const live = rows
+    .slice(start + 1)
+    .filter((row) => row.kind === "work" || row.kind === "work-live" || row.kind === "work-toggle");
+  const entries = live.flatMap((row) =>
+    row.kind === "work-live" ? [row.entry] : row.kind === "work" ? row.groupedEntries : [],
+  );
+  const entry = entries.at(-1);
+  return {
+    key: live.length > 0 ? live.map((row) => row.id).join("\n") : null,
+    activity: entry ? botToolActivity(entry) : null,
+  };
+}
+
+function botRunContinuesKey(
+  rows: ReadonlyArray<MessagesTimelineRow>,
+  labels: ReadonlyMap<string, string>,
+): string {
+  return rows
+    .filter((row, i) => {
+      const next = rows[i + 1];
+      return (
+        row.kind === "message" &&
+        next?.kind === "message" &&
+        next.message.role === row.message.role &&
+        !labels.has(next.id)
+      );
+    })
+    .map((row) => row.id)
+    .join("\n");
+}
+
+function labelsFromKey(key: string): ReadonlyMap<string, string> {
+  return new Map(
+    key
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => {
+        const tab = line.indexOf("\t");
+        return [line.slice(0, tab), line.slice(tab + 1)] as const;
+      }),
+  );
+}
 
 function WorktreeSetupTimelineRow({
   row,
@@ -1824,7 +1995,7 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
   );
 
   return (
-    <div className="group/timeline-row border-b border-border/60 pb-2 pe-0.5 pt-1">
+    <div data-turn-fold className="group/timeline-row border-b border-border/60 pb-2 pe-0.5 pt-1">
       <div className="relative flex items-center gap-1">
         <button
           type="button"
@@ -1836,6 +2007,9 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
         >
           <span>
             {row.label}
+            {row.toolCount > 0
+              ? ` · ${row.toolCount} ${row.toolCount === 1 ? "tool" : "tools"}`
+              : ""}
             {error ? ` · ${error}` : ""}
           </span>
           {row.expanded ? (

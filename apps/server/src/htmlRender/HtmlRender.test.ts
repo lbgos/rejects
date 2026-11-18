@@ -545,6 +545,26 @@ fs.createReadStream(null, { fd: 3 }).on("end", quit).on("data", (chunk) => {
     }),
   );
 
+  it.live("captures a preview at the requested device scale", (ctx) =>
+    Effect.gen(function* () {
+      const executable = (yield* HostProcess.Environment)[TEST_BROWSER_ENV];
+      if (!executable) return ctx.skip(`Set ${TEST_BROWSER_ENV} to run this test.`);
+      yield* Effect.gen(function* () {
+        const htmlRender = yield* HtmlRender.HtmlRender;
+        const widthAndHeight = (scale?: number) =>
+          htmlRender.preview({ html: "<p>x</p>", width: 400, scale }).pipe(
+            Effect.map(({ png }) => {
+              const header = Buffer.from(png.slice(0, 40), "base64");
+              return [header.readUInt32BE(16), header.readUInt32BE(20)] as const;
+            }),
+          );
+        const [width, height] = yield* widthAndHeight();
+        expect(width).toBe(400);
+        expect(yield* widthAndHeight(2)).toEqual([800, height * 2]);
+      }).pipe(Effect.provide(layerHtmlRender(executable)));
+    }),
+  );
+
   it.live("keeps every local file but the page itself out of the browser", (ctx) =>
     Effect.gen(function* () {
       const executable = (yield* HostProcess.Environment)[TEST_BROWSER_ENV];

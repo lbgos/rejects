@@ -56,14 +56,6 @@ export interface BrowserSurfaceLease {
   readonly release: () => void;
 }
 
-export function resolveBrowserSurfacePanelRect(
-  byTabId: Readonly<Record<string, BrowserSurfacePresentation>>,
-  tabId: string,
-): BrowserSurfaceRect | null {
-  const current = byTabId[tabId];
-  return current?.rect ?? null;
-}
-
 const rectEquals = (left: BrowserSurfaceRect | null, right: BrowserSurfaceRect): boolean =>
   left !== null &&
   left.x === right.x &&

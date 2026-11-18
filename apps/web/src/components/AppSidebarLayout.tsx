@@ -2,12 +2,21 @@ import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
 import {
   useEffect,
+  useLayoutEffect,
   useState,
   useSyncExternalStore,
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { useLocation, useRouter, type AnyRouter } from "@tanstack/react-router";
+import {
+  Link,
+  useLocation,
+  useRouter,
+  useRouterState,
+  type AnyRouter,
+} from "@tanstack/react-router";
+import { ChevronLeftIcon } from "lucide-react";
+import { Button } from "./ui/button";
 
 import { moveWorkspaceFocus, workspaceAreaProps } from "../lib/workspaceFocus";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
@@ -38,8 +47,14 @@ import {
   usePanelNavigationSuppression,
 } from "../panelAnimations";
 import { BackgroundThreadAnnouncer } from "./BackgroundThreadAnnouncer";
-import { HistorySwipeNavigation } from "./HistorySwipeNavigation";
 import ThreadSidebar from "./Sidebar";
+import { BotOverlays } from "../bots/BotOverlays";
+import { BotTabHost } from "../bots/BotTabHost";
+import { UiSpotlight } from "../bots/UiSpotlight";
+import { BotsSidebar } from "../bots/BotsSidebar";
+import { useBotsMode } from "../bots/mode";
+import { useBotUi } from "../bots/ui";
+import "../bots/bots.css";
 import { SidebarBrandWidthProbe } from "./sidebar/SidebarChrome";
 import { isAppModalPage } from "./sidebar/mainAppLocation";
 import type { SidebarRouteReveal } from "./sidebar/routeReveal";
@@ -316,10 +331,23 @@ function registerAppShellCommands(router: AnyRouter, shellElement: Element): () 
 function SidebarControl({ showSidebar }: { readonly showSidebar: boolean }) {
   const router = useRouter();
   const usagePageOpen = useLocation({ select: (location) => location.pathname === "/usage" });
+  // The rendered route, as useBotsMode reads it, so a view transition's snapshot of the old
+  // screen never gains the new screen's back button.
+  const shown = useRouterState({
+    select: ({ resolvedLocation, location }) => {
+      const { pathname, searchStr } = resolvedLocation ?? location;
+      if (pathname === "/settings") return "settings";
+      if (pathname === "/connections") return searchStr === "" ? "you" : "you-detail";
+      return null;
+    },
+  });
+  const connectionsDetail = shown === "you-detail";
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
-  const { toggleSidebar } = useSidebar();
+  const { toggleSidebar, isMobile } = useSidebar();
   const mobileSidebarSheetMounted = useMobileSidebarSheetMounted();
   const isSidebarVisible = useSidebarVisibility();
+  const botsMode = useBotsMode();
+  const botPageOpen = useBotUi((ui) => ui.panel !== null || ui.dialog !== null);
   const environmentIdentificationMode = useEnvironmentIdentificationMode();
   const stageBackdropVariant = useSidebarStageBackdropVariant(environmentIdentificationMode);
   const shortcutLabel = shortcutLabelForCommand(keybindings, "sidebar.toggle", {
@@ -380,11 +408,34 @@ function SidebarControl({ showSidebar }: { readonly showSidebar: boolean }) {
       ref={appShellCommandsRef}
       className={cn(
         "pointer-events-none fixed left-[var(--workspace-controls-left)] top-[var(--workspace-controls-top)] z-50 ml-px flex h-[var(--workspace-topbar-height)] items-center",
-        mobileSidebarSheetMounted && "hidden",
+        (mobileSidebarSheetMounted || (isMobile && botPageOpen)) && "hidden",
       )}
       data-sidebar-control=""
     >
-      {showSidebar ? (
+      {/* On a phone the tab screens (Bots, You, Settings) have no back; a bot chat or a detail page does. */}
+      {isMobile && botsMode.active ? (
+        botsMode.home || shown === "you" || shown === "settings" ? null : (
+          <Button
+            variant="ghost"
+            size="icon-pill"
+            className="pointer-events-auto"
+            aria-label={connectionsDetail ? "Back to connections" : "Back to bots"}
+            render={
+              connectionsDetail ? (
+                <Link to="/connections" viewTransition={{ types: ["bots-pop"] }} />
+              ) : (
+                <Link
+                  to="/bots"
+                  search={{ thread: undefined }}
+                  viewTransition={{ types: ["bots-pop"] }}
+                />
+              )
+            }
+          >
+            <ChevronLeftIcon />
+          </Button>
+        )
+      ) : showSidebar ? (
         <Tooltip>
           <TooltipTrigger
             render={
@@ -414,6 +465,15 @@ export function AppSidebarLayout({
   children: ReactNode;
   showSidebar?: boolean;
 }) {
+  const botsMode = useBotsMode();
+  // bots.css keys off this attribute, not `:root:has()`: Chromium restyles the whole document for a
+  // root `:has()` on every DOM change, such as a streamed paragraph or the working timer's tick.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- mirrors bots mode onto <html>, outside React's tree, before paint
+  useLayoutEffect(() => {
+    if (!botsMode.active) return;
+    document.documentElement.setAttribute("data-bots-app", "");
+    return () => document.documentElement.removeAttribute("data-bots-app");
+  }, [botsMode.active]);
   const sidebarArea = workspaceAreaProps("sidebar", 0, "Threads");
   const [sidebarRouteReveal] = useState<SidebarRouteReveal>(() => ({
     observedKey: null,
@@ -458,20 +518,32 @@ export function AppSidebarLayout({
     <PanelAnimationSuppressionProvider value={panelAnimationsSuppressed}>
       <SidebarProvider
         className="h-dvh! min-h-0!"
-        data-panel-animations={routePanelAnimationsActive ? "true" : "false"}
+        data-panel-animations={routePanelAnimationsActive && !botsMode.active ? "true" : "false"}
+        data-bots-mode={botsMode.active ? "true" : undefined}
+        defaultOpen
         storageKey="chat_thread_sidebar_open"
         style={sidebarProviderStyle}
       >
         {showSidebar ? (
           <>
             <SidebarBrandWidthProbe isElectron={isElectron} onWidthChange={setBrandWidth} />
+            {botsMode.active ? (
+              // iOS 26+ draws a soft blur over the web view's top edge unless a full-width opaque
+              // fixed element sits there; with one it fills the edge with that colour (WebKit 301756).
+              // It stays hit-testable so the edge finds it, not the translucent chat header under it.
+              <div
+                aria-hidden
+                data-top-edge
+                className="fixed inset-x-0 top-0 z-50 h-1.5 bg-background md:hidden"
+              />
+            ) : null}
             <Sidebar
               side="left"
               collapsible="offcanvas"
               data-app-sidebar=""
               {...sidebarArea}
               role="navigation"
-              aria-label="Threads"
+              aria-label={botsMode.active ? "Bots" : "Threads"}
               resizable={{
                 maxWidth: sidebarMaximumWidth,
                 minWidth: sidebarMinimumWidth,
@@ -483,15 +555,21 @@ export function AppSidebarLayout({
               }}
               style={windowControlsInsetStyle}
             >
-              <ThreadSidebar routeReveal={sidebarRouteReveal} />
+              {botsMode.active ? (
+                <BotsSidebar />
+              ) : (
+                <ThreadSidebar routeReveal={sidebarRouteReveal} />
+              )}
               <SidebarRail onDoubleClick={resetSidebarWidth} />
             </Sidebar>
           </>
         ) : null}
         {children}
         <BackgroundThreadAnnouncer />
+        {botsMode.active ? <BotOverlays /> : null}
+        <BotTabHost />
+        <UiSpotlight />
         <SidebarControl showSidebar={showSidebar} />
-        {isElectron ? <HistorySwipeNavigation /> : null}
       </SidebarProvider>
     </PanelAnimationSuppressionProvider>
   );

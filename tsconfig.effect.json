@@ -113,6 +113,11 @@
             }
           },
           {
+            // Fork-owned bots predate the rule; convert with their next rewrite.
+            "include": ["**/src/bots/*.ts", "**/src/bots/**/*.ts"],
+            "options": { "diagnosticSeverity": { "effectFnOpportunity": "off" } }
+          },
+          {
             "include": [
               "**/*.spec.ts",
               "**/*.spec.tsx",

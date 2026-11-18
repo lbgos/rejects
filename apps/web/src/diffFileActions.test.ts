@@ -15,26 +15,6 @@ describe("openDiffFilePrimaryAction", () => {
     useRightPanelStore.setState({ byThreadKey: {}, threadPanelVisibilityByThreadKey: {} });
   });
 
-  it("opens repository-relative diff files from a nested project", () => {
-    const openInEditor = vi.fn();
-
-    openDiffFilePrimaryAction({
-      threadRef: THREAD_REF,
-      filePath: "frontend/Dockerfile",
-      activeCwd: "/repo/frontend",
-      repositoryRoot: "/repo",
-      openInEditor,
-    });
-
-    expect(
-      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, THREAD_REF),
-    ).toMatchObject({
-      isOpen: true,
-      activeSurfaceId: "file:Dockerfile",
-    });
-    expect(openInEditor).not.toHaveBeenCalled();
-  });
-
   it("preserves repository-relative paths in a separate worktree", () => {
     expect(
       resolveDiffPathForWorkspace({

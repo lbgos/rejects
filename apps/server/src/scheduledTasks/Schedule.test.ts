@@ -1,9 +1,25 @@
 import { describe, expect, it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
 
-import { isSameSchedule, nextScheduledRunAt } from "./Schedule.ts";
+import { isMissedFixedTimeRun, isSameSchedule, nextScheduledRunAt } from "./Schedule.ts";
+
+const kyiv = DateTime.zoneMakeNamedUnsafe("Europe/Kyiv");
 
 describe("scheduled task schedule calculation", () => {
+  it("runs one-time reminders only at their timezone-qualified instant", () => {
+    const schedule = { type: "once", runAt: "2026-10-28T18:00:00+02:00" } as const;
+    const due = DateTime.makeUnsafe("2026-10-28T16:00:00Z");
+    expect(
+      DateTime.toEpochMillis(
+        nextScheduledRunAt(schedule, DateTime.subtract(due, { seconds: 1 }), kyiv)!,
+      ),
+    ).toBe(DateTime.toEpochMillis(due));
+    expect(nextScheduledRunAt(schedule, due, kyiv)).toBeNull();
+    expect(nextScheduledRunAt(schedule, DateTime.add(due, { days: 1 }), kyiv)).toBeNull();
+    expect(isSameSchedule(schedule, { type: "once", runAt: "2026-10-28T16:00:00Z" })).toBe(true);
+    expect(isSameSchedule(schedule, { type: "fixed_time", timeOfDay: "18:00" })).toBe(false);
+    expect(isMissedFixedTimeRun(schedule, due, DateTime.add(due, { days: 1 }))).toBe(false);
+  });
   it("skips to the next matching fixed-time weekday", () => {
     const next = nextScheduledRunAt(
       { type: "fixed_time", timeOfDay: "09:00", weekdays: [1, 2, 3, 4, 5] },
@@ -19,11 +35,27 @@ describe("scheduled task schedule calculation", () => {
         },
         { timeZone: "America/Los_Angeles", adjustForTimeZone: true },
       ),
+      DateTime.zoneMakeNamedUnsafe("America/Los_Angeles"),
     );
     const parts = next ? DateTime.toParts(next) : null;
     expect(parts?.weekDay).toBe(1);
     expect(parts?.hour).toBe(9);
     expect(parts?.minute).toBe(0);
+  });
+
+  it("keeps fixed times in the given zone when the clock and host are UTC", () => {
+    // Tuesday 10:15 Kyiv ran at 08:15:04Z; the next run is a week later, not 10:15Z that day.
+    const schedule = { type: "fixed_time", timeOfDay: "10:15", weekdays: [2] } as const;
+    const ran = DateTime.makeUnsafe("2026-11-17T08:15:04Z");
+    expect(DateTime.formatIso(nextScheduledRunAt(schedule, ran, kyiv)!)).toBe(
+      "2026-11-24T08:15:00.000Z",
+    );
+    const daily = { type: "fixed_time", timeOfDay: "08:30" } as const;
+    expect(
+      DateTime.formatIso(
+        nextScheduledRunAt(daily, DateTime.makeUnsafe("2026-11-18T06:30:04Z"), kyiv)!,
+      ),
+    ).toBe("2026-11-19T06:30:00.000Z");
   });
 
   it("compares schedules structurally", () => {

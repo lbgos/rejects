@@ -1,20 +1,10 @@
 import { useAtomValue } from "@effect/atom-react";
-import { AVAILABLE_CONNECTION_STATE } from "@t3tools/client-runtime/connection";
-import {
-  nudgeReconnectDuringUpdateRestart,
-  serverUpdateStateAtom,
-} from "@t3tools/client-runtime/state/server";
 import { EnvironmentId, type ServerConfig } from "@t3tools/contracts";
-import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import * as Stream from "effect/Stream";
-import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
+import { Atom } from "effect/reactivity";
 
 import { APP_VERSION } from "~/branding";
-import { environmentCatalog } from "~/connection/catalog";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
-import { desktopUpdateStateAtom } from "~/state/desktopUpdate";
 import { serverEnvironment } from "~/state/server";
 import { resolveVersionMismatch } from "~/versionSkew";
 import type { ServerUpdateOutcome, ServerUpdateTarget } from "../ServerUpdateAction";
@@ -184,9 +174,7 @@ export function postponeUpdateRestart(): void {
 }
 
 const SAVED_RESULT_KEY = "t3code:update-everything-result:v1";
-const SAVED_RESULT_MAX_AGE_MS = 10 * 60 * 1000;
 // Covers a background service's 30-minute trial start, like the server update itself.
-const HANDOFF_TIMEOUT_MS = 32 * 60 * 1000;
 
 const HandedOffServer = Schema.Struct({
   environmentId: EnvironmentId,
@@ -204,7 +192,6 @@ const SavedResult = Schema.Struct({
   failures: Schema.Array(Schema.String),
   handedOff: Schema.optional(Schema.Array(HandedOffServer)),
 });
-const decodeSavedResult = Schema.decodeUnknownOption(Schema.fromJsonString(SavedResult));
 
 export function saveUpdateEverythingResult(result: UpdateEverythingResult): void {
   const run = appAtomRegistry.get(updateEverythingRunAtom);
@@ -246,22 +233,6 @@ export function clearSavedUpdateEverythingResult(): void {
   } catch {}
 }
 
-function takeSavedUpdateEverythingResult(): typeof SavedResult.Type | null {
-  try {
-    const raw = window.localStorage.getItem(SAVED_RESULT_KEY);
-    if (raw === null) return null;
-    window.localStorage.removeItem(SAVED_RESULT_KEY);
-    return Option.getOrNull(
-      Option.filter(
-        decodeSavedResult(raw),
-        (saved) => Date.now() - saved.savedAt < SAVED_RESULT_MAX_AGE_MS,
-      ),
-    );
-  } catch {
-    return null;
-  }
-}
-
 export function showUpdateEverythingResult(result: UpdateEverythingResult): void {
   const view = getUpdateEverythingToastView(result, APP_VERSION);
   if (!view) return;
@@ -276,115 +247,4 @@ export function showUpdateEverythingResult(result: UpdateEverythingResult): void
   );
 }
 
-function followHandedOffServers(servers: ReadonlyArray<HandedOffServer>): void {
-  if (servers.length === 0) return;
-  setUpdateEverythingRun(() => ({
-    localVersion: null,
-    phase: "servers",
-    restartAt: null,
-    machines: servers.map((server) => ({
-      environmentId: server.environmentId,
-      label: server.label,
-      updatesProviders: false,
-      server: null,
-      handedOffVersion: server.targetVersion,
-      startedAt: server.startedAt,
-      result: null,
-      failure: null,
-      providerFailure: null,
-    })),
-  }));
-  let remaining = servers.length;
-  let updatedServers = 0;
-  const failures: string[] = [];
-  for (const server of servers) {
-    // Update state is in memory, so restore it or the relaunched app offers this server's update again.
-    const stateAtom = serverUpdateStateAtom(server.environmentId);
-    appAtomRegistry.set(stateAtom, {
-      status: "running",
-      stage: "resuming",
-      fromVersion:
-        appAtomRegistry.get(serverEnvironment.configValueAtom(server.environmentId))?.environment
-          .serverVersion ?? server.targetVersion,
-      targetVersion: server.targetVersion,
-    });
-    // Nothing observes the atom until the UI mounts, and the registry drops unobserved atoms.
-    const releaseState = appAtomRegistry.mount(stateAtom);
-    let settled = false;
-    const settle = (failure: string | null) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      stopReconnectNudge();
-      queueMicrotask(() => unsubscribe());
-      appAtomRegistry.set(stateAtom, { status: "idle" });
-      releaseState();
-      settleUpdateRunMachine(server.environmentId, failure);
-      if (failure === null) updatedServers += 1;
-      else failures.push(`${server.label}: ${failure}`);
-      remaining -= 1;
-      if (remaining === 0) {
-        showUpdateEverythingResult({
-          localVersion: null,
-          updatedServers,
-          updatedProviders: 0,
-          failures,
-          restarting: [],
-        });
-      }
-    };
-    const timer = setTimeout(
-      () => settle(`Not back after ${HANDOFF_TIMEOUT_MS / 60_000} minutes`),
-      server.startedAt + HANDOFF_TIMEOUT_MS - Date.now(),
-    );
-    const stopReconnectNudge = Effect.runCallback(
-      nudgeReconnectDuringUpdateRestart({
-        stateChanges: AtomRegistry.toStream(
-          appAtomRegistry,
-          environmentCatalog.stateAtom(server.environmentId),
-        ).pipe(
-          Stream.map((state) => AsyncResult.getOrElse(state, () => AVAILABLE_CONNECTION_STATE)),
-        ),
-        retryNow: Effect.promise(() =>
-          environmentCatalog.retryNow.run(appAtomRegistry, server.environmentId),
-        ).pipe(Effect.asVoid),
-      }),
-    );
-    const unsubscribe = appAtomRegistry.subscribe(
-      serverEnvironment.configValueAtom(server.environmentId),
-      (config) => {
-        if (runsVersion(config, server.targetVersion)) settle(null);
-      },
-      { immediate: true },
-    );
-  }
-}
-
 /** Reports, once per launch, how the update run that restarted the app ended. */
-export function startDesktopUpdateLaunchNotice(): () => void {
-  const saved = takeSavedUpdateEverythingResult();
-  if (saved) {
-    const handedOff = saved.handedOff ?? [];
-    showUpdateEverythingResult({ ...saved, restarting: handedOff.map((server) => server.label) });
-    followHandedOffServers(handedOff);
-  }
-
-  let notifiedNotAppliedVersion: string | null = null;
-  return appAtomRegistry.subscribe(
-    desktopUpdateStateAtom,
-    (result) => {
-      const notAppliedVersion =
-        AsyncResult.getOrElse(result, () => null)?.notAppliedVersion ?? null;
-      if (notAppliedVersion === null || notifiedNotAppliedVersion === notAppliedVersion) return;
-      notifiedNotAppliedVersion = notAppliedVersion;
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Update did not apply",
-          description: `T3 Code is still on ${APP_VERSION}. Install ${notAppliedVersion} again from the update button.`,
-        }),
-      );
-    },
-    { immediate: true },
-  );
-}

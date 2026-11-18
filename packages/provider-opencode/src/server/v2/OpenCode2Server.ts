@@ -1,12 +1,16 @@
 import { resolveProviderProbeTimeoutMs } from "@t3tools/provider-core/server/snapshotProbe";
-// One OpenCode 2 process serves all directories; share it across instance threads.
+// One OpenCode 2 process serves all directories; share it across an instance's threads in one agent sandbox.
 import type { OpenCodeClient } from "@opencode/client/effect";
+import { AgentSandbox, AgentScopeThreadId } from "@t3tools/shared/AgentScope";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
+import * as Option from "effect/Option";
 import * as P from "effect/Predicate";
 import * as Redacted from "effect/Redacted";
+import * as Scope from "effect/Scope";
+import * as Semaphore from "effect/Semaphore";
 import * as HttpClientError from "effect/http/HttpClientError";
 
 import * as OpenCodeRuntime from "../OpenCodeRuntime.ts";
@@ -155,19 +159,63 @@ export const make = Effect.fn("OpenCode2Server.make")(function* (input: {
     });
   }
 
-  const password = yield* generatePassword;
-  const owner = yield* OpenCodeServerOwner.make({
-    binaryPath: input.binaryPath,
-    directory: input.directory,
-    environment: serverEnvironment(input.environment, password),
-    verify: (url) => connectTo(url, password, false).pipe(Effect.flatMap(remember)),
+  // A server runs in the agent sandbox of the thread that starts it, and a bot's sandbox mounts
+  // only its own files, so each sandbox gets its own server; threads on the host share one.
+  const scope = yield* Effect.scope;
+  const runtime = yield* OpenCodeRuntime.OpenCodeRuntime;
+  const crypto = yield* SecureRandom.SecureRandom;
+  const lock = yield* Semaphore.make(1);
+  const owners = new Map<
+    string,
+    {
+      readonly owner: OpenCodeServerOwner.OpenCodeServerOwner["Service"];
+      readonly latest: () => OpenCode2Connection | undefined;
+    }
+  >();
+  const ownerFor = (sandbox: string) =>
+    lock.withPermit(
+      Effect.gen(function* () {
+        const known = owners.get(sandbox);
+        if (known !== undefined) return known;
+        const password = yield* generatePassword;
+        let verified: OpenCode2Connection | undefined;
+        const owner = yield* OpenCodeServerOwner.make({
+          binaryPath: input.binaryPath,
+          directory: input.directory,
+          environment: serverEnvironment(input.environment, password),
+          verify: (url) =>
+            connectTo(url, password, false).pipe(
+              Effect.map((connection) => {
+                verified = connection;
+                return connection.version;
+              }),
+            ),
+        }).pipe(
+          Effect.provideService(Scope.Scope, scope),
+          Effect.provideService(OpenCodeRuntime.OpenCodeRuntime, runtime),
+        );
+        const created = { owner, latest: () => verified };
+        owners.set(sandbox, created);
+        return created;
+      }).pipe(Effect.provideService(SecureRandom.SecureRandom, crypto)),
+    );
+  const ownerForThread = Effect.gen(function* () {
+    const threadId = yield* AgentScopeThreadId;
+    const sandbox =
+      threadId === undefined ? Option.none() : yield* (yield* AgentSandbox).identity(threadId);
+    return yield* ownerFor(Option.getOrElse(sandbox, () => ""));
   });
   return OpenCode2Server.of({
     withConnection: Effect.fn("OpenCode2Server.withConnection")(function (use) {
-      return owner.withServer((server) =>
-        latest?.url === server.url
-          ? use({ ...latest, processExit: server.exitCode.pipe(Effect.asVoid) })
-          : Effect.die(new Error("OpenCode 2 server was lent before verification.")),
+      return ownerForThread.pipe(
+        Effect.flatMap(({ owner, latest }) =>
+          owner.withServer((server) => {
+            const connection = latest();
+            return connection?.url === server.url
+              ? use({ ...connection, processExit: server.exitCode.pipe(Effect.asVoid) })
+              : Effect.die(new Error("OpenCode 2 server was lent before verification."));
+          }),
+        ),
       );
     }),
     forget: Effect.void,

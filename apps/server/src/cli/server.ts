@@ -13,6 +13,7 @@ import * as DatabaseMaintenance from "../persistence/DatabaseMaintenance.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as AutomaticPort from "./automaticPort.ts";
 import { type CliServerFlags, resolveServerConfig, sharedServerCommandFlags } from "./config.ts";
+import { CLI_COMMAND_NAME } from "@t3tools/shared/cliRelease";
 
 const encodeCommand = Schema.encodeEffect(Schema.fromJsonString(Schema.String));
 
@@ -66,7 +67,7 @@ export const runDefaultServerCommand = Effect.fn("server.runDefaultServerCommand
     if (!explicitPath && (!(yield* fs.exists(cwd)) || (yield* fs.stat(cwd)).type !== "Directory")) {
       return yield* new CliError.UserError({
         cause: cwd,
-        userMessage: `Unknown command ${yield* encodeCommand(cwd)}. Use "t3 --help" for commands or an explicit path such as "t3 ./my-project" for a new directory.`,
+        userMessage: `Unknown command ${yield* encodeCommand(cwd)}. Use "${CLI_COMMAND_NAME} --help" for commands or an explicit path such as "${CLI_COMMAND_NAME} ./my-project" for a new directory.`,
       });
     }
   }
@@ -74,7 +75,7 @@ export const runDefaultServerCommand = Effect.fn("server.runDefaultServerCommand
 });
 
 export const startCommand = Command.make("start", { ...sharedServerCommandFlags }).pipe(
-  Command.withDescription("Same as `t3`."),
+  Command.withDescription(`Same as \`${CLI_COMMAND_NAME}\`.`),
   Command.unlisted,
   Command.withHandler((flags) => runServerCommand(flags, { rejectRunningServer: true })),
 );
@@ -83,9 +84,9 @@ export const startCommand = Command.make("start", { ...sharedServerCommandFlags 
 const { autoBootstrapProjectFromCwd: _, ...serveCommandFlags } = sharedServerCommandFlags;
 
 export const serveCommand = Command.make("serve", serveCommandFlags).pipe(
-  Command.withShortDescription("Run T3 Code in this terminal, with no browser."),
+  Command.withShortDescription("Run rejects in this terminal, with no browser."),
   Command.withDescription(
-    "Run T3 Code in this terminal without opening a browser, and print pairing details. The background service runs this. To set up access from your other devices, run `t3 up`.",
+    `Run rejects in this terminal without opening a browser, and print pairing details. The background service runs this. To set up access from your other devices, run \`${CLI_COMMAND_NAME} up\`.`,
   ),
   Command.withHandler((flags) =>
     runServerCommand(

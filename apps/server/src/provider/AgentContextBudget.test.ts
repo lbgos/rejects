@@ -6,13 +6,24 @@ import { McpProviderSessions } from "@t3tools/provider-core/server/McpProviderSe
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { McpServer } from "effect/ai";
+import { FetchHttpClient } from "effect/http";
 
 import { AssetSigner } from "../assets/AssetSigner.ts";
 import { ServerSecretStore } from "../auth/ServerSecretStore.ts";
+import { BotComputer } from "../bots/BotComputer.ts";
+import { BotRecordings } from "../bots/BotRecordings.ts";
+import { BotSecrets } from "../secrets/BotSecrets.ts";
+import { BotAdmin } from "../bots/BotAdmin.ts";
+import { BotFeedback } from "../bots/BotFeedback.ts";
+import { BotFiles } from "../bots/BotFiles.ts";
+import { BotSetup } from "../bots/BotSetup.ts";
+import { BotStore } from "../bots/BotStore.ts";
 import { ServerConfig } from "../config.ts";
 import { DeviceService } from "../device/DeviceService.ts";
 import { ServerEnvironment } from "../environment/ServerEnvironment.ts";
 import { GitWorkflowService } from "../git/GitWorkflowService.ts";
+import { ProviderInstanceRegistry } from "./ProviderInstanceRegistry.ts";
+import { BotSandbox } from "../bots/BotSandbox.ts";
 import * as McpHttpServer from "../mcp/McpHttpServer.ts";
 import { PreviewAutomationBroker } from "../mcp/PreviewAutomationBroker.ts";
 import {
@@ -28,6 +39,12 @@ import { PeerForwarding } from "../peer/PeerForwarding.ts";
 import { PeerLinkRequests } from "../peer/PeerLinkRequests.ts";
 import { PeerLinks } from "../peer/PeerLinks.ts";
 import { RemoteDelegation } from "../peer/RemoteDelegation.ts";
+import { BotBridge } from "../bots/BotBridge.ts";
+import { Accounts } from "../connections/Accounts.ts";
+import { Connections } from "../connections/Connections.ts";
+import { MailAccounts } from "../connections/MailAccounts.ts";
+import { MusicLibrary } from "../music/MusicLibrary.ts";
+import { LabShell } from "../lab/LabShell.ts";
 import { PreviewManager } from "../preview/Manager.ts";
 import { PreviewBrowser } from "../preview/PreviewBrowser.ts";
 import { ManagedProjectFolders } from "../project/ManagedProjectFolders.ts";
@@ -44,12 +61,18 @@ import { GitVcsDriver } from "../vcs/GitVcsDriver.ts";
 import { VcsStatusBroadcaster } from "../vcs/VcsStatusBroadcaster.ts";
 import { buildCodexAdditionalContext } from "./CodexDeveloperInstructions.ts";
 import { DocumentText } from "./DocumentText.ts";
+import { ProcessRunner } from "../processRunner.ts";
+import { SpeechToText } from "../voice/SpeechToText.ts";
 import { EnvironmentThemeService } from "../environmentTheme.ts";
 import { ProviderRegistry } from "./ProviderRegistry.ts";
 import budget from "./agentContextBudget.json" with { type: "json" };
 
 // Registration only stores tool definitions, so the handlers' services are never called.
 const toolHandlerServices = Layer.mergeAll(
+  Layer.mock(BotComputer)({}),
+  Layer.mock(BotSandbox)({}),
+  Layer.mock(BotRecordings)({}),
+  Layer.mock(BotSecrets)({}),
   Layer.mock(AssetSigner)({}),
   Layer.mock(DeviceService)({}),
   Layer.mock(DocumentText)({}),
@@ -69,10 +92,25 @@ const toolHandlerServices = Layer.mergeAll(
   Layer.mock(ProjectService)({}),
   Layer.mock(ProjectSetupScriptRunner)({}),
   Layer.mock(ProviderAdapterRegistryV2)({}),
+  Layer.mock(ProviderInstanceRegistry)({}),
   Layer.mock(ProviderRegistry)({}),
   Layer.mock(PullRequestReviewGuideService)({}),
   Layer.mock(PullRequestService)({}),
   Layer.mock(RemoteDelegation)({}),
+  Layer.mock(BotBridge)({}),
+  Layer.mock(BotAdmin)({}),
+  Layer.mock(BotFeedback)({}),
+  Layer.mock(BotFiles)({}),
+  Layer.mock(BotSetup)({}),
+  Layer.mock(BotStore)({}),
+  Layer.mock(Connections)({}),
+  Layer.mock(MailAccounts)({}),
+  Layer.mock(Accounts)({}),
+  Layer.mock(MusicLibrary)({}),
+  Layer.mock(LabShell)({}),
+  Layer.mock(SpeechToText)({}),
+  Layer.mock(ProcessRunner)({}),
+  FetchHttpClient.layer,
   Layer.mock(ScheduledTaskService)({}),
   Layer.mock(SecretRequests)({}),
   ServerConfig.layerTest(process.cwd(), { prefix: "t3-agent-context-budget-" }),
@@ -153,7 +191,7 @@ it.effect("agent context matches the committed budget", () =>
 
     expect(
       measured,
-      "Set agentContextBudget.json to the measured values. Before you cut text to fit, run the evals that cover it (evals/README.md).",
+      "Set agentContextBudget.json to the measured values. Before you cut text to fit, run the evals that cover it.",
     ).toEqual(budget);
   }).pipe(Effect.provide(layerAdvertisedTools)),
 );

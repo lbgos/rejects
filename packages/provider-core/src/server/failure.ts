@@ -117,6 +117,7 @@ function curatedCauseMessages(cause: unknown): {
         case "ClaudeMcpRegistrationTimeoutError":
         case "ClaudeCodeRootRefusalError":
         case "CursorModelUnavailableError":
+        case "ProviderLaunchRefusedError":
         case "CodexGoalObjectiveTooLongError":
         case "ProviderSetupError":
         case "ProviderAdapterThreadInUseError":
@@ -157,6 +158,14 @@ function curatedCauseMessages(cause: unknown): {
               "T3 could not confirm whether conversation history reached the provider. Retry the turn to recover the session.",
             category: categoryMessage(),
           };
+        case "BotStoreError": {
+          // A bot's own budget, not a provider fault: show the cap instead of a generic failure.
+          const operation = (cause as Record<string, unknown>).operation;
+          const message =
+            operation === "cap" || operation === "rate" ? stringField(cause, "message") : undefined;
+          if (message !== undefined) return { known: message, category: categoryMessage() };
+          break;
+        }
         case "ProviderAdapterProtocolError": {
           const typedReason = (cause as Record<string, unknown>).reason;
           if (

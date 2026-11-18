@@ -27,6 +27,9 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
 
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as BotStore from "../bots/BotStore.ts";
+import * as Config from "../config.ts";
 import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
@@ -576,6 +579,187 @@ it.effect("a bound run follows its thread when promotion moves it mid-send", () 
         [promoted, scratch, promoted],
       );
       assert.equal(new Set(attempts.map((attempt) => attempt.commandId)).size, 1);
+    }).pipe(Effect.provide(layer));
+  }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
+);
+
+it.effect("a bot's wake runs in a fresh thread registered to the bot, in its chat's language", () =>
+  Effect.gen(function* () {
+    const chat = ThreadId.make("bot-chat");
+    const launches: Array<ThreadLaunchService.ThreadLaunchInput> = [];
+    const layer = ScheduledTaskService.layer.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          Layer.mock(ThreadLaunchService.ThreadLaunchService)({
+            launch: (input) =>
+              Effect.sync(() => {
+                launches.push(input);
+                return { threadId: input.threadId! } as never;
+              }),
+          }),
+          Layer.mock(ThreadManagementService.ThreadManagementService)({
+            sendToThread: () => Effect.die("a wake must not post into the bot's chat"),
+            getThreadShell: () => Effect.succeed(threadShell(ProjectId.make("project:bots"))),
+            getThreadRecords: () =>
+              Effect.succeed({
+                messages: [
+                  {
+                    role: "user",
+                    text: "проверь сеть",
+                    createdBy: "user",
+                    createdAt: DateTime.makeUnsafe(0),
+                  },
+                ],
+              } as never),
+          }),
+          Layer.mock(SecretRequests.SecretRequests)({}),
+          Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+            namedProjectsRoot: "/projects",
+            isScratchProject: () => Effect.succeed(false),
+          }),
+          NodeCrypto.layer,
+          Scheduler.layer,
+          ManagedPolicy.layerTest(),
+        ),
+      ),
+      Layer.provideMerge(BotStore.layer),
+      Layer.provideMerge(Config.layerTest(process.cwd(), { prefix: "bot-wake-" })),
+      Layer.provideMerge(NodeServices.layer),
+    );
+    yield* Effect.gen(function* () {
+      const bots = yield* BotStore.BotStore;
+      const model = { instanceId: ProviderInstanceId.make("opencode"), model: "deepseek" };
+      yield* bots.put({
+        name: "Homelab",
+        persona: "Watch",
+        modelSelection: model,
+        dailyTokenCap: 1_000_000,
+        threadId: chat,
+        projectId: ProjectId.make("project:bots"),
+        createdAt: "2026-11-05T00:00:00Z",
+        unread: false,
+        lastNotification: null,
+        notifiedAt: null,
+      });
+      const service = yield* ScheduledTaskService.ScheduledTaskService;
+      const { task } = yield* service.upsert({
+        id: ScheduledTaskId.make("task:watch"),
+        title: "homelab watch",
+        prompt: "Run the watch.",
+        enabled: true,
+        schedule: { type: "interval", everyMs: 3_600_000 },
+        projectId: ProjectId.make("project:bots"),
+        threadId: chat,
+        workspaceStrategy: { type: "root" },
+        modelSelection: model,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+      });
+
+      const result = yield* service.runNow({ id: task.id });
+
+      assert.equal(launches.length, 1);
+      const launch = launches[0]!;
+      assert.notEqual(launch.threadId, chat);
+      assert.equal(result.threadId, launch.threadId);
+      assert.equal(
+        launch.initialMessage?.text,
+        "[Wake: homelab watch]\nRun the watch.\nЯзык чата: русский. Пиши каждую строку по-русски, первую тоже.",
+      );
+      assert.deepEqual(launch.modelSelection, model);
+      const wake = yield* bots.wake(launch.threadId!);
+      assert.equal(wake?.botThreadId, chat);
+      assert.equal((yield* bots.owner(launch.threadId!))?.threadId, chat);
+    }).pipe(Effect.provide(layer));
+  }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
+);
+
+it.effect("skips a capped bot's scheduled wake and keeps the schedule", () =>
+  Effect.gen(function* () {
+    const chat = ThreadId.make("bot-chat-capped");
+    const launches: Array<ThreadLaunchService.ThreadLaunchInput> = [];
+    const layer = ScheduledTaskService.layer.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          Layer.mock(ThreadLaunchService.ThreadLaunchService)({
+            launch: (input) =>
+              Effect.sync(() => {
+                launches.push(input);
+                return { threadId: input.threadId! } as never;
+              }),
+          }),
+          Layer.mock(ThreadManagementService.ThreadManagementService)({
+            sendToThread: () => Effect.die("a wake must not post into the bot's chat"),
+            getThreadShell: () => Effect.succeed(threadShell(ProjectId.make("project:bots"))),
+            getThreadRecords: () => Effect.succeed({ runs: [], messages: [] } as never),
+          }),
+          Layer.mock(SecretRequests.SecretRequests)({}),
+          Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+            namedProjectsRoot: "/projects",
+            isScratchProject: () => Effect.succeed(false),
+          }),
+          NodeCrypto.layer,
+          Scheduler.layer,
+          ManagedPolicy.layerTest(),
+        ),
+      ),
+      Layer.provideMerge(BotStore.layer),
+      Layer.provideMerge(Config.layerTest(process.cwd(), { prefix: "bot-wake-capped-" })),
+      Layer.provideMerge(NodeServices.layer),
+    );
+    yield* Effect.gen(function* () {
+      const bots = yield* BotStore.BotStore;
+      const model = { instanceId: ProviderInstanceId.make("opencode"), model: "deepseek" };
+      yield* bots.put({
+        name: "Homelab",
+        persona: "Watch",
+        modelSelection: model,
+        dailyTokenCap: 1_000_000,
+        threadId: chat,
+        projectId: ProjectId.make("project:bots"),
+        createdAt: "1970-01-01T00:00:00Z",
+        unread: false,
+        lastNotification: null,
+        notifiedAt: null,
+      });
+      const service = yield* ScheduledTaskService.ScheduledTaskService;
+      const { task } = yield* service.upsert({
+        id: ScheduledTaskId.make("task:capped-watch"),
+        title: "homelab watch",
+        prompt: "Run the watch.",
+        enabled: true,
+        schedule: { type: "interval", everyMs: 3_600_000 },
+        projectId: ProjectId.make("project:bots"),
+        threadId: chat,
+        workspaceStrategy: { type: "root" },
+        modelSelection: model,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+      });
+      yield* bots.charge(chat, "turn:cap", 1_000_000);
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`UPDATE scheduled_tasks SET next_run_at = '1970-01-01T00:00:05.000Z' WHERE task_id = ${task.id}`;
+      const subscribed = yield* Deferred.make<void>();
+      const skipped = yield* service.subscribeList().pipe(
+        Stream.tap(() => Deferred.succeed(subscribed, undefined)),
+        Stream.filter((list) =>
+          list.tasks.some(
+            (candidate) =>
+              candidate.id === task.id && candidate.nextRunAt === "1970-01-01T01:00:05.000Z",
+          ),
+        ),
+        Stream.runHead,
+        Effect.forkChild,
+      );
+      yield* Deferred.await(subscribed);
+      yield* TestClock.adjust("5 seconds");
+      assert.isTrue(Option.isSome(yield* Fiber.join(skipped)));
+      assert.lengthOf(launches, 0);
+      const after = (yield* service.list()).tasks[0]!;
+      assert.equal(after.nextRunAt, "1970-01-01T01:00:05.000Z");
+      assert.equal(after.lastRunStatus, "never");
+      assert.isNull(after.lastRunAt);
+      assert.equal(after.runCount, 0);
     }).pipe(Effect.provide(layer));
   }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );

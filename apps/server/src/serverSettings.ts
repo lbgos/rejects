@@ -431,8 +431,9 @@ function migrateLegacySourceControlSettings(
   return { settings: { ...settings, sourceControlHosts }, secretMoves };
 }
 
+/** Optional drivers older settings may have used; historical use enables their default instance. */
 const HISTORY_RESTORED_DRIVERS: ReadonlySet<ProviderDriverKind> = new Set(
-  ["cursor", "grok", "opencode"].map((driver) => ProviderDriverKind.make(driver)),
+  ["muse", "opencode", "antigravity"].map((driver) => ProviderDriverKind.make(driver)),
 );
 
 function migrateLegacyProviderSettings(
@@ -834,13 +835,13 @@ const make = Effect.gen(function* () {
         provider_name AS "providerName",
         provider_instance_id AS "providerInstanceId"
       FROM projection_thread_sessions
-      WHERE provider_name IN ('cursor', 'grok', 'opencode')
+      WHERE provider_name IN ('muse', 'antigravity', 'opencode')
       UNION
       SELECT DISTINCT
         provider_name AS "providerName",
         provider_instance_id AS "providerInstanceId"
       FROM provider_session_runtime
-      WHERE provider_name IN ('cursor', 'grok', 'opencode')
+      WHERE provider_name IN ('muse', 'antigravity', 'opencode')
     `.pipe(
       NodeSqliteClient.readOnly,
       Effect.mapError(

@@ -27,6 +27,10 @@
       "types": "./src/delimitedPreview.ts",
       "import": "./src/delimitedPreview.ts"
     },
+    "./sizedCache": {
+      "types": "./src/sizedCache.ts",
+      "import": "./src/sizedCache.ts"
+    },
     "./socketFrameParts": {
       "types": "./src/socketFrameParts.ts",
       "import": "./src/socketFrameParts.ts"
@@ -82,6 +86,10 @@
     "./logging": {
       "types": "./src/logging.ts",
       "import": "./src/logging.ts"
+    },
+    "./fleetHandoff": {
+      "types": "./src/fleetHandoff.ts",
+      "import": "./src/fleetHandoff.ts"
     },
     "./releaseResource": {
       "types": "./src/releaseResource.ts",
@@ -399,6 +407,10 @@
       "types": "./src/devProxy.ts",
       "import": "./src/devProxy.ts"
     },
+    "./processSwap": {
+      "types": "./src/processSwap.ts",
+      "import": "./src/processSwap.ts"
+    },
     "./usageMerge": {
       "types": "./src/usageMerge.ts",
       "import": "./src/usageMerge.ts"
@@ -563,13 +575,17 @@
       "types": "./src/cloneUrl.ts",
       "import": "./src/cloneUrl.ts"
     },
+    "./markdownPreview": {
+      "types": "./src/markdownPreview.ts",
+      "import": "./src/markdownPreview.ts"
+    },
     "./speech": {
       "types": "./src/speech.ts",
       "import": "./src/speech.ts"
     }
   },
   "scripts": {
-    "typecheck": "effect-tsgo tsrs --noEmit",
+    "typecheck": "effect-tsgo tsrs --noEmit --checkers 1",
     "test": "vp test run --config ../../vite.config.ts --dir ."
   },
   "dependencies": {

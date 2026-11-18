@@ -3,12 +3,40 @@ import { EnvironmentQueryStore } from "@t3tools/client-runtime/state/query-persi
 import { EnvironmentId } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import { TestClock } from "effect/testing";
 
 import * as ConnectionStorage from "./storage";
+
+describe("IndexedDB open", () => {
+  it.effect("opens again when WebKit leaves the first open request unanswered", () =>
+    Effect.gen(function* () {
+      const swallowed = yield* Deferred.make<void>();
+      const realOpen = indexedDB.open.bind(indexedDB);
+      yield* Effect.acquireRelease(
+        Effect.sync(() => {
+          indexedDB.open = (name, version) => {
+            if (Deferred.isDoneUnsafe(swallowed)) return realOpen(name, version);
+            Deferred.doneUnsafe(swallowed, Exit.void);
+            return new EventTarget() as IDBOpenDBRequest;
+          };
+        }),
+        () => Effect.sync(() => Reflect.deleteProperty(indexedDB, "open")),
+      );
+      const listed = yield* Effect.gen(function* () {
+        return yield* (yield* Persistence.ConnectionTargetStore).list;
+      }).pipe(Effect.provide(Layer.fresh(ConnectionStorage.layer)), Effect.forkChild);
+      yield* Deferred.await(swallowed);
+      yield* TestClock.adjust("10 seconds");
+      expect(Array.isArray(yield* Fiber.join(listed))).toBe(true);
+    }),
+  );
+});
 
 describe("IndexedDB query cache", () => {
   it.effect("round trips per environment and clears with the environment", () =>

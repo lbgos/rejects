@@ -61,7 +61,7 @@ export function revealServerTabs(
  * preview sessions. Server-hosted sessions are only complete once the first
  * list has loaded; before that, a missing session is not a closed one.
  */
-export function followPreviewSessions(threadRef: ScopedThreadRef, state: ThreadPreviewState): void {
+function followPreviewSessions(threadRef: ScopedThreadRef, state: ThreadPreviewState): void {
   if (readEnvironmentSupportsServerBrowser(threadRef.environmentId) && !state.listLoaded) return;
   const sessions = Object.values(state.sessions);
   useRightPanelStore.getState().reconcileBrowserSurfaces(

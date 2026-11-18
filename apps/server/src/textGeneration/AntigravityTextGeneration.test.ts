@@ -288,6 +288,23 @@ const makeFixture = Effect.fn("makeAntigravityTextGenerationFixture")(function* 
 });
 
 it.layer(NodeServices.layer)("AntigravityTextGeneration", (it) => {
+  it.effect("generates structured data in the supplied isolated directory", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makeFixture({ outputs: ['{"count":2}'] });
+      const cwd = yield* fixture.fs.makeTempDirectoryScoped({ prefix: "learn-antigravity-" });
+      const result = yield* fixture.textGeneration.generateStructured({
+        cwd,
+        prompt: "Count nodes",
+        operation: "extraction",
+        outputSchema: Schema.Struct({ count: Schema.Int }),
+        modelSelection,
+      });
+      expect(result).toEqual({ count: 2 });
+      expect(fixture.state.workspaces).toEqual([cwd]);
+      expect(fixture.state.closed).toEqual([cwd]);
+    }).pipe(Effect.scoped),
+  );
+
   it.effect.each([false, true])(
     "generates all helper types and cleans up with startupSkills=%s",
     (startupSkills) =>

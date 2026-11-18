@@ -114,7 +114,6 @@ describe("searchSettings", () => {
   });
 
   it("hides desktop-only settings from browser search", () => {
-    expect(SETTINGS_SEARCH_ITEMS.some((item) => item.id === "quit-confirmation")).toBe(true);
     expect(searchSettings("hold to quit")).toEqual([]);
     expect(searchSettings("wsl")).toEqual([]);
     expect(searchSettings("update track")).toEqual([]);
@@ -150,6 +149,19 @@ describe("searchSettings", () => {
       "linked-environments",
     ]);
     expect(available.map((item) => item.id).filter((id) => gatedIds.has(id))).toEqual([]);
+
+    const connected = {
+      hasCloudPublicConfig: false,
+      hasEnvironment: true,
+      hasProviderSettingsEnvironment: true,
+      canManageLocalBackend: false,
+      isWslSettingsRowVisible: false,
+      hasThreadAutoSettlement: false,
+    };
+    const ids = (hasCallPolicy: boolean) =>
+      filterAvailableSettingsSearchItems({ ...connected, hasCallPolicy }).map((item) => item.id);
+    expect(ids(false)).not.toContain("zero-data-retention");
+    expect(ids(true)).toContain("zero-data-retention");
   });
 
   it("finds linked environments on a remote host without local maintenance access", () => {
@@ -175,25 +187,6 @@ describe("searchSettings", () => {
         targetId: "linked-environments",
       }),
     );
-  });
-
-  it("finds the Welcome page only where a primary computer can open it", () => {
-    const availability = {
-      hasCloudPublicConfig: true,
-      hasEnvironment: true,
-      hasProviderSettingsEnvironment: true,
-      canManageLocalBackend: false,
-      isWslSettingsRowVisible: false,
-      hasThreadAutoSettlement: false,
-    };
-    const ids = (hasPrimaryEnvironment: boolean) =>
-      searchSettings(
-        "welcome page",
-        filterAvailableSettingsSearchItems({ ...availability, hasPrimaryEnvironment }),
-      ).map((item) => item.id);
-    // Hosted web reaches remote computers but has no primary one to set up.
-    expect(ids(false)).not.toContain("welcome-page");
-    expect(ids(true)).toContain("welcome-page");
   });
 
   it("finds keybinding commands by label, command id, and default key", () => {
@@ -361,7 +354,6 @@ describe("source control host search items", () => {
   });
 
   it("finds the built-in hosts by their own words", () => {
-    expect(searchSettings("codeberg").map((item) => item.id)).toContain("source-control");
     expect(searchSettings("ghes").map((item) => item.id)).toContain(
       sourceControlHostSettingsSearchId("github"),
     );

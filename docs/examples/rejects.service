@@ -1,0 +1,38 @@
+# /etc/systemd/system/rejects.service: one rejects server as the `rejects` user, state in /var/lib/rejects.
+# The release is unpacked in /opt/rejects and Node in /opt/node. The bot sandbox is described in
+# docs/operations/bot-sandbox.md; its vault is in docs/operations/vault.md.
+[Unit]
+Description=rejects (headless web)
+After=network-online.target rejects-vault.service
+Wants=network-online.target
+
+[Service]
+User=rejects
+Group=rejects
+# Optional: T3CODE_CONTACT, T3CODE_MEMORY_EMBED_URL, TZ.
+EnvironmentFile=-/etc/rejects/instance.env
+Environment=PATH=/opt/node/bin:/usr/local/bin:/usr/bin:/bin
+WorkingDirectory=/var/lib/rejects
+ExecStart=/opt/node/bin/node /opt/rejects/apps/server/dist/bin.mjs serve --mode web --host 0.0.0.0 --port 3774 --no-browser --base-dir /var/lib/rejects /var/lib/rejects/userdata/bots
+Restart=on-failure
+RestartSec=5
+MemoryMax=1200M
+UMask=0027
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=strict
+ReadWritePaths=/var/lib/rejects
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelModules=yes
+# Bot sandbox: bwrap needs these; the server moves sandboxed processes into its sandbox cgroup,
+# which the nft table inet bot_sandbox_net filters.
+RestrictSUIDSGID=no
+Delegate=yes
+ProtectControlGroups=no
+# Append any LAN host:port a provider needs, such as an LLM proxy: ... 127.0.0.1:3774 <llm-proxy-host>:8317
+ExecStartPre=+/usr/local/sbin/bot-sandbox-net --bots /var/lib/rejects/userdata/bot-sandbox-net.allow rejects.service rejects 127.0.0.1:3774
+ExecReload=+/usr/local/sbin/bot-sandbox-net --bots /var/lib/rejects/userdata/bot-sandbox-net.allow rejects.service rejects 127.0.0.1:3774
+
+[Install]
+WantedBy=multi-user.target

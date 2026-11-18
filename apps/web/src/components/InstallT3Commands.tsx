@@ -1,10 +1,12 @@
+import { CLI_COMMAND_NAME, CLI_NPM_PACKAGE_NAME } from "@t3tools/shared/cliRelease";
+
 import { cn } from "~/lib/utils";
 
 import { CommandBlock } from "./CommandBlock";
 
 /**
- * Setup steps for another computer: install `t3`, then run `command`. Both installers are shown
- * because the browser showing this is often not the computer being set up.
+ * Setup steps for another computer: install the CLI, then run `command`. The browser showing this
+ * is often not the computer being set up.
  */
 export function InstallT3Commands({
   command,
@@ -15,16 +17,12 @@ export function InstallT3Commands({
 }) {
   return (
     <div className={cn("space-y-2", className)}>
-      <p className="text-xs text-muted-foreground">macOS, Linux</p>
-      <CommandBlock command="curl -fsSL https://t3.codes/install.sh | sh" />
-      <p className="text-xs text-muted-foreground">Windows (PowerShell)</p>
-      <CommandBlock command="irm https://t3.codes/install.ps1 | iex" />
+      <p className="text-xs text-muted-foreground">Install (needs Node.js)</p>
+      <CommandBlock command={`npm install --global ${CLI_NPM_PACKAGE_NAME}`} />
       <p className="text-xs text-muted-foreground">Then</p>
       <CommandBlock command={command} />
       <p className="text-xs text-muted-foreground">
-        Skip the install if you already have <code className="font-mono">t3</code>. If{" "}
-        <code className="font-mono">t3</code> is not found after installing, add the folder the
-        installer names to your PATH.
+        Skip the install if you already have <code className="font-mono">{CLI_COMMAND_NAME}</code>.
       </p>
     </div>
   );

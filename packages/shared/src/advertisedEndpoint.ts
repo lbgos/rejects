@@ -1,5 +1,4 @@
 import type {
-  AdvertisedEndpoint,
   AdvertisedEndpointHostedHttpsCompatibility,
   AdvertisedEndpointProvider,
   AdvertisedEndpointReachability,
@@ -42,36 +41,4 @@ export function deriveWsBaseUrl(httpBaseUrl: string): string {
   const url = new URL(normalizeHttpBaseUrl(httpBaseUrl));
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   return url.toString();
-}
-
-function classifyHostedHttpsCompatibility(
-  httpBaseUrl: string,
-  fallback: AdvertisedEndpointHostedHttpsCompatibility = "unknown",
-): AdvertisedEndpointHostedHttpsCompatibility {
-  const url = new URL(normalizeHttpBaseUrl(httpBaseUrl));
-  if (url.protocol === "http:") {
-    return "mixed-content-blocked";
-  }
-  return fallback === "mixed-content-blocked" ? "unknown" : fallback;
-}
-
-export function createAdvertisedEndpoint(input: CreateAdvertisedEndpointInput): AdvertisedEndpoint {
-  const httpBaseUrl = normalizeHttpBaseUrl(input.httpBaseUrl);
-  return {
-    id: input.id,
-    label: input.label,
-    provider: input.provider,
-    httpBaseUrl,
-    wsBaseUrl: deriveWsBaseUrl(httpBaseUrl),
-    reachability: input.reachability,
-    compatibility: {
-      hostedHttpsApp:
-        input.hostedHttpsCompatibility ?? classifyHostedHttpsCompatibility(httpBaseUrl),
-      desktopApp: "compatible",
-    },
-    source: input.source,
-    status: input.status ?? "available",
-    ...(input.isDefault === undefined ? {} : { isDefault: input.isDefault }),
-    ...(input.description === undefined ? {} : { description: input.description }),
-  };
 }

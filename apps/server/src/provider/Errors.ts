@@ -25,3 +25,15 @@ export class ProviderWorkspaceMissingError extends Schema.TaggedError<ProviderWo
     return `This thread's workspace folder no longer exists or is not a directory: ${this.cwd}. Restore the folder at this path before retrying.`;
   }
 }
+
+export class ProviderLaunchRefusedError extends Schema.TaggedError<ProviderLaunchRefusedError>()(
+  "ProviderLaunchRefusedError",
+  {
+    threadId: Schema.String,
+    reason: Schema.String,
+  },
+) {
+  override get message(): string {
+    return this.reason;
+  }
+}

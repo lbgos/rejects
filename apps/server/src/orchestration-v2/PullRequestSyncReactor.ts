@@ -144,10 +144,10 @@ const isPushCommand = (input: string) => PUSH_COMMAND.test(shellCode(shellScript
 type CommandExecution = Extract<OrchestrationV2TurnItem, { readonly type: "command_execution" }>;
 
 /**
- * The change requests a shell command opened: URLs on lines of their own in the output of a
- * command that runs a host's create command. One the command also names, as `gh pr view 12`
- * does, existed before it ran. More URLs than create commands means something else printed
- * some, such as `gh pr list`, so none are taken.
+ * The change requests a host create command opened: URLs alone on lines of its output. One the
+ * command also names (`gh pr view 12`) existed before; more URLs than create commands means
+ * something else printed some (`gh pr list`), so none are taken.
+ * @public
  */
 export function changeRequestsCreatedBy(input: string, output: string) {
   if (!CREATE_COMMANDS.some(({ command }) => command.test(input))) return [];

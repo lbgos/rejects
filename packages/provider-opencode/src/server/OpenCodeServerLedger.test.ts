@@ -2,6 +2,7 @@
 import * as NodeChildProcess from "node:child_process";
 import * as NodeReadline from "node:readline";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -317,7 +318,7 @@ describe.skipIf(observedPlatforms.length === 0)("OpenCode server startup", () =>
       yield* Scope.close(serverScope, Exit.void);
 
       expect(groupExists(pgid)).toBe(false);
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.merge(NodeServices.layer, NodeCrypto.layer))),
   );
 
   // Runs on the test clock, which never advances here: a teardown that sleeps
@@ -376,6 +377,6 @@ describe.skipIf(observedPlatforms.length === 0)("OpenCode server startup", () =>
       yield* Scope.close(serverScope, Exit.void);
 
       expect(groupExists(pgid)).toBe(false);
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.merge(NodeServices.layer, NodeCrypto.layer))),
   );
 });

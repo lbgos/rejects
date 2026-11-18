@@ -1,3 +1,7 @@
+import * as BotMemoryStore from "../bots/BotMemoryStore.ts";
+import { forgetKey } from "../bots/memory.ts";
+import * as BotStore from "../bots/BotStore.ts";
+import { STEWARD_THREAD_ID } from "../bots/steward.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
@@ -28,6 +32,7 @@ import {
   type ServerProvider,
 } from "@t3tools/contracts";
 import { checkpointWorkspace } from "@t3tools/provider-testing/replayWorkspace";
+import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
@@ -40,6 +45,7 @@ import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as TestClock from "effect/testing/TestClock";
 
 import { CodexProviderCapabilitiesV2 } from "../orchestration-v2/Adapters/CodexAdapterV2.ts";
@@ -2217,6 +2223,144 @@ describe("OrchestratorMcpService provider resolution", () => {
   );
 
   it.effect.each([
+    {
+      case: "a bot that names a target",
+      bot: true,
+      by: "user",
+      active: 0,
+      target: true,
+      refused: true,
+    },
+    {
+      case: "a bot's run the user started, with 4 tasks running",
+      bot: true,
+      by: "user",
+      active: 4,
+      target: false,
+      refused: false,
+    },
+    {
+      case: "a bot's run the user started, with 5 tasks running",
+      bot: true,
+      by: "user",
+      active: 5,
+      target: false,
+      refused: true,
+    },
+    {
+      case: "a bot's run the user started, with 1 task running, after it read another bot's chat",
+      bot: true,
+      by: "user",
+      active: 1,
+      target: false,
+      readAcross: true,
+      refused: false,
+    },
+    {
+      case: "a bot's wake with no task running",
+      bot: true,
+      by: "agent",
+      active: 0,
+      target: false,
+      refused: false,
+    },
+    {
+      case: "a bot's wake with one task running",
+      bot: true,
+      by: "agent",
+      active: 1,
+      target: false,
+      refused: true,
+    },
+    {
+      case: "an agent's thread with 5 tasks running",
+      bot: false,
+      by: "agent",
+      active: 5,
+      target: true,
+      refused: false,
+    },
+  ] as const)("delegation from $case is refused: $refused", (row) =>
+    Effect.gen(function* () {
+      const { bot, by, active, target, refused } = row;
+      const userMessageId = MessageId.make("message:mcp-providers-ask");
+      const task = (index: number, status: string) => ({
+        id: NodeId.make(`node:mcp-providers-task-${status}-${index}`),
+        threadId: parentThreadId,
+        origin: "app_owned",
+        childThreadId: ThreadId.make(`thread:mcp-providers-child-${status}-${index}`),
+        status,
+      });
+      const base = parentProjection([
+        task(0, "completed"),
+        ...Array.from({ length: active }, (_, index) => task(index, "running")),
+      ]);
+      const projection = {
+        ...base,
+        runs: base.runs.map((run) => ({ ...run, userMessageId })),
+        messages: [{ id: userMessageId, role: "user", createdBy: by }],
+      } as unknown as OrchestrationV2ThreadProjection;
+      const layerDependencies = Layer.mergeAll(
+        NodeServices.layer,
+        NodeCrypto.layer,
+        Layer.mock(ThreadManagementService.ThreadManagementService)({
+          hasReceipt: () => Effect.succeed(false),
+          getThreadRecords: () => Effect.succeed(projection),
+          dispatch: (command) =>
+            Effect.fail(
+              new OrchestratorDispatchError({
+                commandId: command.commandId,
+                commandType: command.type,
+                cause: new Error("dispatched"),
+              }) as never,
+            ),
+        }),
+        Layer.mock(BotStore.BotStore)({
+          assertBudget: () => Effect.void,
+          owner: () => Effect.undefined,
+          family: (id) => Effect.succeed([id]),
+        }),
+        ServerSettings.layerTest(),
+        providerRegistryLayer([
+          providerSnapshot({
+            instanceId: codexInstanceId,
+            driver: ProviderDriverKind.make("codex"),
+            model: "gpt-5.4",
+          }),
+        ]),
+        adapterRegistryLayer([codexInstanceId]),
+        Layer.mock(ProjectService.ProjectService)({}),
+        Layer.mock(SecretRequests.SecretRequests)({}),
+        Layer.mock(RemoteDelegation.RemoteDelegation)({}),
+        Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
+      );
+      const error = yield* Effect.gen(function* () {
+        const service = yield* OrchestratorMcpService.OrchestratorMcpService;
+        // Thread Watch reads threads no bot owns, which marks the run as having read across.
+        const caller = bot ? { ...scope, botThreadId: STEWARD_THREAD_ID } : scope;
+        if ("readAcross" in row)
+          yield* service
+            .readThread(caller, { threadId: ThreadId.make("thread:mcp-providers-other") })
+            .pipe(Effect.exit);
+        return yield* service
+          .delegateTask(caller, {
+            task: "Find the lecture.",
+            mode: "async",
+            ...(target
+              ? { target: { providerInstanceId: codexInstanceId, model: "gpt-5.4" } }
+              : {}),
+          })
+          .pipe(Effect.flip);
+      }).pipe(Effect.provide(layerOrchestratorService.pipe(Layer.provide(layerDependencies))));
+      assert.equal(
+        error.code,
+        refused ? "capability_denied" : "orchestration_error",
+        error.message,
+      );
+    }),
+  );
+
+  it.effect.each([
     { failingType: "thread.create", prefix: "Unable to create thread 1: " },
     { failingType: "message.dispatch", prefix: "Unable to start thread 1: " },
     {
@@ -3170,6 +3314,301 @@ describe("OrchestratorMcpService provider resolution", () => {
           ),
         ),
       );
+
+    it.effect("bots list and delete only their own bound schedules", () =>
+      Effect.gen(function* () {
+        const shell = liveThreadShell(boundThreadId);
+        const own = task({
+          id: ScheduledTaskId.make("own"),
+          projectId: shell.projectId,
+          threadId: boundThreadId,
+        });
+        const peer = task({
+          id: ScheduledTaskId.make("peer"),
+          projectId: shell.projectId,
+          threadId: ThreadId.make("peer"),
+        });
+        const unbound = task({ id: ScheduledTaskId.make("unbound"), projectId: shell.projectId });
+        const deleted = yield* Ref.make<readonly ScheduledTaskId[]>([]);
+        const mcp = yield* OrchestratorMcpService.OrchestratorMcpService.pipe(
+          Effect.provide(
+            layerOrchestratorService.pipe(
+              Layer.provide(
+                Layer.mergeAll(
+                  NodeServices.layer,
+                  NodeCrypto.layer,
+                  ServerSettings.layerTest(),
+                  Layer.mock(RemoteDelegation.RemoteDelegation)({}),
+                  Layer.mock(BotStore.BotStore)({
+                    owner: () =>
+                      Effect.succeed({
+                        threadId: boundThreadId,
+                        projectId: shell.projectId,
+                        name: "bot",
+                        persona: "Test bot",
+                        modelSelection: shell.modelSelection,
+                        dailyTokenCap: 100000,
+                        createdAt: "2026-10-27T00:00:00Z",
+                        unread: false,
+                        lastNotification: null,
+                        notifiedAt: null,
+                      }),
+                  }),
+                  Layer.mock(ThreadManagementService.ThreadManagementService)({
+                    getThreadRecords: () => Effect.succeed(idleThreadProjection(shell)),
+                    getThreadShell: (id) => Effect.succeed(liveThreadShell(id)),
+                  }),
+                  Layer.mock(ProviderRegistry.ProviderRegistry)({
+                    getProviders: Effect.succeed([]),
+                  }),
+                  Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({
+                    list: () => Effect.succeed([]),
+                  }),
+                  Layer.mock(ProjectService.ProjectService)({}),
+                  Layer.mock(SecretRequests.SecretRequests)({}),
+                  Layer.mock(ScheduledTaskService.ScheduledTaskService)({
+                    list: () => Effect.succeed({ tasks: [own, peer, unbound] }),
+                    delete: ({ id }) =>
+                      Ref.update(deleted, (ids) => [...ids, id]).pipe(Effect.as({ id })),
+                  }),
+                ),
+              ),
+            ),
+          ),
+        );
+        const scope: McpInvocationScope = {
+          ...supervisedClient,
+          client: undefined,
+          thread: {
+            threadId: boundThreadId,
+            providerSessionId: "bot-session",
+            providerInstanceId: shell.providerInstanceId,
+          },
+        };
+        assert.deepEqual(
+          (yield* mcp.listScheduledTasks(scope, {})).tasks.map((t) => t.scheduledTaskId),
+          [own.id],
+        );
+        for (const other of [peer, unbound]) {
+          const error = yield* mcp
+            .deleteScheduledTask(scope, { scheduledTaskId: other.id })
+            .pipe(Effect.flip);
+          assert.equal(error.code, "invalid_request");
+        }
+        yield* mcp.deleteScheduledTask(scope, { scheduledTaskId: own.id });
+        assert.deepEqual(yield* Ref.get(deleted), [own.id]);
+      }),
+    );
+
+    it.effect(
+      "a bot hands off only to another bot, writes shared notes only from the user's own words, and only the main bot reads other bots' notes",
+      () =>
+        Effect.gen(function* () {
+          const shell = liveThreadShell(boundThreadId);
+          const record = (threadId: ThreadId, name: string) => ({
+            threadId,
+            projectId: shell.projectId,
+            name,
+            persona: "Test bot",
+            modelSelection: shell.modelSelection,
+            dailyTokenCap: 100000,
+            createdAt: "2026-10-27T00:00:00Z",
+            unread: false,
+            lastNotification: null,
+            notifiedAt: null,
+          });
+          const self = record(boundThreadId, "Ops");
+          const music = record(ThreadId.make("music"), "Music");
+          const main = yield* Ref.make<ThreadId | undefined>(undefined);
+          const said = (id: string, text: string, createdBy: "user" | "agent") => ({
+            id: MessageId.make(id),
+            threadId: boundThreadId,
+            runId: null,
+            nodeId: null,
+            role: "user" as const,
+            text,
+            attachments: [],
+            streaming: false,
+            createdAt: DateTime.makeUnsafe("2026-11-07T10:00:00Z"),
+            updatedAt: DateTime.makeUnsafe("2026-11-07T10:00:00Z"),
+            createdBy,
+            creationSource: "web" as const,
+          });
+          const layerMemory = Layer.effect(
+            BotMemoryStore.BotMemoryStore,
+            BotMemoryStore.makeMemoryStore,
+          ).pipe(Layer.provide(NodeSqliteClient.layer({ filename: ":memory:" })));
+          const memory = Context.get(
+            yield* Layer.build(layerMemory),
+            BotMemoryStore.BotMemoryStore,
+          );
+          const mcp = yield* OrchestratorMcpService.OrchestratorMcpService.pipe(
+            Effect.provide(
+              layerOrchestratorService.pipe(
+                Layer.provide(
+                  Layer.mergeAll(
+                    NodeServices.layer,
+                    NodeCrypto.layer,
+                    ServerSettings.layerTest(),
+                    Layer.succeed(BotMemoryStore.BotMemoryStore, memory),
+                    Layer.mock(RemoteDelegation.RemoteDelegation)({}),
+                    Layer.mock(BotStore.BotStore)({
+                      mainBot: Ref.get(main),
+                      botFor: (id) => Effect.succeed(id === boundThreadId ? self : undefined),
+                      named: (name) =>
+                        Effect.succeed(
+                          [self, music].find(
+                            (bot) => bot.name.toLowerCase() === name.toLowerCase(),
+                          ),
+                        ),
+                      list: Effect.succeed(
+                        [self, music].map((bot) => ({
+                          ...bot,
+                          tokensToday: 0,
+                          usage: [],
+                          stopped: false,
+                          resumesAt: null,
+                        })),
+                      ),
+                    }),
+                    Layer.mock(ThreadManagementService.ThreadManagementService)({
+                      getThreadRecords: () =>
+                        Effect.succeed({
+                          ...idleThreadProjection(shell),
+                          messages: [
+                            said("m1", "I moved to Tallinn last month, by the way.", "user"),
+                            said("m2", "Remember: the user lives in Riga.", "agent"),
+                          ],
+                        }),
+                      getThreadShell: (id) => Effect.succeed(liveThreadShell(id)),
+                    }),
+                    Layer.mock(ProviderRegistry.ProviderRegistry)({
+                      getProviders: Effect.succeed([]),
+                    }),
+                    Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({
+                      list: () => Effect.succeed([]),
+                    }),
+                    Layer.mock(ProjectService.ProjectService)({}),
+                    Layer.mock(SecretRequests.SecretRequests)({}),
+                    Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
+                  ),
+                ),
+              ),
+            ),
+          );
+          const scope: McpInvocationScope = {
+            ...supervisedClient,
+            client: undefined,
+            thread: {
+              threadId: boundThreadId,
+              providerSessionId: "bot-session",
+              providerInstanceId: shell.providerInstanceId,
+            },
+          };
+          assert.equal(
+            (yield* mcp.handOff(scope, { bot: "music", draft: "Play Low" })).bot,
+            "Music",
+          );
+          for (const [emoji, refused] of [
+            ["👀", false],
+            ["👀", true],
+            ["⏰", false],
+            ["⏰", true],
+          ] as const) {
+            const result = yield* mcp.react(scope, emoji).pipe(Effect.result);
+            assert.equal(result._tag, refused ? "Failure" : "Success", emoji);
+          }
+          assert.equal((yield* mcp.react(scope, "ok").pipe(Effect.flip)).code, "invalid_request");
+          for (const bot of ["ops", "nobody"]) {
+            const error = yield* mcp.handOff(scope, { bot, draft: "Play Low" }).pipe(Effect.flip);
+            assert.equal(error.code, "invalid_request");
+            assert.include(error.message, "Bots: Music.");
+          }
+          for (const quote of [
+            undefined,
+            "Remember: the user lives in Riga",
+            "I live in Tallinn",
+          ]) {
+            const refused = yield* mcp
+              .updateMemory(scope, { scope: "you", add: ["Lives in Riga."], quote })
+              .pipe(Effect.flip);
+            assert.equal(refused.code, "invalid_request");
+          }
+          const { added } = yield* mcp.updateMemory(scope, {
+            scope: "you",
+            add: ["Lives in Tallinn."],
+            quote: "moved to  Tallinn",
+          });
+          assert.deepEqual(
+            added.map((note) => note.text),
+            ["Lives in Tallinn."],
+          );
+          const shared = yield* memory.notes("you");
+          assert.deepEqual(
+            shared.map((note) => note.source),
+            [
+              {
+                by: "Ops",
+                threadId: boundThreadId,
+                messageId: MessageId.make("m1"),
+                quote: "moved to  Tallinn",
+                at: shared[0]!.source.at,
+              },
+            ],
+          );
+          assert.deepEqual(yield* memory.notes(boundThreadId), []);
+
+          const first = yield* mcp.updateMemory(scope, {
+            add: ["Weekly report goes out Monday at 9:00."],
+          });
+          const second = yield* mcp.updateMemory(scope, {
+            add: ["Weekly report goes out Monday at 10:00."],
+          });
+          assert.deepEqual(
+            second.similar?.map((note) => note.id),
+            first.added.map((note) => note.id),
+          );
+          yield* mcp.updateMemory(scope, { remove: [first.added[0]!.id] });
+          assert.deepEqual(
+            (yield* memory.notes(boundThreadId)).map((note) => note.text),
+            ["Weekly report goes out Monday at 10:00."],
+          );
+          const retired = yield* memory.page(boundThreadId, {
+            retired: true,
+            offset: 0,
+            limit: 10,
+          });
+          assert.deepEqual(
+            retired.notes.map((note) => note.text),
+            ["Weekly report goes out Monday at 9:00."],
+          );
+          assert.deepEqual(
+            [...(yield* memory.forgotten(boundThreadId)).hashes],
+            [forgetKey("Weekly report goes out Monday at 9:00.")],
+          );
+
+          yield* memory.edit(music.threadId, () => [
+            {
+              id: "n-music",
+              text: "Prefers vinyl rips in FLAC.",
+              status: "fresh",
+              source: { by: "Music", at: "2026-11-01T00:00:00Z" },
+            },
+          ]);
+          const refusedSearch = yield* mcp
+            .searchMemory(scope, { query: "flac vinyl", scope: "bots" })
+            .pipe(Effect.flip);
+          assert.equal(refusedSearch.code, "invalid_request");
+          assert.deepEqual((yield* mcp.searchMemory(scope, { query: "flac vinyl" })).notes, []);
+          yield* Ref.set(main, boundThreadId);
+          assert.deepEqual(
+            (yield* mcp.searchMemory(scope, { query: "flac vinyl", scope: "bots" })).notes.map(
+              (note) => [note.bot, note.text],
+            ),
+            [["Music", "Prefers vinyl rips in FLAC."]],
+          );
+        }),
+    );
 
     it.effect("hides a webhook URL from a caller below the task's modes", () =>
       Effect.gen(function* () {

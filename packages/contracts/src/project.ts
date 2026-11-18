@@ -298,6 +298,8 @@ export type ProjectSearchContentsResult = typeof ProjectSearchContentsResult.Typ
 export const ProjectListEntriesInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   directoryPath: Schema.optional(TrimmedString),
+  // A host folder a sandboxed bot linked; it maps to the folder the bot wrote.
+  threadId: Schema.optional(ThreadId),
 });
 export type ProjectListEntriesInput = typeof ProjectListEntriesInput.Type;
 
@@ -443,6 +445,8 @@ export const ProjectReadFileInput = Schema.Struct({
   relativePath: Schema.NonEmptyString.check(Schema.isMaxLength(PROJECT_READ_FILE_PATH_MAX_LENGTH)),
   // Optional files can be absent without failing the read.
   allowMissing: Schema.optional(Schema.Boolean),
+  // The chat that links a host path; a sandboxed bot's path maps to the file it wrote.
+  threadId: Schema.optional(ThreadId),
 });
 export type ProjectReadFileInput = typeof ProjectReadFileInput.Type;
 

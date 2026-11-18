@@ -29,13 +29,6 @@ configuration changes. OpenCode stores "always" approval grants for the whole pr
 full-access replies use `once` so they cannot widen a supervised thread's permissions on a shared
 server. On 2.x, a session-wide approval also replies `once` and becomes T3's own rule on that session.
 
-Pi runs the user's own `pi` install in RPC mode and owns native extension, package, and project
-trust discovery. T3 injects only its namespaced MCP bridge, so a Pi session behaves as it does in
-the Pi TUI. Pi session files back native resume, rollback, and same-instance thread forks.
-Forks use Pi's CLI in the destination directory because RPC session switching retains the source
-session's cwd. Provider switches still use portable handoff summaries.
-See the [adapter](../../packages/provider-pi/src/server/adapter.ts).
-
 Antigravity separates account profiles per instance while sharing installed executables across the
 environment. It forces file-based credential storage because the native macOS keychain entry would
 otherwise be shared across instances. The launch environment removes ambient Google credentials,
@@ -52,9 +45,8 @@ and removal must respect those leases instead of replacing executables under a r
 ## Setup must not happen as a health-check side effect
 
 Opening a provider session can start MCP servers, run hooks, or launch a login browser.
-[Grok probes](../../packages/provider-grok/src/server/status.ts) avoid authentication and
-session creation for this reason. Antigravity likewise reserves authenticated catalog sessions for
-explicit setup or model refresh; background checks use initialization only.
+Antigravity reserves authenticated catalog sessions for explicit setup or model refresh;
+background checks use initialization only.
 
 [Antigravity sign-in](../../apps/server/src/provider/AntigravityAuth.ts) belongs to the initiating
 T3 auth session. The client carries the return URL back to the environment because the provider's
@@ -86,10 +78,8 @@ and npm are proven by the real path (symlinks followed): a versioned keg or cask
 Native installer layouts and the global directories of pnpm, Bun, Yarn, and Vite+ may match on
 either the resolved path or its real target, since those installers place real files or their own
 symlinks there. Volta is proven by its `volta-shim` link plus the package's image directory. When
-nothing is proven, Pi's and Grok's own updaters (`pi update --self`, `grok update`) run instead,
-because each detects its installer itself; the runner's version check catches an updater that exits
-0 without updating. Claude, Codex, and OpenCode updaters only act on their own native layout, so
-those providers stay manual-only unless that layout is proven. Mise is checked
+nothing is proven, the provider stays manual-only: the Claude, Codex, and OpenCode updaters only act
+on their own native layout. Mise is checked
 first, since a `mise x` wrapper can sit at a native installer's path, and `MISE_DATA_DIR` can put
 installs anywhere, so `mise which` is asked whenever mise is on `PATH`. Each driver names its fixed
 mise tool; mise must resolve the binary and list it in an active install of that tool requested as
@@ -98,8 +88,7 @@ path must be a shim or under the tool's `latest` link, which the upgrade repoint
 directory (including one `mise activate` put on `PATH`) would keep running the old binary until mise
 prunes it. Everything else mise touches (fixed version paths, pinned tools, wrappers, OpenCode 1.x,
 whose mise tool crosses into 2.x) stays manual-only, so T3 Code never edits mise config. Nix store installs stay manual-only too, since the store is read-only. `mise latest` supplies the version, because settings such as
-`minimum_release_age` can hold mise behind npm. A Grok cask whose Homebrew prefix
-cannot be verified also stays manual-only: `grok update` would install a second copy. npm updates pin `--prefix` because the
+`minimum_release_age` can hold mise behind npm. npm updates pin `--prefix` because the
 `npm` on `PATH` can belong to a different Node than the one that owns the provider. Homebrew
 compares against `brew info` since casks trail npm by hours; native installs share npm's version
 train, so the registry stays authoritative for them. A Chocolatey install of Claude stays

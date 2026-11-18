@@ -1,7 +1,7 @@
 import {
   type EnvironmentId,
   isProviderSendTurnSupportedImageMimeType,
-  PROVIDER_SEND_TURN_MAX_FILE_BYTES,
+  CHAT_FILE_ATTACHMENT_MAX_BYTES,
 } from "@t3tools/contracts";
 import {
   clampFileAttachmentUploadBytes,
@@ -145,7 +145,7 @@ export function composerOtherFilesForPresentation(
 
 export function fileAttachmentStagingLimit(input: FileAttachmentCapabilityState): number | null {
   if (!input.attachmentUploadsCapabilityKnown) {
-    return PROVIDER_SEND_TURN_MAX_FILE_BYTES;
+    return CHAT_FILE_ATTACHMENT_MAX_BYTES;
   }
   if (!input.supportsAttachmentUploads || input.maxFileAttachmentBytes === null) {
     return null;

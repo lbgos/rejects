@@ -21,7 +21,6 @@ import {
 } from "./themePalette";
 
 const THEME_STORAGE_KEY = "t3code:theme";
-const DEFAULT_DARK_CHROME = getDefaultThemeColors("dark").chrome;
 
 const bootScript = (() => {
   const match = indexHtml.match(/<script>([\s\S]*?)<\/script>/);
@@ -112,7 +111,7 @@ function runtimeResolvedAppearance(
   invalidateCustomThemes();
   try {
     const raw = storage[THEME_STORAGE_KEY] ?? null;
-    const theme = raw !== null && isKnownThemePreference(raw) ? raw : "system";
+    const theme = raw !== null && isKnownThemePreference(raw) ? raw : "dark";
     const followRaw = storage[THEME_FOLLOW_SYSTEM_STORAGE_KEY] ?? null;
     const appearanceRaw = storage[THEME_APPEARANCE_MODE_STORAGE_KEY] ?? null;
     const appearanceMode =
@@ -154,6 +153,7 @@ describe("index.html boot script", () => {
     prefersDark: boolean;
   }> = [
     { name: "no stored preference on a dark OS", storage: {}, prefersDark: true },
+    { name: "no stored preference on a light OS", storage: {}, prefersDark: false },
     {
       name: "T3 Chat follows a dark OS",
       storage: { [THEME_STORAGE_KEY]: "t3-chat", [THEME_FOLLOW_SYSTEM_STORAGE_KEY]: "true" },
@@ -305,8 +305,10 @@ describe("index.html boot script", () => {
     });
 
     expect(boot.themeId).toBe("nightfall");
-    expect(boot.bootVariables["--boot-background"]).toBe(published.colors.canvas);
-    expect(boot.backgroundColor).toBe(published.colors.chrome);
+    // Dark is true black under every theme until the app paints the theme after mount.
+    expect(boot.bootVariables["--boot-background"]).toBe("#000000");
+    expect(boot.bootVariables["--boot-accent"]).toBe(published.colors.accent);
+    expect(boot.backgroundColor).toBe("#000000");
   });
 
   it("keeps every built-in boot splash in sync with the real palettes", () => {
@@ -322,13 +324,14 @@ describe("index.html boot script", () => {
           },
           prefersDark: mode === "dark",
         });
+        const black = mode === "dark";
         expect(boot.themeId).toBe(theme.id);
-        expect(boot.isDark).toBe(mode === "dark");
-        expect(boot.bootVariables["--boot-background"]).toBe(colors!.canvas);
+        expect(boot.isDark).toBe(black);
+        expect(boot.bootVariables["--boot-background"]).toBe(black ? "#000000" : colors!.canvas);
         expect(boot.bootVariables["--boot-foreground"]).toBe(colors!.text);
         expect(boot.bootVariables["--boot-accent"]).toBe(colors!.accent);
-        expect(boot.backgroundColor).toBe(colors!.chrome);
-        expect(boot.metaContent).toBe(colors!.chrome);
+        expect(boot.backgroundColor).toBe(black ? "#000000" : colors!.chrome);
+        expect(boot.metaContent).toBe(black ? "#000000" : colors!.chrome);
       }
     }
   });
@@ -343,8 +346,8 @@ describe("index.html boot script", () => {
     const dark = runBootScript({ storage, prefersDark: true });
     expect(dark.isDark).toBe(true);
     expect(dark.themeId).toBe(GROVE_THEME.id);
-    expect(dark.bootVariables["--boot-background"]).toBe(
-      getThemeColorsForMode(GROVE_THEME, "dark")!.canvas,
+    expect(dark.bootVariables["--boot-accent"]).toBe(
+      getThemeColorsForMode(GROVE_THEME, "dark")!.accent,
     );
 
     const light = runBootScript({ storage, prefersDark: false });
@@ -367,8 +370,8 @@ describe("index.html boot script", () => {
     expect(boot.isDark).toBe(true);
     expect(boot.themeId).toBe(GROVE_THEME.id);
     expect(boot.themeSelected).toBe("true");
-    expect(boot.bootVariables["--boot-background"]).toBe(
-      getThemeColorsForMode(GROVE_THEME, "dark")!.canvas,
+    expect(boot.bootVariables["--boot-accent"]).toBe(
+      getThemeColorsForMode(GROVE_THEME, "dark")!.accent,
     );
   });
 
@@ -390,16 +393,43 @@ describe("index.html boot script", () => {
     });
 
     expect(boot.themeId).toBe("partial");
-    expect(boot.bootVariables["--boot-background"]).toBe(getDefaultThemeColors("dark").canvas);
+    expect(boot.bootVariables["--boot-background"]).toBe("#000000");
     expect(boot.bootVariables["--boot-foreground"]).toBe("#fffaff");
     expect(boot.bootVariables["--boot-accent"]).toBe(getDefaultThemeColors("dark").accent);
-    expect(boot.backgroundColor).toBe(DEFAULT_DARK_CHROME);
-    expect(boot.metaContent).toBe(DEFAULT_DARK_CHROME);
+    expect(boot.backgroundColor).toBe("#000000");
+    expect(boot.metaContent).toBe("#000000");
   });
 
-  it("follows the OS appearance when storage is unavailable", () => {
+  it("ignores malformed custom theme entries before applying a splash", () => {
+    const boot = runBootScript({
+      storage: {
+        [THEME_STORAGE_KEY]: "broken",
+        [CUSTOM_THEMES_STORAGE_KEY]: JSON.stringify([
+          { id: "broken", label: "Broken", appearance: "light", colors: "bad" },
+        ]),
+      },
+      prefersDark: false,
+    });
+
+    expect(boot.themeId).toBeUndefined();
+    expect(boot.themeSelected).toBeUndefined();
+    expect(boot.backgroundColor).toBe("#000000");
+    expect(boot.metaContent).toBe("#000000");
+  });
+
+  it("leaves unknown preferences unthemed so the runtime default applies", () => {
+    const boot = runBootScript({
+      storage: { [THEME_STORAGE_KEY]: "gone-theme" },
+      prefersDark: true,
+    });
+    expect(boot.themeId).toBeUndefined();
+    expect(boot.themeSelected).toBeUndefined();
+    expect(boot.isDark).toBe(true);
+  });
+
+  it("defaults to dark when storage is unavailable", () => {
     const light = runBootScript({ storageThrows: true, prefersDark: false });
-    expect(light.isDark).toBe(false);
+    expect(light.isDark).toBe(true);
     expect(light.themeId).toBeUndefined();
 
     const dark = runBootScript({ storageThrows: true, prefersDark: true });

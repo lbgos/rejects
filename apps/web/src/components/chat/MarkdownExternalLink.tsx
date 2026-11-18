@@ -24,7 +24,7 @@ const MarkdownLinkFavicon = memo(function MarkdownLinkFavicon({ host }: { host: 
   const brandIcon = sourceControlHostIcon(host);
   const faviconUrl = brandIcon ? null : faviconUrlForOrigin(`https://${host}`);
   return (
-    <span className="ms-[0.25em] me-[0.2em]" aria-hidden>
+    <span className="ms-[0.25em] me-[0.2em]" aria-hidden data-link-favicon>
       {brandIcon ? (
         brandIcon
       ) : faviconUrl === null || failedHost === host || failedFaviconHosts.has(host) ? (

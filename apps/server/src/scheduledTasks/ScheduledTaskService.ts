@@ -1,3 +1,6 @@
+import * as BotStore from "../bots/BotStore.ts";
+import { wakeMessage } from "../bots/instructions.ts";
+import { chatLanguageOf } from "../bots/language.ts";
 import {
   CommandId,
   MessageId,
@@ -58,7 +61,12 @@ import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import * as DueHint from "../scheduling/DueHint.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import { latestRootProviderFailure } from "@t3tools/shared/orchestrationV2ThreadError";
-import { isMissedFixedTimeRun, isSameSchedule, nextScheduledRunAt } from "./Schedule.ts";
+import {
+  isMissedFixedTimeRun,
+  isSameSchedule,
+  nextScheduledRunAt,
+  scheduleTimeZone,
+} from "./Schedule.ts";
 import {
   redactHeaders,
   redactQuery,
@@ -319,11 +327,12 @@ const localNow = DateTime.withCurrentZoneLocal(DateTime.nowInCurrentZone);
 function nextRunAt(
   task: Pick<ScheduledTask, "enabled" | "schedule">,
   from: DateTime.DateTime,
+  timeZone: DateTime.TimeZone,
 ): string | null {
   if (!task.enabled) return null;
   // Decoded intervals can overflow DateTime; unrepresentable occurrences have no next run.
   try {
-    const next = nextScheduledRunAt(task.schedule, from);
+    const next = nextScheduledRunAt(task.schedule, from, timeZone);
     return next !== null && Number.isFinite(DateTime.toEpochMillis(next)) ? iso(next) : null;
   } catch {
     return null;
@@ -337,6 +346,7 @@ function nextRunAt(
 function nextRunAfterRun(
   task: Pick<ScheduledTask, "enabled" | "schedule" | "lastRunAt">,
   now: DateTime.DateTime,
+  timeZone: DateTime.TimeZone,
 ): string | null {
   const startedAt =
     task.schedule.type === "once" && task.lastRunAt !== null
@@ -345,6 +355,7 @@ function nextRunAfterRun(
   return nextRunAt(
     task,
     Option.getOrElse(startedAt, () => now),
+    timeZone,
   );
 }
 
@@ -354,7 +365,10 @@ function requireFutureOnce(
   now: DateTime.DateTime,
   taskId: ScheduledTaskId,
 ) {
-  return task.enabled && task.schedule.type === "once" && nextRunAt(task, now) === null
+  // A one-time run is an instant, so the zone is unused.
+  return task.enabled &&
+    task.schedule.type === "once" &&
+    nextRunAt(task, now, DateTime.zoneMakeOffset(0)) === null
     ? taskError("The run time has passed. Pick a time in the future.", { taskId })
     : Effect.void;
 }
@@ -489,6 +503,12 @@ export const layer = Layer.effect(
     // Include creation time so late deliveries cannot decrement a recreated task's count.
     const webhookQueued = yield* Ref.make<ReadonlyMap<string, number>>(new Map());
     const webhookRateWindows = yield* Ref.make<ReadonlyMap<ScheduledTaskId, RateWindow>>(new Map());
+    const bots = yield* Effect.serviceOption(BotStore.BotStore);
+    // Fixed times are the user's wall-clock times, so the host's zone does not move them.
+    const userZone = Option.match(bots, {
+      onNone: () => Effect.sync(() => scheduleTimeZone(undefined)),
+      onSome: (store) => Effect.map(store.timeZone, scheduleTimeZone),
+    });
     const webhookRejectedRateWindows = yield* Ref.make<ReadonlyMap<ScheduledTaskId, RateWindow>>(
       new Map(),
     );
@@ -814,7 +834,7 @@ export const layer = Layer.effect(
           UPDATE scheduled_tasks
           SET last_run_status = 'failed',
               last_run_error = ${message},
-              next_run_at = ${nextRunAfterRun({ ...source, lastRunAt: startedAtIso }, now)},
+              next_run_at = ${nextRunAfterRun({ ...source, lastRunAt: startedAtIso }, now, yield* userZone)},
               updated_at = ${iso(now)},
               run_count = run_count + CASE WHEN EXISTS (
                 SELECT 1 FROM scheduled_task_webhook_pending
@@ -993,6 +1013,44 @@ export const layer = Layer.effect(
           if (reason !== null) return yield* new WebhookDeliverySkipped({ reason });
         }
 
+        // A capped bot's recurring wake cannot start: the budget check would reject it after a
+        // thread and a run exist. Skip it and keep the cadence; the cap lifts at the next UTC
+        // midnight. A one-time schedule runs and fails visibly instead of disappearing.
+        if (trigger === "scheduled" && Option.isSome(bots) && active.threadId) {
+          const botThreadId = ThreadId.make(active.threadId);
+          const capped = (yield* bots.value.list).find(
+            (summary) =>
+              summary.threadId === botThreadId && summary.tokensToday >= summary.dailyTokenCap,
+          );
+          if (capped !== undefined && active.schedule.type !== "once") {
+            const next = nextRunAt(active, startedAt, yield* userZone);
+            yield* Effect.logInfo("Skipping a capped bot's wake", {
+              taskId: active.id,
+              botThreadId,
+              resumesAt: capped.resumesAt,
+              rescheduledTo: next,
+            });
+            yield* sql`
+              UPDATE scheduled_tasks
+              SET next_run_at = ${next},
+                  updated_at = ${iso(startedAt)}
+              WHERE task_id = ${task.id}
+            `.pipe(
+              Effect.mapError((cause) =>
+                taskError("Could not reschedule a capped bot's wake.", {
+                  taskId: task.id,
+                  cause,
+                }),
+              ),
+            );
+            yield* notifyChanged;
+            return {
+              task: { ...active, nextRunAt: next, updatedAt: iso(startedAt) },
+              threadId: null,
+            };
+          }
+        }
+
         if (webhook === undefined) yield* markRunning(active.id, startedAtIso);
         else
           yield* sql
@@ -1019,6 +1077,11 @@ export const layer = Layer.effect(
         const messageId = MessageId.make(`scheduled-task-message:${fireKey}`);
         const prompt = webhook?.prompt ?? active.prompt;
         const threadMode = scheduledTaskThreadMode(active);
+
+        const bot =
+          Option.isSome(bots) && active.threadId
+            ? yield* bots.value.get(ThreadId.make(active.threadId))
+            : undefined;
 
         // A bound thread can move to another project (No project to a project) while
         // this fires. Follow it; one move needs at most two retries. Same ids replay safely.
@@ -1057,9 +1120,49 @@ export const layer = Layer.effect(
               }),
             );
 
+        // A bot's wake runs in a fresh thread of its own, so its chat context stays small.
+        // The id follows the fire, so a retried dispatch reuses the same thread.
+        const wakeThreadId = ThreadId.make(`bot-wake:${fireKey}`);
+        const launchWake = (owner: NonNullable<typeof bot>) =>
+          bots.pipe(
+            Option.match({
+              onNone: () => Effect.void,
+              onSome: (store) =>
+                store.startWake({
+                  threadId: wakeThreadId,
+                  botThreadId: owner.threadId,
+                  taskId: active.id,
+                  title: active.title,
+                }),
+            }),
+            Effect.andThen(chatLanguageOf(threadManagement, owner.threadId)),
+            Effect.flatMap((language) =>
+              threadLaunch.launch({
+                commandId,
+                threadId: wakeThreadId,
+                projectId: owner.projectId,
+                title: `${owner.name}: ${active.title}`,
+                modelSelection: owner.modelSelection,
+                runtimeMode: "full-access",
+                interactionMode: "default",
+                workspaceStrategy: { type: "root" },
+                initialMessage: {
+                  messageId,
+                  scheduledTaskId: active.id,
+                  text: wakeMessage(active.title, prompt, language),
+                  attachments: [],
+                },
+                createdBy: active.createdBy,
+                creationSource: active.creationSource,
+              }),
+            ),
+            Effect.as(wakeThreadId),
+          );
+
         // Capture defects and interrupts too so dispatch failures still reach markCompleted.
-        const result =
-          active.threadId === null
+        const result = bot
+          ? yield* Effect.exit(launchWake(bot))
+          : active.threadId === null
             ? yield* Effect.exit(
                 threadLaunch
                   .launch({
@@ -1088,7 +1191,7 @@ export const layer = Layer.effect(
               )
             : yield* Effect.exit(
                 // The stored selection only seeds fresh threads. A bound run
-                // follows the thread's current provider, so it passes none.
+                // follows the thread's current provider.
                 sendBound(ThreadId.make(active.threadId), active.projectId, 2).pipe(
                   Effect.as(ThreadId.make(active.threadId)),
                 ),
@@ -1116,6 +1219,7 @@ export const layer = Layer.effect(
             nextRunAt: nextRunAt(
               scheduleSource,
               scheduleSource.schedule.type === "once" ? startedAt : completedAt,
+              yield* userZone,
             ),
             lastRunStatus,
             lastRunError,
@@ -1214,7 +1318,7 @@ export const layer = Layer.effect(
       reason = "missed",
       runError?: string,
     ) {
-      const next = nextRunAt(task, now);
+      const next = nextRunAt(task, now, yield* userZone);
       yield* Effect.logInfo("Skipping schedule task run", {
         taskId: task.id,
         reason,
@@ -1306,7 +1410,7 @@ export const layer = Layer.effect(
                 UPDATE scheduled_tasks
                 SET last_run_status = 'failed',
                     last_run_error = 'Run was interrupted by a server restart.',
-                    next_run_at = ${nextRunAfterRun(decoded.success, now)},
+                    next_run_at = ${nextRunAfterRun(decoded.success, now, yield* userZone)},
                     updated_at = ${iso(now)},
                     run_count = run_count + CASE WHEN EXISTS (
                       SELECT 1 FROM scheduled_task_webhook_pending
@@ -1346,11 +1450,8 @@ export const layer = Layer.effect(
     yield* scheduler.register("scheduled-tasks", runDueTasks());
 
     const list: ScheduledTaskService["Service"]["list"] = () =>
-      listRows().pipe(
-        Effect.map((tasks) => ({
-          tasks,
-          timeZone: DateTime.zoneToString(DateTime.zoneMakeLocal()),
-        })),
+      Effect.all([listRows(), userZone]).pipe(
+        Effect.map(([tasks, zone]) => ({ tasks, timeZone: DateTime.zoneToString(zone) })),
         Effect.mapError((cause) => taskError("Could not list schedule tasks.", { cause })),
       );
 
@@ -1393,6 +1494,17 @@ export const layer = Layer.effect(
     const upsert: ScheduledTaskService["Service"]["upsert"] = Effect.fn(
       "ScheduledTaskService.upsert",
     )(function* (input) {
+      const bot =
+        Option.isSome(bots) && input.threadId ? yield* bots.value.owner(input.threadId) : undefined;
+      if (
+        bot &&
+        (input.runtimeMode !== "full-access" ||
+          input.interactionMode !== "default" ||
+          (input.schedule.type === "interval" && input.schedule.everyMs < 300000))
+      )
+        return yield* taskError(
+          "Bot schedules require full access, default mode and at least five minutes between wakes.",
+        );
       // A webhook task the policy blocks can still be edited while it is off.
       if (input.enabled && input.schedule.type === "webhook" && webhookPolicyBlock !== undefined) {
         return yield* taskError(
@@ -1541,7 +1653,7 @@ export const layer = Layer.effect(
         updatedAt: iso(now),
         nextRunAt: scheduleUnchanged
           ? existingTask.nextRunAt
-          : nextRunAt({ enabled: input.enabled, schedule }, now),
+          : nextRunAt({ enabled: input.enabled, schedule }, now, yield* userZone),
         lastRunAt: existingTask?.lastRunAt ?? null,
         lastRunStatus: existingTask?.lastRunStatus ?? "never",
         lastRunError: existingTask?.lastRunError ?? null,
@@ -1582,7 +1694,11 @@ export const layer = Layer.effect(
         now,
         input.id,
       );
-      const next = nextRunAt({ enabled: input.enabled, schedule: existing.schedule }, now);
+      const next = nextRunAt(
+        { enabled: input.enabled, schedule: existing.schedule },
+        now,
+        yield* userZone,
+      );
       // RETURNING so a task deleted between the load and this UPDATE is a
       // visible not-found error, not a false success.
       const updated = yield* sql<{ task_id: string }>`

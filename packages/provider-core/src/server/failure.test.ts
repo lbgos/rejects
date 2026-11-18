@@ -87,10 +87,14 @@ it("does not expose arbitrary cause messages and preserves explicit messages", (
   }
 });
 
-it("preserves actionable T3 errors wrapped by turn startup", () => {
+it("preserves actionable handoff and refusal errors wrapped by turn startup", () => {
   for (const error of [
     new ContextHandoffBudgetError(),
     new ContextHandoffBackgroundWorkError(),
+    {
+      _tag: "ProviderLaunchRefusedError",
+      message: "Zero data retention is on, and Luna (Codex) is not on its list.",
+    },
     new ProviderSetupError({
       instanceId: ProviderInstanceId.make("codex"),
       operation: "runtime",
@@ -106,6 +110,37 @@ it("preserves actionable T3 errors wrapped by turn startup", () => {
     });
     assert.equal(makeProviderFailure({ cause: Cause.fail(cause) }).message, error.message);
   }
+});
+
+it("reports a bot's own cap instead of a generic provider failure", () => {
+  const botError = (operation: string, message: string) => ({
+    _tag: "BotStoreError",
+    operation,
+    get message() {
+      return message;
+    },
+  });
+  assert.equal(
+    makeProviderFailure({
+      cause: Cause.fail(
+        botError("cap", "Bot daily token cap reached. Work stopped until tomorrow."),
+      ),
+    }).message,
+    "Bot daily token cap reached. Work stopped until tomorrow.",
+  );
+  assert.equal(
+    makeProviderFailure({
+      cause: botError(
+        "rate",
+        "Bot message cap reached. Work stopped until the hourly window resets.",
+      ),
+    }).message,
+    "Bot message cap reached. Work stopped until the hourly window resets.",
+  );
+  assert.equal(
+    makeProviderFailure({ cause: botError("write", "Bot operation failed: write.") }).message,
+    "Provider turn failed.",
+  );
 });
 
 it("names how the provider process exited and the stage it failed in, without its output", () => {

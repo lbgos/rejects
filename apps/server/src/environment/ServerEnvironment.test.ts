@@ -91,81 +91,31 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("ServerEnvironmen
       yield* fs.symlink(entry, `${prefix}/bin/t3`);
       const config = yield* makeServerConfig(baseDir);
       yield* fs.makeDirectory(config.stateDir, { recursive: true });
-      for (const mode of ["web", "desktop"] as const) {
-        const descriptor = yield* Effect.gen(function* () {
-          const environment = yield* ServerEnvironment.ServerEnvironment;
-          return yield* environment.getDescriptor;
-        }).pipe(
-          Effect.provide(
-            ServerEnvironment.layer.pipe(
-              Layer.provide(layerEmptySecretStore),
-              Layer.provide(ServerConfig.layer({ ...config, mode })),
-            ),
+      const descriptor = yield* Effect.gen(function* () {
+        const environment = yield* ServerEnvironment.ServerEnvironment;
+        return yield* environment.getDescriptor;
+      }).pipe(
+        Effect.provide(
+          ServerEnvironment.layer.pipe(
+            Layer.provide(layerEmptySecretStore),
+            Layer.provide(ServerConfig.layer(config)),
           ),
-          Effect.provideService(HostProcess.Arguments, ["node", entry]),
-          Effect.provideService(HostProcess.IsExecutable, false),
-          Effect.provideService(HostProcess.Platform, "linux"),
-          Effect.provideService(HostProcess.Environment, {}),
-        );
-        expect(descriptor.capabilities.serverInstallation).toEqual(
-          mode === "web" ? { kind: "npm-global", prefix } : undefined,
-        );
-        expect(descriptor.capabilities.serverSelfUpdate).toBe(
-          mode === "web" ? undefined : "desktop-managed",
-        );
-        expect(descriptor.capabilities).toMatchObject({
-          settledWorktreeCleanup: true,
-          storageCleanupRun: true,
-          projectWorktreeCleanup: true,
-          worktreesDirectory: true,
-          threadAutoSettlementScope: true,
-        });
-      }
+        ),
+        Effect.provideService(HostProcess.Arguments, ["node", entry]),
+        Effect.provideService(HostProcess.IsExecutable, false),
+        Effect.provideService(HostProcess.Platform, "linux"),
+        Effect.provideService(HostProcess.Environment, {}),
+      );
+      expect(descriptor.capabilities.serverInstallation).toEqual({ kind: "npm-global", prefix });
+      expect(descriptor.capabilities.serverSelfUpdate).toBeUndefined();
+      expect(descriptor.capabilities).toMatchObject({
+        settledWorktreeCleanup: true,
+        storageCleanupRun: true,
+        projectWorktreeCleanup: true,
+        worktreesDirectory: true,
+        threadAutoSettlementScope: true,
+      });
     }),
-  );
-  it.effect.each([
-    { desktopAppUpdate: false, advertised: undefined },
-    { desktopAppUpdate: true, advertised: true },
-  ])(
-    "advertises desktop app updates only when the desktop can install them ($desktopAppUpdate)",
-    ({ desktopAppUpdate, advertised }) =>
-      Effect.gen(function* () {
-        const fs = yield* FileSystem.FileSystem;
-        const baseDir = yield* fs.makeTempDirectoryScoped();
-        const config = yield* makeServerConfig(baseDir);
-        yield* fs.makeDirectory(config.stateDir, { recursive: true });
-        const descriptor = yield* Effect.gen(function* () {
-          const environment = yield* ServerEnvironment.ServerEnvironment;
-          return yield* environment.getDescriptor;
-        }).pipe(
-          Effect.provide(
-            ServerEnvironment.layer.pipe(
-              Layer.provide(layerEmptySecretStore),
-              Layer.provide(
-                ServerConfig.layer({
-                  ...config,
-                  mode: "desktop",
-                  desktopTelemetryControlFd: 5,
-                  desktopAppUpdate,
-                }),
-              ),
-            ),
-          ),
-          Effect.provideService(HostProcess.Environment, {}),
-        );
-        const capabilities = descriptor.capabilities;
-        expect({
-          serverSelfUpdate: capabilities.serverSelfUpdate,
-          desktopAppUpdate: capabilities.desktopAppUpdate,
-          desktopAppChannelSwitch: capabilities.desktopAppChannelSwitch,
-          serverSelfUpdateProgress: capabilities.serverSelfUpdateProgress,
-        }).toEqual({
-          serverSelfUpdate: "desktop-managed",
-          desktopAppUpdate: advertised,
-          desktopAppChannelSwitch: advertised,
-          serverSelfUpdateProgress: advertised,
-        });
-      }),
   );
   it.effect.each([
     { platform: "darwin", architecture: "arm64", supported: true },
@@ -283,7 +233,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("ServerEnvironmen
       expect(second.capabilities.repositoryIdentity).toBe(true);
       expect(second.capabilities.connectionProbe).toBe(true);
       expect(second.capabilities.attachmentUploads).toBe(true);
-      expect(second.capabilities.fileAttachments).toEqual({ maxUploadBytes: 50 * 1024 * 1024 });
+      expect(second.capabilities.fileAttachments).toEqual({ maxUploadBytes: 300 * 1024 * 1024 });
       expect(second.capabilities.pullRequests).toBe(true);
       expect(second.capabilities.requiredWorktreeBootstrap).toBe(true);
       expect(second.capabilities.usagePriceOverrides).toBe(true);

@@ -7,7 +7,11 @@ import {
   type ServerConfig,
   type ServerSelfUpdateCapability,
 } from "@t3tools/contracts";
-import { cliReleaseChannelOf, desktopUpdateChannelOf } from "@t3tools/shared/cliRelease";
+import {
+  cliReleaseChannelOf,
+  desktopUpdateChannelOf,
+  CLI_COMMAND_NAME,
+} from "@t3tools/shared/cliRelease";
 import { compareSemverVersions } from "@t3tools/shared/semver";
 
 import {
@@ -147,7 +151,7 @@ export interface ChannelSwitchRelease {
   readonly databaseMigration: number | undefined;
 }
 
-export const channelSwitchLabel = (channel: DesktopUpdateChannel) =>
+const channelSwitchLabel = (channel: DesktopUpdateChannel) =>
   channel === "nightly" ? "Nightly" : "Stable";
 
 /** Stable and Nightly each build their own commits, so either can hold migrations the other lacks.
@@ -297,7 +301,7 @@ export function collectChannelSwitchTargets(
       compareSemverVersions(release.version, serverVersion) <= 0
     ) {
       skip(
-        `run \`t3 update --channel ${release.channel === "nightly" ? "nightly" : "stable"} --allow-downgrade\` there`,
+        `run \`${CLI_COMMAND_NAME} update --channel ${release.channel === "nightly" ? "nightly" : "stable"} --allow-downgrade\` there`,
       );
       continue;
     }
@@ -307,18 +311,6 @@ export function collectChannelSwitchTargets(
 }
 
 /** A remote host on the other track that a switch can still move, for retrying a partial switch. */
-export function awaitsTrackSwitch(
-  machine: Pick<UpdateEverythingMachine, "serverConfig" | "hostedByThisApp">,
-  channel: DesktopUpdateChannel,
-): boolean {
-  const config = machine.serverConfig;
-  return (
-    !machine.hostedByThisApp &&
-    config !== null &&
-    !isOnTrack(config.environment.serverVersion, channel) &&
-    !("skip" in trackSwitchMove(config, false))
-  );
-}
 
 function isOnTrack(version: string, channel: DesktopUpdateChannel): boolean {
   return cliReleaseChannelOf(version) !== "preview" && desktopUpdateChannelOf(version) === channel;

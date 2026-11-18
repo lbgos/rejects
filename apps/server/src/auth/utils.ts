@@ -166,6 +166,31 @@ function readRemoteAddressFromSource(source: unknown): string | undefined {
   return normalizeIpAddress(candidate.socket?.remoteAddress ?? candidate.remoteAddress);
 }
 
+const isLoopbackAddress = (address: string | undefined) =>
+  address === "::1" || (address?.startsWith("127.") ?? false);
+
+const loopbackUrlHost = (value: string | undefined): boolean => {
+  if (!value) return false;
+  try {
+    return !isRemoteReachableHost(new URL(value).hostname);
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * A browser on this machine talking to its own local page: loopback socket, loopback Host, and a
+ * loopback or absent Origin. Remote clients, other sites and DNS-rebinding hosts all fail one check.
+ */
+export function isLocalBrowserRequest(request: HttpServerRequest.HttpServerRequest): boolean {
+  const origin = normalizeNonEmptyString(request.headers["origin"]);
+  return (
+    isLoopbackAddress(readRemoteAddressFromSource(request.source)) &&
+    loopbackUrlHost(`http://${request.headers["host"] ?? ""}`) &&
+    (origin === undefined || loopbackUrlHost(origin))
+  );
+}
+
 export function deriveAuthClientMetadata(input: {
   readonly request: HttpServerRequest.HttpServerRequest;
   readonly presented?: AuthClientPresentationMetadata;

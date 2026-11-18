@@ -11,9 +11,9 @@ When a connection fails, open **Settings > Environments**, find the environment,
 and select **Details**. The first part marked as failed is the cause. Find its
 section below.
 
-To see the host's side, run `t3 connect status` on the host, or open
+To see the host's side, run `rejects connect status` on the host, or open
 **Settings > Sharing & access** on the host. Both check the host's T3 Connect
-address from the host, and say why it fails. `t3 connect` runs the same check
+address from the host, and say why it fails. `rejects connect` runs the same check
 when it finishes setup. This check cannot test another device's network. For a
 problem on one device, use **Details** on that device.
 
@@ -29,7 +29,7 @@ T3 Connect could not reach the host's tunnel. This means one of these:
 Fix:
 
 1. Make sure the host is awake and T3 Code runs on it.
-2. On the host, run `t3 connect status`. It names the problem on the host's side.
+2. On the host, run `rejects connect status`. It names the problem on the host's side.
 3. If the host was offline for a long time, T3 Connect removes its tunnel. Start
    T3 Code on the host and update it to the latest version. It gets a new tunnel.
 
@@ -66,7 +66,7 @@ The host's tunnel is up, but it cannot reach T3 Code on the host. Common causes:
   sends requests to `127.0.0.1`, so the server must also listen there.
 
 Fix: restart T3 Code on the host. For the background service, run
-`t3 service restart`. Then run `t3 connect status` on the host.
+`rejects service restart`. Then run `rejects connect status` on the host.
 
 ## The T3 Connect address does not resolve or answer
 
@@ -76,7 +76,7 @@ secure (TLS) connection, or did not answer in time.
 Fix:
 
 1. Make sure the host is awake and online.
-2. On the host, run `t3 connect status`.
+2. On the host, run `rejects connect status`.
 3. If the check fails only on the host, check the host's DNS, VPN, or proxy.
    If it says the host's network has an old cached answer, wait: it usually
    clears within about 30 minutes.
@@ -105,14 +105,14 @@ This device's T3 Connect sign-in is not ready yet, or T3 Connect does not have
 an active link between your account and the host.
 
 - **The host is linked to a different account.** Sign in to the same T3 Connect
-  account on this device and on the host. On the host, run `t3 connect logout`,
-  then `t3 connect`.
+  account on this device and on the host. On the host, run `rejects connect logout`,
+  then `rejects connect`.
 - **T3 Connect is off on the host, or the host only publishes agent activity.**
   On the host, open **Settings > Sharing & access** and turn **T3 Connect** on, or
-  run `t3 connect`.
+  run `rejects connect`.
 - **The host was linked, but the server did not apply the link yet.** Restart
   the server on the host: quit and reopen the T3 Code desktop app, run
-  `t3 service restart`, or stop `t3 serve` and run it again.
+  `rejects service restart`, or stop `rejects serve` and run it again.
 - **This device's sign-in expired, or the host no longer accepts this
   device.** Sign out of T3 Connect and sign in again.
 - **This device is still loading its T3 Connect sign-in.** Wait a moment;
@@ -120,7 +120,7 @@ an active link between your account and the host.
   this device.
 - **The host is waiting for you to approve this device.** The host requires
   approval for new devices. Approve the code this device shows from a device
-  that is already connected, or run `t3 auth connect-device approve <code>` on
+  that is already connected, or run `rejects auth connect-device approve <code>` on
   the host. See [Approve new devices](./remote-access.md#approve-new-devices).
 - **Your account reached its tunnel limit.** Remove an environment you do not
   use from your T3 account's T3 Connect page, or
@@ -143,13 +143,13 @@ This app needs a newer T3 Code on the host. Update T3 Code on the host. See
 | Error                                                     | Fix                                                                                                                                                                                                  |
 | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `environment_link_limit_exceeded` or managed tunnel limit | Remove an unused environment or link a paid T3 Chat account, then restart T3 Code on the host.                                                                                                       |
-| `auth_invalid` or `invalid_bearer`                        | Run `t3 connect login`. If credentials were revoked, run `t3 connect logout`, then `t3 connect` again. Restart the server after signing in.                                                          |
+| `auth_invalid` or `invalid_bearer`                        | Run `rejects connect login`. If credentials were revoked, run `rejects connect logout`, then `rejects connect` again. Restart the server after signing in.                                           |
 | Expired or invalid link proof                             | Check the host's date and time, update T3 Code, then restart it.                                                                                                                                     |
 | HTTP 403 without a recognized error                       | If the host requires approval for new devices, update T3 Code on this device and approve it. Otherwise check relay access, proxies, and firewall rules. Keep any Cloudflare Ray ID for a bug report. |
 | HTTP 408, 429, or 5xx                                     | Wait a few minutes. T3 Code retries temporary failures on its own.                                                                                                                                   |
 
 After you fix a permanent rejection, restart the host's server with
-`t3 service restart`. For a foreground server, stop it and run `t3 serve` again.
+`rejects service restart`. For a foreground server, stop it and run `rejects serve` again.
 
 If T3 Code on the host disappears when SSH closes, see
 [background-service troubleshooting](./background-service.md#troubleshooting).
@@ -160,9 +160,9 @@ If none of this helps, open an issue on
 [GitHub](https://github.com/pingdotgg/t3code/issues). Include:
 
 - The text from **Copy diagnostics** in the environment's **Details**.
-- The output of `t3 connect status` on the host.
+- The output of `rejects connect status` on the host.
 - The trace ID, if one is shown.
 - If the tunnel dropped earlier, the host's tunnel log, `relay-client.ndjson`
-  in the logs folder (`~/.t3/userdata/logs` by default). It records when the
+  in the logs folder (`~/.rejects/userdata/logs` by default). It records when the
   tunnel connected, warned, exited, and restarted, with the tunnel token
   removed.

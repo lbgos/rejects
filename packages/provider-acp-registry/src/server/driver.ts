@@ -80,6 +80,13 @@ const makeUnsupportedTextGeneration = (): ProviderTextGeneration => {
       }),
     );
   return {
+    generateStructured: (input) =>
+      Effect.fail(
+        new TextGenerationError({
+          operation: input.operation,
+          detail: "structured generation is not supported by acp-registry",
+        }),
+      ),
     generateCommitMessage: () => unsupported("generateCommitMessage"),
     generatePrContent: () => unsupported("generatePrContent"),
     generateBranchName: () => unsupported("generateBranchName"),

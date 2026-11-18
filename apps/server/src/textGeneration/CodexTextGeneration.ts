@@ -36,7 +36,10 @@ import {
 import { getCodexServiceTierOptionValue } from "../codexModelOptions.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
+import { omitOptionalNulls, toStrictJsonSchema } from "./strictJsonSchema.ts";
+
 const CODEX_TIMEOUT_MS = 180_000;
+const CODEX_STRUCTURED_TIMEOUT_MS = 360_000;
 const CODEX_MCP_LIST_TIMEOUT_MS = 10_000;
 // Plugins/apps add MCP servers; use trailing config overrides because --disable loses to user -c flags.
 const CODEX_NO_PLUGIN_ARGS = [
@@ -165,6 +168,10 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
     return imagePaths;
   });
 
+  /**
+   * The MCP servers Codex would start for this configuration, by name. Text
+   * metadata generation continues if discovery fails; structured generation refuses it.
+   */
   const listEnabledMcpServers = Effect.fn("listEnabledMcpServers")(
     function* (input: {
       readonly binary: string;
@@ -194,35 +201,36 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
         { concurrency: "unbounded" },
       );
       if (exitCode !== 0) {
-        yield* Effect.logWarning("codex mcp list failed; text generation keeps its MCP servers", {
+        yield* Effect.logWarning("codex mcp list failed", {
           reason: "exit",
           exitCode,
         });
-        return [];
+        return Option.none<ReadonlyArray<string>>();
       }
       const servers = yield* decodeCodexMcpServers(stdout).pipe(
         Effect.tapError(() =>
-          Effect.logWarning("codex mcp list failed; text generation keeps its MCP servers", {
+          Effect.logWarning("codex mcp list failed", {
             reason: "decode",
           }),
         ),
       );
-      return servers.filter((server) => server.enabled).map((server) => server.name);
+      return Option.some(servers.filter((server) => server.enabled).map((server) => server.name));
     },
     Effect.scoped,
     Effect.timeoutOption(CODEX_MCP_LIST_TIMEOUT_MS),
     Effect.flatMap(
       Option.match({
         onNone: () =>
-          Effect.logWarning("codex mcp list failed; text generation keeps its MCP servers", {
+          Effect.logWarning("codex mcp list failed", {
             reason: "timeout",
-          }).pipe(Effect.as<ReadonlyArray<string>>([])),
+          }).pipe(Effect.as(Option.none<ReadonlyArray<string>>())),
         onSome: (names) => Effect.succeed(names),
       }),
     ),
-    Effect.orElseSucceed((): ReadonlyArray<string> => []),
+    Effect.orElseSucceed(() => Option.none<ReadonlyArray<string>>()),
   );
 
+  // Codex enforces a read-only filesystem sandbox. It may still run read-only shell tools.
   const runCodexJson = Effect.fn("runCodexJson")(function* <S extends Schema.Top>({
     operation,
     cwd,
@@ -231,15 +239,19 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
     modelSelection,
     attachments,
     investigate,
+    structured,
   }: TextGenerationOperations.Request<S>): Effect.fn.Return<
     S["Type"],
     TextGenerationError,
     S["DecodingServices"]
   > {
     const imagePaths = yield* materializeImageAttachments(attachments);
+    const originalJsonSchema = toJsonSchemaObject(
+      structured ? Schema.toEncoded(outputSchemaJson) : outputSchemaJson,
+    );
     const schemaJson = yield* encodeJsonForOperation(
       operation,
-      toJsonSchemaObject(outputSchemaJson),
+      toStrictJsonSchema(originalJsonSchema),
     );
     const schemaPath = yield* writeTempFile(operation, "codex-schema", schemaJson);
     const outputPath = yield* writeTempFile(operation, "codex-output", "").pipe(
@@ -302,7 +314,13 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
         env,
         launchArgs: codexMcpListLaunchArgs(launchArgs),
       });
-      const mcpServersOff = codexMcpServersOff(enabledMcpServers);
+      if (structured && Option.isNone(enabledMcpServers)) {
+        return yield* new TextGenerationError({
+          operation,
+          detail: "Could not disable configured MCP servers for structured generation.",
+        });
+      }
+      const mcpServersOff = codexMcpServersOff(Option.getOrElse(enabledMcpServers, () => []));
       const execLaunchArgs = codexExecLaunchArgs(launchArgs);
       // A launch-arg mcp_servers={...} table replaces ours and can re-enable dotted names.
       const launchArgsSetMcpTable = execLaunchArgs.some((arg) => /\bmcp_servers\s*=/.test(arg));
@@ -317,7 +335,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
           ...CODEX_NO_PLUGIN_ARGS,
           ...(mcpServersOff && launchArgsSetMcpTable ? ["--config", mcpServersOff] : []),
           // After launch args, so a launch arg's enabled=true cannot turn a server back on.
-          ...codexMcpServerOffFlags(enabledMcpServers),
+          ...codexMcpServerOffFlags(Option.getOrElse(enabledMcpServers, () => [])),
           "--ephemeral",
           "--skip-git-repo-check",
           "-s",
@@ -388,7 +406,9 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
     return yield* Effect.gen(function* () {
       yield* runCodexCommand().pipe(
         Effect.scoped,
-        Effect.timeoutOption(investigate?.timeoutMs ?? CODEX_TIMEOUT_MS),
+        Effect.timeoutOption(
+          investigate?.timeoutMs ?? (structured ? CODEX_STRUCTURED_TIMEOUT_MS : CODEX_TIMEOUT_MS),
+        ),
         Effect.flatMap(
           Option.match({
             onNone: () =>
@@ -400,7 +420,8 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
         ),
       );
 
-      const decodeOutput = Schema.decodeEffect(Schema.fromJsonString(outputSchemaJson));
+      const parseOutput = Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown));
+      const decodeOutput = Schema.decodeUnknownEffect(outputSchemaJson);
 
       return yield* fileSystem.readFileString(outputPath).pipe(
         Effect.mapError(
@@ -411,6 +432,8 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
               cause,
             }),
         ),
+        Effect.flatMap(parseOutput),
+        Effect.map((value) => omitOptionalNulls(value, originalJsonSchema)),
         Effect.flatMap(decodeOutput),
         Effect.catchTags({
           SchemaError: (cause) =>

@@ -2,12 +2,9 @@ import { expect, it, vi } from "vite-plus/test";
 import { unified } from "unified";
 import remarkParse from "remark-parse";
 
-import { remarkKeepWindowsPaths, remarkKeepWindowsProsePaths } from "./markdownWindowsPaths.ts";
+import { remarkKeepWindowsPaths } from "./markdownWindowsPaths.ts";
 
-const plugins = [
-  ["paths and destinations", remarkKeepWindowsPaths],
-  ["prose paths", remarkKeepWindowsProsePaths],
-] as const;
+const plugins = [["paths and destinations", remarkKeepWindowsPaths]] as const;
 
 it.each(plugins)("%s limits drive-path checks to the word containing each escape", (_, plugin) => {
   const processor = unified().use(remarkParse).use(plugin);

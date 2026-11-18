@@ -88,26 +88,3 @@ it("moves Tab through every settings section", async () => {
   }
   expect(tabbed).toEqual(sections);
 });
-
-it.each([1280, 390])("names each group by a heading outside it at %ipx wide", async (width) => {
-  await page.viewport(width, 800);
-  await using _screen = await renderNav();
-
-  for (const name of ["Agents", "Code", "Connections"]) {
-    const heading = page.getByRole("heading", { name, level: 3 });
-    await expect.element(heading).toBeInTheDocument();
-    const group = page.getByRole("group", { name }).element();
-    expect(group.getAttribute("aria-labelledby")).toBe(heading.element().id);
-    expect(group.contains(heading.element()), `the ${name} heading is inside its group`).toBe(
-      false,
-    );
-  }
-  const groups = page.getByRole("group").elements();
-  expect(groups).toHaveLength(SETTINGS_NAV_GROUPS.length);
-  for (const group of groups) {
-    const first = group.querySelector("[data-settings-section]")?.textContent;
-    const heading = document.getElementById(group.getAttribute("aria-labelledby") ?? "");
-    expect(heading?.tagName, `the group starting at ${first} has no heading`).toBe("H3");
-  }
-  expect(page.getByRole("tree").query()).toBeNull();
-});

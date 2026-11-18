@@ -7364,6 +7364,7 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
     ["a typed /compact", "user", "mobile", undefined, false, "/compact"],
     ["a normalized idle command", "agent", "server", undefined, true, " \t\u00a0/COMPACT\u3000\n"],
     ["an ordinary prompt with idle metadata", "user", "web", "onReturn", false, "Continue"],
+    ["a bot's keep-warm turn", "agent", "server", undefined, true, "Reply with only: ok"],
   ] as const)(
     "keeps the shell on the user's last turn only during %s",
     ([name, createdBy, creationSource, idleCompaction, silent, text]) =>
@@ -7373,7 +7374,11 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         const key = name.replaceAll(/\W+/g, "-");
         const threadId = ThreadId.make(`thread:projection-shell-silent:${key}`);
         const runId = RunId.make(`run:projection-shell-silent:${key}`);
-        const messageId = MessageId.make(`message:projection-shell-silent:${key}`);
+        const messageId = MessageId.make(
+          name === "a bot's keep-warm turn"
+            ? `bots:keepwarm:${key}:1`
+            : `message:projection-shell-silent:${key}`,
+        );
         yield* projectionStore.apply({
           id: EventId.make(`event:projection-shell-silent:${key}:thread`),
           type: "thread.created",

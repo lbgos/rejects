@@ -7,10 +7,8 @@ import {
 } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { browserMiniPlayerSource, usePreviewMiniPlayerStore } from "../../previewMiniPlayerStore";
+import { usePreviewMiniPlayerStore } from "../../previewMiniPlayerStore";
 import {
-  __testing as previewStateTesting,
-  applyPreviewServerEvent,
   applyPreviewServerSnapshot,
   beginPreviewSessionClose,
   cancelPreviewSessionClose,
@@ -21,7 +19,6 @@ import { useRightPanelStore } from "../../rightPanelStore";
 import {
   applyDeviceSnapshot,
   floatDeviceSurface,
-  followPreviewSessions,
   resetDeviceSessionBaselinesForTests,
   revealServerTabs,
   startAgentOpenedPreviews,
@@ -104,27 +101,6 @@ describe("applyDeviceSnapshot", () => {
 
     applyDeviceSnapshot(ref.environmentId, deviceState({ sessions: [session] }), floating);
     expect(miniPlayerSource()).toMatchObject({ kind: "device", name: "Pixel 8" });
-  });
-
-  it("opens a panel tab once when floating previews are off, and nothing in sheet layouts", () => {
-    setup();
-    const panel = { sheetLayout: false, autoShowFloatingPreview: false };
-    applyDeviceSnapshot(ref.environmentId, deviceState({}), { ...panel, sheetLayout: true });
-    applyDeviceSnapshot(ref.environmentId, deviceState({ sessions: [session] }), {
-      ...panel,
-      sheetLayout: true,
-    });
-    expect(useRightPanelStore.getState().byThreadKey[threadKey]).toBeUndefined();
-
-    applyDeviceSnapshot(ref.environmentId, deviceState({}), panel);
-    applyDeviceSnapshot(ref.environmentId, deviceState({ sessions: [session] }), panel);
-    applyDeviceSnapshot(ref.environmentId, deviceState({}), panel);
-    applyDeviceSnapshot(ref.environmentId, deviceState({ sessions: [session] }), panel);
-    const devices = useRightPanelStore
-      .getState()
-      .byThreadKey[threadKey]?.surfaces.filter((surface) => surface.kind === "device");
-    expect(devices).toHaveLength(1);
-    expect(miniPlayerSource()).toBeUndefined();
   });
 
   it("closes a floating device when its session ends, even before a baseline", () => {
@@ -219,69 +195,6 @@ describe("revealServerTabs", () => {
     revealServerTabs(ref, [tab("tab_forced", true)], { autoShowFloatingPreview: false });
     expect(floatingTabId()).toBe("tab_forced");
   });
-
-  it("focuses a tab already in the panel instead of floating it when forced", () => {
-    setup();
-    useRightPanelStore.getState().openBrowser(ref, "tab_a");
-    const browserSurfaceId = useRightPanelStore.getState().byThreadKey[threadKey]?.activeSurfaceId;
-    useRightPanelStore.getState().open(ref, "diff");
-
-    revealServerTabs(ref, [tab("tab_a", false)], { autoShowFloatingPreview: true });
-    expect(useRightPanelStore.getState().byThreadKey[threadKey]?.activeSurfaceId).not.toBe(
-      browserSurfaceId,
-    );
-    const userActionRevision = useRightPanelStore.getState().getUserActionRevision(ref);
-    revealServerTabs(ref, [tab("tab_a", true)], { autoShowFloatingPreview: true });
-    expect(useRightPanelStore.getState().byThreadKey[threadKey]?.activeSurfaceId).toBe(
-      browserSurfaceId,
-    );
-    expect(floatingTabId()).toBeNull();
-    // A user action moves keyboard focus into the panel; an agent reveal must not.
-    expect(useRightPanelStore.getState().getUserActionRevision(ref)).toBe(userActionRevision);
-  });
-});
-
-describe("followPreviewSessions", () => {
-  const snapshot = (tabId: string, reveal = true): PreviewSessionSnapshot => ({
-    threadId: "thread-1",
-    tabId,
-    navStatus: { _tag: "Loading", url: "http://localhost:5173/", title: "" },
-    canGoBack: false,
-    canGoForward: false,
-    updatedAt: "2026-01-01T00:00:00.000Z",
-    runtime: "server",
-    reveal,
-  });
-  const previewState = (sessions: ReadonlyArray<PreviewSessionSnapshot>, listLoaded = true) => ({
-    ...previewStateTesting.EMPTY_THREAD_PREVIEW_STATE,
-    listLoaded,
-    sessions: Object.fromEntries(sessions.map((entry) => [entry.tabId, entry])),
-  });
-  const browserTabs = () =>
-    useRightPanelStore
-      .getState()
-      .byThreadKey[threadKey]?.surfaces.filter((surface) => surface.kind === "preview")
-      .map((surface) => surface.id) ?? [];
-
-  it("adds visible sessions as tabs and drops tabs whose session ended", () => {
-    setup();
-    useRightPanelStore.getState().openBrowser(ref, "tab_gone");
-    followPreviewSessions(ref, previewState([snapshot("tab_a"), snapshot("tab_hidden", false)]));
-    expect(browserTabs()).toEqual(["browser:tab_a"]);
-  });
-
-  it("waits for the first server list before treating missing sessions as closed", () => {
-    setup();
-    useRightPanelStore.getState().openBrowser(ref, "tab_a");
-    usePreviewMiniPlayerStore.getState().open(ref, browserMiniPlayerSource("tab_a"));
-    followPreviewSessions(ref, previewState([], false));
-    expect(browserTabs()).toEqual(["browser:tab_a"]);
-    expect(miniPlayerSource()).toMatchObject({ kind: "browser", tabId: "tab_a" });
-
-    followPreviewSessions(ref, previewState([]));
-    expect(browserTabs()).toEqual([]);
-    expect(miniPlayerSource()).toBeUndefined();
-  });
 });
 
 describe("startAgentOpenedPreviews", () => {
@@ -301,67 +214,10 @@ describe("startAgentOpenedPreviews", () => {
     setup();
     return { [Symbol.dispose]: startAgentOpenedPreviews() };
   };
-  const navigated = (revision: number, snapshot: PreviewSessionSnapshot) =>
-    applyPreviewServerEvent(ref, {
-      type: "navigated",
-      threadId: "thread-1",
-      tabId: snapshot.tabId,
-      createdAt: snapshot.updatedAt,
-      snapshot,
-      serverEpoch,
-      revision,
-    });
   const floatingTabId = () => {
     const source = miniPlayerSource();
     return source?.kind === "browser" ? source.tabId : null;
   };
-  const browserTabs = (threadKeyToRead = threadKey) =>
-    useRightPanelStore
-      .getState()
-      .byThreadKey[threadKeyToRead]?.surfaces.filter((surface) => surface.kind === "preview")
-      .map((surface) => surface.id);
-
-  it("treats the first list as a baseline and floats tabs opened later", () => {
-    using _following = following();
-    reconcilePreviewServerSessions(ref, {
-      sessions: [serverTab({ tabId: "tab_restored" })],
-      serverEpoch,
-      revision: 1,
-    });
-    expect(floatingTabId()).toBeNull();
-    expect(browserTabs()).toEqual(["browser:tab_restored"]);
-
-    const opened = serverTab({ tabId: "tab_agent" });
-    applyPreviewServerEvent(ref, {
-      type: "opened",
-      threadId: "thread-1",
-      tabId: opened.tabId,
-      createdAt: opened.updatedAt,
-      snapshot: opened,
-      serverEpoch,
-      revision: 2,
-    });
-    expect(floatingTabId()).toBe("tab_agent");
-  });
-
-  it("reveals an existing tab only for a new reveal request", () => {
-    using _following = following();
-    const tab = serverTab({ revealRequest: { id: "r1", force: false } });
-    reconcilePreviewServerSessions(ref, { sessions: [tab], serverEpoch, revision: 1 });
-
-    navigated(2, { ...tab, updatedAt: "2026-01-01T00:00:01.000Z" });
-    expect(floatingTabId()).toBeNull();
-
-    navigated(3, {
-      ...tab,
-      revealRequest: { id: "r2", force: true },
-      updatedAt: "2026-01-01T00:00:02.000Z",
-    });
-    expect(useRightPanelStore.getState().byThreadKey[threadKey]?.activeSurfaceId).toBe(
-      "browser:tab_a",
-    );
-  });
-
   it("never reveals tabs this client opened, desktop tabs, or a tab whose close failed", () => {
     using _following = following();
     const tab = serverTab({ tabId: "tab_closing" });
@@ -370,39 +226,6 @@ describe("startAgentOpenedPreviews", () => {
     applyPreviewServerSnapshot(ref, { ...serverTab({ tabId: "tab_desktop" }), runtime: "desktop" });
     beginPreviewSessionClose(ref, tab.tabId);
     cancelPreviewSessionClose(ref, tab, tab.tabId);
-    expect(floatingTabId()).toBeNull();
-  });
-
-  it("follows background threads and closes the floating browser when its session ends", () => {
-    using _following = following();
-    const other = scopeThreadRef("env-1" as EnvironmentId, ThreadId.make("thread-2"));
-    reconcilePreviewServerSessions(other, {
-      sessions: [serverTab({ threadId: "thread-2", tabId: "tab_b" })],
-      serverEpoch,
-      revision: 1,
-    });
-    expect(browserTabs(scopedThreadKey(other))).toEqual(["browser:tab_b"]);
-
-    reconcilePreviewServerSessions(ref, { sessions: [], serverEpoch, revision: 1 });
-    const opened = serverTab();
-    applyPreviewServerEvent(ref, {
-      type: "opened",
-      threadId: "thread-1",
-      tabId: opened.tabId,
-      createdAt: opened.updatedAt,
-      snapshot: opened,
-      serverEpoch,
-      revision: 2,
-    });
-    expect(floatingTabId()).toBe("tab_a");
-    applyPreviewServerEvent(ref, {
-      type: "closed",
-      threadId: "thread-1",
-      tabId: opened.tabId,
-      createdAt: opened.updatedAt,
-      serverEpoch,
-      revision: 3,
-    });
     expect(floatingTabId()).toBeNull();
   });
 });

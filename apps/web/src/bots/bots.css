@@ -1,0 +1,1577 @@
+/* Bots mode: T3's chat, composer, menus and sheets in variant C's shape
+   (.handoff/design-mocks/C.html), in the user's T3 theme. Only what the components cannot say
+   themselves lives here: the bot surfaces derived from the theme, the composer's one-row layout,
+   and a few T3 rows a bot chat leaves out. */
+[data-bots-mode="true"],
+:root[data-bots-app],
+:root[data-bots-app] [data-app-modal] {
+  --secondary: var(--color-bot-fill);
+  --secondary-foreground: var(--foreground);
+  /* The user's bubbles. */
+  --message-surface: var(--color-bot-fill);
+  /* T3's glass surfaces (Button variant glass, alerts): a near-opaque fill with no blur. The
+     phone's floating pills draw their own glass (Floating controls, below). */
+  --glass-surface: var(--color-bot-glass);
+  --glass-opacity: 90%;
+  --glass-blur: 0px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* A backdrop filter recomposites on every scroll frame, so bots mode stills them all; only the
+   phone's few floating pills opt back in (Floating controls, below). */
+:root[data-bots-app] *,
+:root[data-bots-app] *::before,
+:root[data-bots-app] *::after {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+/* Each bots screen draws the top safe-area inset into its own top bar, so the status bar sits on
+   that bar's surface (a Home Screen app with the `black` tag has no inset: iOS owns the strip). */
+:root[data-bots-app] #root {
+  padding-top: 0;
+}
+/* On the root so the portaled Settings modal reads it too. */
+:root[data-bots-app] {
+  --bot-chat-header-height: calc(var(--workspace-topbar-height) + env(safe-area-inset-top));
+}
+:root[data-bots-app] [data-sidebar-control] {
+  top: calc(var(--workspace-controls-top) + env(safe-area-inset-top));
+}
+
+/* BotTabHost's screens: the active one on top; the others keep their DOM and scroll but paint
+   nothing. */
+[data-bot-tab-pane][data-active="false"] {
+  visibility: hidden;
+  opacity: 0;
+}
+[data-bot-tab-pane][data-active="true"] {
+  z-index: 1;
+}
+
+/* Room a tab screen leaves at its bottom for the tab bar (BotTabBar): its row, the home-indicator
+   inset and 16px, so the last row scrolls clear. On the root so the portaled Settings modal reads
+   it too. */
+:root[data-bots-app] {
+  --bots-tab-bar-space: calc(3.875rem + max(env(safe-area-inset-bottom) - 0.5rem, 0.75rem) + 1rem);
+}
+/* Search takes the screen and the keyboard: the tab bar steps aside until it closes, unless that
+   search sits on a hidden tab screen (BotTabHost). Outside the bots app the phone's Settings index
+   keeps its close button and shows no tab bar. */
+:root:has([data-bot-searching]:not([data-bot-tab-pane][data-active="false"] *)) [data-bots-tab-bar],
+:root:not([data-bots-app]) [data-bots-tab-bar],
+:root[data-bots-app] [data-settings-index-bar] [aria-label="Close"] {
+  display: none;
+}
+
+/* The top bars' icon buttons (back, screen, menu) are plain glyphs on the bar in the foreground
+   colour, over the named themes' filled toolbar controls; a press fills their circle. The resting
+   rule matches hovered buttons too, so a touch's sticky hover never brings the theme's fill back. */
+:root[data-bots-app]
+  :is([data-chat-header], [data-sidebar-control])
+  :is([data-slot="button"], [data-slot="menu-trigger"]):is(:hover, :not(:hover)) {
+  --control-icon-color: var(--foreground);
+  border-color: transparent;
+  background-color: transparent;
+  color: var(--foreground);
+}
+:root[data-bots-app]
+  :is([data-chat-header], [data-sidebar-control])
+  :is([data-slot="button"], [data-slot="menu-trigger"]):is(
+    :active,
+    [data-pressed],
+    [aria-expanded="true"]
+  ) {
+  background-color: color-mix(in srgb, var(--foreground) 14%, transparent);
+}
+@media (hover: hover) {
+  :root[data-bots-app]
+    :is([data-chat-header], [data-sidebar-control])
+    :is([data-slot="button"], [data-slot="menu-trigger"]):hover {
+    background-color: color-mix(in srgb, var(--foreground) 10%, transparent);
+  }
+}
+
+/* The chat header runs from the top edge over the transcript (ChatView). It is solid: what
+   scrolls under it fades out at its edge (the scroller's mask below), never through it. */
+html[data-theme-id] [data-bots-mode="true"] [data-chat-header],
+:root[data-bots-app] [data-chat-header] {
+  height: var(--bot-chat-header-height);
+  min-height: var(--bot-chat-header-height);
+  padding-top: env(safe-area-inset-top);
+  background-color: var(--background);
+}
+
+/* You and the Settings index: the same solid bar, over a page that scrolls from the top edge
+   under it and stops above the tab bar. Its inline title shows once the large one is under it. */
+:root[data-bots-app] [data-bots-top-bar] {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  z-index: 10;
+  height: var(--bot-chat-header-height);
+  margin: 0;
+  padding-top: env(safe-area-inset-top);
+}
+:root[data-bots-app] [data-app-modal]:has(> [data-bots-top-bar]) {
+  padding-top: 0;
+}
+/* Both large-title pages start 16px lower, so the title rests clear of the fade below. */
+:root[data-bots-app] [data-settings-index-list] [data-slot="sidebar-content"],
+:root[data-bots-app] [data-bots-scroller] {
+  padding-top: calc(var(--bot-chat-header-height) + 1rem);
+}
+:root[data-bots-app] [data-settings-index-list] [data-slot="sidebar-content"] {
+  padding-bottom: var(--bots-tab-bar-space);
+}
+
+/* Scrollers under a top bar: nothing shows in the 8px under the bar's edge, then content fades in
+   over 24px, so no bubble fill or glyph meets the edge. A static mask; scrolling repaints nothing
+   extra. */
+:root[data-bots-app]
+  :is(
+    [data-bots-mode="true"] .messages-timeline-scroll,
+    [data-bots-scroller],
+    [data-settings-index-list] [data-slot="scroll-area-viewport"]
+  ) {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent calc(var(--bot-chat-header-height) + 8px),
+    #000 calc(var(--bot-chat-header-height) + 32px)
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent calc(var(--bot-chat-header-height) + 8px),
+    #000 calc(var(--bot-chat-header-height) + 32px)
+  );
+}
+
+/* On touch a bot chat's gaps, message rows and composer frame start no selection, so a hold
+   there selects nothing and a selection cannot spill past its bubble (a bubble hands itself to
+   selection from its menu, BotGestures). Card rows keep their text, and every editor keeps its
+   caret: WebKit drops the caret under an unselectable ancestor. */
+@media (pointer: coarse) {
+  [data-bots-mode="true"] :is(.messages-timeline-scroll, [data-chat-composer-overlay]) {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  [data-bots-mode="true"]
+    .messages-timeline-scroll
+    [data-timeline-row-kind]:not([data-timeline-row-kind="message"])
+    > :not([data-bot-time-label]),
+  [data-bots-mode="true"]
+    :is(.messages-timeline-scroll, [data-chat-composer-overlay])
+    :is(input, textarea, [contenteditable]:not([contenteditable="false"])) {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+}
+
+/* The canvas around the page, under the home indicator and on overscroll, is the theme's
+   background. */
+html[data-bots-app],
+html[data-bots-app] body {
+  background: var(--background) !important;
+  overflow: hidden;
+}
+@media (display-mode: standalone) {
+  html,
+  body {
+    min-height: 100%;
+  }
+}
+
+/* Motion in bots mode is one-shot: transform and opacity, about 200 ms, ease-out, and none with
+   reduced motion. The two loops are the typing dots (an opacity pulse, paused off screen and in a
+   hidden page) and pull to refresh while it runs. Everything is still by default, portals such as
+   toasts included; the rules below opt surfaces back in, and a gesture settles once after release. */
+:root[data-bots-app] *,
+:root[data-bots-app] *::before,
+:root[data-bots-app] *::after {
+  animation: none !important;
+  transition: none !important;
+}
+@media (prefers-reduced-motion: no-preference) {
+  /* Dialogs, sheets, menus, popovers and toasts enter and leave through their own starting and
+     ending styles. The Settings route modal stays instant: it is a tab, and holds the tab bar. */
+  :root[data-bots-app]
+    :is(
+      [data-slot="dialog-popup"]:not([data-app-modal]),
+      [data-slot="dialog-backdrop"]:not(:has(~ * [data-app-modal])),
+      [data-slot="sheet-popup"],
+      [data-slot="sheet-backdrop"],
+      [data-slot="menu-popup"],
+      [data-slot="popover-popup"],
+      [data-slot="toast"]:not([data-swiping]),
+      [data-slot="toast-popup"]
+    ) {
+    transition-property: opacity, transform, translate, scale !important;
+    transition-duration: 200ms !important;
+    transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1) !important;
+  }
+  /* Menus define no starting or ending style, and a dialog mounted already open never gets
+     data-starting-style, so these two start from @starting-style and leave through ending style. */
+  @starting-style {
+    :root[data-bots-app] [data-slot="menu-popup"] {
+      opacity: 0;
+      scale: 0.96;
+    }
+    :root[data-bots-app] [data-slot="dialog-popup"]:not([data-app-modal]) {
+      opacity: 0;
+      translate: 0 1rem;
+    }
+    :root[data-bots-app] [data-slot="dialog-backdrop"]:not(:has(~ * [data-app-modal])) {
+      opacity: 0;
+    }
+  }
+  :root[data-bots-app] [data-slot="menu-popup"][data-ending-style] {
+    opacity: 0;
+    scale: 0.96;
+  }
+  /* Presses: buttons (their :active scale), the tab bar's tabs and the search circle. */
+  :root[data-bots-app]
+    :is([data-slot="button"], [data-bots-tab-bar] button, [data-bots-tab-search]) {
+    transition: scale 120ms cubic-bezier(0.2, 0.8, 0.2, 1) !important;
+  }
+  /* A message, the typing bubble or a bot row that just arrived rises in once (data-row-enter). */
+  :root[data-bots-app] [data-row-enter] {
+    animation: bots-row-enter 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both !important;
+  }
+  /* Streamed blocks keep T3's one-shot fade (index.css, under .chat-markdown[data-streaming]). */
+  :root[data-bots-app] .chat-markdown[data-streaming] > *,
+  :root[data-bots-app] .chat-markdown[data-streaming] .chat-markdown-shiki,
+  :root[data-bots-app] .chat-markdown[data-streaming] .chat-markdown-mermaid {
+    transition: opacity 600ms ease-out !important;
+  }
+  /* A changed status line: the old one rises and fades out, the new one rises in. One shot. */
+  :root[data-bots-app] [data-status-in] {
+    animation: bots-status-in 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both !important;
+  }
+  :root[data-bots-app] [data-status-out] {
+    animation: bots-status-out 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both !important;
+  }
+  /* The typing dots: T3's stepped status pulse in a wave, opacity only. It runs only while the
+     bubble is on screen and the page is visible (observeVisibleAnimation sets the play state). */
+  :root[data-bots-app] [data-bot-typing-dots] > * {
+    animation: status-pulse 1.2s infinite !important;
+    animation-play-state: var(--visible-animation-state, paused) !important;
+    will-change: var(--visible-animation-will-change, auto);
+  }
+  :root[data-bots-app] [data-bot-typing-dots] > :nth-child(2) {
+    animation-delay: 0.2s !important;
+  }
+  :root[data-bots-app] [data-bot-typing-dots] > :nth-child(3) {
+    animation-delay: 0.4s !important;
+  }
+  /* Opening a chat or a detail page pushes, back pops (view transitions typed by the navigation). */
+  html[data-bots-app]:active-view-transition-type(bots-push)::view-transition-old(root) {
+    animation: bots-push-out 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+  html[data-bots-app]:active-view-transition-type(bots-push)::view-transition-new(root) {
+    animation: bots-push-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+  html[data-bots-app]:active-view-transition-type(bots-pop)::view-transition-old(root) {
+    animation: bots-push-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1) reverse both;
+  }
+  html[data-bots-app]:active-view-transition-type(bots-pop)::view-transition-new(root) {
+    animation: bots-push-out 200ms cubic-bezier(0.2, 0.8, 0.2, 1) reverse both;
+  }
+  /* The desktop sidebar's You and Settings (BOT_TAB_TRANSITION) cross-fade the page. */
+  html[data-bots-app]:active-view-transition-type(bots-tab)::view-transition-old(root) {
+    animation: bots-tab-out 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+  html[data-bots-app]:active-view-transition-type(bots-tab)::view-transition-new(root) {
+    animation: bots-tab-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+  /* A phone tab switch (BotTabHost) fades the incoming screen in over the outgoing one, which
+     stays opaque underneath and hides when the fade ends: opacity only, nothing after. The tab
+     bar sits outside both. Arriving from a chat or a detail page (data-fade false) is instant. */
+  :root[data-bots-app] [data-bot-tab-host][data-fade="true"] [data-bot-tab-pane] {
+    transition:
+      opacity 0s linear 300ms,
+      visibility 0s linear 300ms !important;
+  }
+  :root[data-bots-app]
+    [data-bot-tab-host][data-fade="true"]
+    [data-bot-tab-pane][data-active="true"] {
+    transition: opacity 300ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
+/* Without motion, a status line's leaving copy is simply gone. */
+[data-status-out] {
+  opacity: 0;
+}
+@keyframes bots-status-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.75em);
+  }
+}
+@keyframes bots-status-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-0.75em);
+    filter: blur(2px);
+  }
+}
+@keyframes bots-row-enter {
+  from {
+    opacity: 0;
+    transform: translateY(0.375rem);
+  }
+}
+@keyframes bots-push-in {
+  from {
+    opacity: 0;
+    transform: translateX(2.5rem);
+  }
+}
+@keyframes bots-push-out {
+  to {
+    opacity: 0;
+    transform: translateX(-1.5rem);
+  }
+}
+@keyframes bots-tab-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes bots-tab-out {
+  to {
+    opacity: 0;
+  }
+}
+/* Pull to refresh: while a refresh runs the ticks fade round the ring and, unless motion is
+   reduced, turn in eight steps; with the typing dots, one of the two loops in bots mode, and
+   only until it ends. */
+[data-pull-indicator][data-state="refreshing"] [data-pull-ticks] rect {
+  opacity: 0.3 !important;
+}
+[data-pull-indicator][data-state="refreshing"] [data-pull-ticks] rect:nth-child(6) {
+  opacity: 0.5 !important;
+}
+[data-pull-indicator][data-state="refreshing"] [data-pull-ticks] rect:nth-child(7) {
+  opacity: 0.75 !important;
+}
+[data-pull-indicator][data-state="refreshing"] [data-pull-ticks] rect:nth-child(8) {
+  opacity: 1 !important;
+}
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-bots-app] [data-pull-indicator][data-state="refreshing"] [data-pull-ticks] {
+    transform-box: view-box;
+    transform-origin: 12px 12px;
+    animation: bots-pull-spin 800ms steps(8) infinite !important;
+  }
+}
+@keyframes bots-pull-spin {
+  to {
+    rotate: 360deg;
+  }
+}
+:root[data-bots-app] [data-gesture-settle="true"],
+:root[data-bots-app] [data-swipe-actions][data-gesture-settle="true"] > * {
+  transition:
+    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    width 180ms cubic-bezier(0.2, 0.8, 0.2, 1) !important;
+}
+[data-swipe-actions="leading"][data-full="true"] > :first-child {
+  justify-content: flex-end;
+}
+[data-swipe-actions="trailing"][data-full="true"] > :first-child {
+  justify-content: flex-start;
+}
+
+/* Popups are opaque cards: with no backdrop blur, a translucent one lets the chat read through.
+   Dialogs dim the page at 62%. */
+:root[data-bots-app] :is(.dialog-glass, .dropdown-glass) {
+  background: var(--popover);
+}
+:root[data-bots-app] [data-slot="dialog-backdrop"] {
+  background: var(--color-bot-scrim);
+}
+
+/* Sheets and toasts start below the status bar. */
+[data-slot="sheet-viewport"]:has([data-bot-surface]) {
+  padding-top: max(0.75rem, env(safe-area-inset-top));
+}
+/* A bot's panel, and the bot form on a phone, is a full-screen page in the theme's background:
+   no scrim strip shows under the status bar. */
+[data-slot="sheet-viewport"]:has([data-bot-page]) {
+  padding: 0;
+  grid-template-rows: 0 1fr;
+}
+[data-slot="sheet-popup"][data-bot-page] {
+  --popover: var(--background);
+  height: 100%;
+  border-top-width: 0;
+  padding-top: env(safe-area-inset-top);
+}
+@media (max-width: 639px) {
+  [data-slot="dialog-viewport"]:has([data-bot-page]) {
+    padding: 0;
+    grid-template-rows: 0 1fr;
+  }
+  [data-slot="dialog-popup"][data-bot-page] {
+    --popover: var(--background);
+    height: 100%;
+    max-height: none;
+    border-width: 0;
+    box-shadow: none;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+:root[data-bots-app] [data-slot="toast-viewport"] {
+  --toast-header-offset: calc(var(--workspace-topbar-height) + env(safe-area-inset-top));
+}
+
+/* T3 rows a bot chat leaves out: workspace art, the minimap and per-row times (time separators
+   carry them). */
+[data-bots-mode="true"] :is([data-stage-art], [data-testid="timeline-minimap"]),
+[data-bots-mode="true"] [data-row-timestamp],
+[data-bots-mode="true"] [data-composer-sync-status] > svg {
+  display: none;
+}
+@media (max-width: 767px) {
+  /* Menus, sheets and cards take C's bubble grey on a phone; wider screens keep T3's raised
+     surfaces. */
+  [data-bots-mode="true"],
+  :root[data-bots-app],
+  :root[data-bots-app] [data-app-modal] {
+    --popover: var(--color-bot-bubble);
+    --surface-raised: var(--color-bot-bubble);
+  }
+}
+
+[data-bot-bubble] a wbr {
+  display: none;
+}
+/* A bot's model lives in its Edit form and the bot manages its own context: the composer's
+   actions keep only the last one, Send or Stop, and drop the model chips and context meter. */
+[data-bot-composer="true"] [data-chat-composer-actions] > :not(:last-child) {
+  display: none;
+}
+
+/* From here on, a phone only: variant C's bubbles, captions and one-row composer. Wider screens
+   keep T3's unboxed prose, turn dividers and composer box. */
+@media (max-width: 767px) {
+  /* The typing bubble under the latest output stands for the turn-top "Working" row, live
+     "Thinking" rows and the turn's tool rows, which its working line sums up. */
+  [data-bots-mode="true"]
+    :is(
+      [data-timeline-row-kind="working"],
+      [data-timeline-row-kind="thinking"],
+      [data-live-work="true"]
+    ) {
+    display: none;
+  }
+  /* Bubble text: the bubble's 17/23, links in the text color, inline code without a border. */
+  :is([data-bot-bubble], [data-bot-user-bubble]) {
+    overflow-wrap: anywhere;
+  }
+  :is([data-bot-bubble], [data-bot-user-bubble]) .chat-markdown {
+    color: inherit;
+    font-size: inherit;
+    line-height: inherit;
+    letter-spacing: inherit;
+  }
+  :is([data-bot-bubble], [data-bot-user-bubble]) .chat-markdown :is(p, ul, ol) {
+    margin-block: 0.4em;
+  }
+  :is([data-bot-bubble], [data-bot-user-bubble]) .chat-markdown > :first-child {
+    margin-top: 0;
+  }
+  :is([data-bot-bubble], [data-bot-user-bubble]) .chat-markdown > :last-child {
+    margin-bottom: 0;
+  }
+  [data-bot-bubble] .chat-markdown pre {
+    max-width: 100%;
+  }
+  :is([data-bot-bubble], [data-bot-user-bubble]) .chat-markdown a:not(.chat-markdown-file-link) {
+    color: inherit;
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+  }
+  :is([data-bot-bubble], [data-bot-user-bubble]) .chat-markdown :not(pre) > code {
+    border: 0;
+    background: var(--color-bot-hairline);
+  }
+  [data-bot-bubble] :is([data-link-favicon], .chat-markdown-codeblock-header) {
+    display: none;
+  }
+
+  /* "Worked 48s ›" sits over the reply as a caption, not a divider row. */
+  [data-bots-mode="true"] [data-turn-fold] {
+    border-bottom: 0;
+    padding: 0.25rem 0 0.375rem 0.5rem;
+  }
+  [data-bots-mode="true"] [data-turn-fold] button {
+    color: var(--muted-foreground);
+    font-size: var(--text-bot-footnote);
+  }
+
+  /* The composer is one row: the attach circle, then a capsule holding the field, the microphone
+     and send. */
+  [data-bot-composer="true"] [data-chat-composer-main-surface] {
+    padding: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+  [data-bot-composer="true"] [data-chat-composer-surface] {
+    position: relative;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-rows: auto auto;
+    align-items: end;
+    isolation: isolate;
+    background: transparent;
+    box-shadow: none;
+  }
+  [data-bot-composer="true"] [data-chat-composer-surface] > * {
+    grid-column: 1 / -1;
+  }
+  /* The capsule: drawn behind the field and send, from the attach circle's edge. */
+  [data-bot-composer="true"] [data-chat-composer-surface]::after {
+    content: "";
+    position: absolute;
+    inset: 0 0 0 3.25rem;
+    z-index: -1;
+    border: 1px solid var(--color-bot-hairline);
+    border-radius: 1.375rem;
+    background: color-mix(in srgb, var(--glass-surface) var(--glass-opacity), transparent);
+    pointer-events: none;
+  }
+  [data-bot-composer="true"] [data-chat-composer-surface] > [data-chat-composer-body] {
+    grid-column: 2;
+    grid-row: 2;
+    padding: 0.6875rem 0.375rem 0.6875rem 1rem;
+  }
+  [data-bot-composer="true"] .composer-tiptap {
+    min-height: 1lh;
+  }
+  /* The placeholder overlays the field, so it takes the field's size and line to sit on its line. */
+  [data-bot-composer="true"]
+    :is(.composer-tiptap, .composer-tiptap p, [data-composer-placeholder]) {
+    font-size: var(--text-bot-body);
+    line-height: var(--text-bot-body--line-height);
+  }
+  [data-bot-composer="true"] [data-chat-composer-footer],
+  [data-bot-composer="true"] [data-chat-composer-actions] {
+    display: contents;
+  }
+  [data-bot-composer="true"] [data-chat-composer-attach] {
+    grid-column: 1;
+    grid-row: 2;
+    margin: 0 0.5rem 0 0;
+  }
+  /* A composer error, such as a failed dictation, is a line inside the capsule above the field. */
+  [data-bot-composer="true"] [data-chat-composer-validation] {
+    grid-column: 2 / -1;
+    grid-row: 1;
+    padding: 0.625rem 1rem 0;
+  }
+  /* The microphone sits at the capsule's end, its time and level before it. */
+  [data-bot-composer="true"] [data-chat-composer-dictation] {
+    grid-column: 3;
+    grid-row: 2;
+    margin: 0 0.375rem 0.375rem 0;
+  }
+  [data-bot-composer="true"] [data-chat-composer-dictation] > button {
+    order: 1;
+  }
+  /* Send and Stop sit inside the capsule, inset evenly on a one-line field; Send shows once
+     there is something to send. */
+  [data-bot-composer="true"] [data-chat-composer-actions] > :last-child {
+    grid-column: 4;
+    grid-row: 2;
+    margin: 0 0.375rem 0.375rem 0;
+  }
+  [data-bot-composer="true"] [data-chat-composer-actions] > button:last-child:disabled,
+  [data-bot-composer="true"] [data-chat-composer-actions] > :last-child button:disabled {
+    display: none;
+  }
+  /* The dock reaches the bottom edge; only the home-indicator inset sits under the field. */
+  [data-bots-mode="true"] [data-composer-bottom-spacer] {
+    height: max(env(safe-area-inset-bottom), 0.5rem);
+  }
+  /* The keyboard covers the home indicator, so the field sits just above the keyboard. */
+  :root[data-keyboard-open] [data-bots-mode="true"] [data-composer-bottom-spacer] {
+    height: 0.5rem;
+  }
+  [data-bots-mode="true"] [data-slot="composer-shell"] {
+    --chat-composer-glass-surface: transparent;
+    --chat-composer-outline: transparent;
+    --chat-composer-highlight: transparent;
+  }
+  [data-bots-mode="true"] [data-slot="composer-shell"]::before,
+  [data-bots-mode="true"] [data-slot="composer-host"] {
+    box-shadow: none;
+  }
+}
+
+/* Composer notices (daily cap, hourly limit, reconnecting) are one line above the composer at its
+   full width, nothing tucked under the composer, the text wrapping beside its action: plain on
+   desktop, a glass pill on a phone (below). The icon carries a warning's or an error's colour. */
+[data-bots-mode="true"] [data-composer-banner-surface] {
+  --chat-composer-attachment-overlap: 0px;
+}
+[data-bots-mode="true"] [data-composer-banner-surface]::before {
+  display: none;
+}
+[data-bots-mode="true"] [data-slot="composer-banner-attachment"] {
+  width: 100%;
+  margin: 0 0 0.375rem;
+}
+[data-bots-mode="true"] [data-slot="composer-banner-content"] {
+  color: var(--muted-foreground);
+  white-space: normal;
+}
+[data-bots-mode="true"] [data-slot="composer-banner-content"] .truncate {
+  overflow: visible;
+  white-space: normal;
+}
+[data-bots-mode="true"] [data-composer-banner-layout="wrap-actions"] {
+  flex-wrap: nowrap;
+}
+[data-bots-mode="true"]
+  [data-composer-banner-layout="wrap-actions"]
+  > [data-slot="composer-banner-content"] {
+  flex: 1 1 0;
+  max-width: none;
+}
+[data-bots-mode="true"]
+  [data-composer-banner-surface][data-variant="warning"]
+  [data-slot="composer-banner-icon"] {
+  color: var(--warning);
+}
+[data-bots-mode="true"]
+  [data-composer-banner-surface][data-variant="error"]
+  [data-slot="composer-banner-icon"] {
+  color: var(--destructive-foreground);
+}
+
+/* Depth: one surface system for every bots screen, after maria's T3 Code redesign
+   (.handoff/reports/maria-redesign-depth.md). Each level up mixes more of the theme's foreground
+   into its background (in light: more white over a slightly dimmed page). Raised and floating
+   pieces carry a lit top edge and a faint ring; sunken fields a dark top edge. States are top-lit
+   gradients. Static paint only: no blur added here, no motion. */
+:root[data-bots-app] {
+  --bots-page: var(--background);
+  --bots-list-surface: color-mix(in srgb, var(--foreground) 8%, var(--background));
+  /* maria's rim: a 1px border lit at the top, fading out by the bottom. */
+  --bots-rim: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--foreground) 24%, transparent),
+    color-mix(in srgb, var(--foreground) 3%, transparent)
+  );
+  --bots-card-top: color-mix(in srgb, var(--foreground) 7%, var(--background));
+  --bots-card-bottom: color-mix(in srgb, var(--foreground) 5%, var(--background));
+  --bots-popover-top: color-mix(in srgb, var(--foreground) 11%, var(--background));
+  --bots-popover-bottom: color-mix(in srgb, var(--foreground) 8%, var(--background));
+  --bots-raised-top: color-mix(in srgb, var(--foreground) 17%, var(--background));
+  --bots-raised-bottom: color-mix(in srgb, var(--foreground) 10%, var(--background));
+  --bots-composer-top: color-mix(in srgb, var(--foreground) 12%, var(--background));
+  --bots-composer-bottom: color-mix(in srgb, var(--foreground) 9%, var(--background));
+  --bots-well-top: color-mix(in srgb, var(--foreground) 2%, var(--background));
+  --bots-well-bottom: color-mix(in srgb, var(--foreground) 5%, var(--background));
+  /* Floating pills: opaque for the composer, glass (about 60% fill over a static backdrop blur)
+     for the tab bar, search and header discs, so what scrolls under them reads as moving
+     content. Phone only (Floating controls, below). */
+  --bots-float-top: color-mix(in srgb, var(--foreground) 17%, var(--bots-page));
+  --bots-float-bottom: color-mix(in srgb, var(--foreground) 13%, var(--bots-page));
+  --bots-glass-top: color-mix(in srgb, var(--bots-float-top) 62%, transparent);
+  --bots-glass-bottom: color-mix(in srgb, var(--bots-float-bottom) 58%, transparent);
+  --bots-glass-filter: blur(16px) saturate(160%);
+  --bots-lit: color-mix(in srgb, var(--foreground) 22%, transparent);
+  --bots-lit-soft: color-mix(in srgb, var(--foreground) 12%, transparent);
+  --bots-ring: color-mix(in srgb, var(--foreground) 8%, transparent);
+  --bots-well-shade: rgb(0 0 0 / 60%);
+  --bots-raised-shadow: 0 1px 2px rgb(0 0 0 / 45%);
+  --bots-float-shadow: 0 1px 2px rgb(0 0 0 / 35%), 0 6px 18px rgb(0 0 0 / 35%);
+  --bots-composer-shadow: 0 1px 2px rgb(0 0 0 / 30%), 0 3px 10px rgb(0 0 0 / 22%);
+  --bots-popover-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+  --bots-dialog-shadow: 0 16px 40px rgb(0 0 0 / 63%);
+  --bots-bar-edge: color-mix(in srgb, var(--foreground) 10%, transparent);
+  --bots-bar-shadow: 0 8px 20px -12px rgb(0 0 0 / 70%);
+  --bots-hover: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--foreground) 8%, transparent),
+    color-mix(in srgb, var(--foreground) 4%, transparent)
+  );
+  --bots-selected: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--foreground) 12%, transparent),
+    color-mix(in srgb, var(--foreground) 6%, transparent)
+  );
+  --bots-bubble-lift: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--foreground) 5%, transparent),
+    transparent
+  );
+}
+/* Named dark themes start from a tinted page, so their bands need a bigger step to read. */
+:root.dark[data-theme-id][data-bots-app] {
+  --bots-list-surface: color-mix(in srgb, var(--foreground) 10%, var(--background));
+  --bots-float-top: color-mix(in srgb, var(--foreground) 12%, var(--bots-page));
+  --bots-float-bottom: color-mix(in srgb, var(--foreground) 9%, var(--bots-page));
+  --bots-glass-top: color-mix(in srgb, var(--bots-float-top) 68%, transparent);
+  --bots-glass-bottom: color-mix(in srgb, var(--bots-float-bottom) 64%, transparent);
+}
+:root:not(.dark)[data-bots-app] {
+  --bots-page: color-mix(in srgb, var(--foreground) 5%, var(--background));
+  --bots-rim: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--foreground) 14%, transparent),
+    color-mix(in srgb, var(--foreground) 2%, transparent)
+  );
+  --bots-list-surface: color-mix(in srgb, white 80%, var(--background));
+  --bots-card-top: #fff;
+  --bots-card-bottom: color-mix(in srgb, white 75%, var(--background));
+  --bots-popover-top: #fff;
+  --bots-popover-bottom: color-mix(in srgb, white 70%, var(--background));
+  --bots-raised-top: #fff;
+  --bots-raised-bottom: color-mix(in srgb, white 70%, var(--background));
+  --bots-composer-top: #fff;
+  --bots-composer-bottom: color-mix(in srgb, white 70%, var(--background));
+  --bots-well-top: color-mix(in srgb, var(--foreground) 6%, var(--background));
+  --bots-well-bottom: color-mix(in srgb, var(--foreground) 3%, var(--background));
+  --bots-float-top: #fff;
+  --bots-float-bottom: color-mix(in srgb, white 85%, var(--bots-page));
+  --bots-glass-top: color-mix(in srgb, var(--bots-float-top) 72%, transparent);
+  --bots-glass-bottom: color-mix(in srgb, var(--bots-float-bottom) 66%, transparent);
+  --bots-glass-filter: blur(16px) saturate(180%);
+  --bots-lit: color-mix(in srgb, var(--foreground) 14%, transparent);
+  --bots-lit-soft: color-mix(in srgb, var(--foreground) 9%, transparent);
+  --bots-ring: color-mix(in srgb, var(--foreground) 7%, transparent);
+  --bots-well-shade: rgb(0 0 0 / 12%);
+  --bots-raised-shadow: 0 1px 2px rgb(0 0 0 / 8%);
+  --bots-float-shadow: 0 1px 2px rgb(0 0 0 / 8%), 0 6px 18px rgb(0 0 0 / 9%);
+  --bots-composer-shadow: 0 1px 2px rgb(0 0 0 / 6%), 0 3px 10px rgb(0 0 0 / 5%);
+  --bots-popover-shadow: 0 8px 24px rgb(0 0 0 / 10%);
+  --bots-dialog-shadow: 0 16px 40px rgb(0 0 0 / 14%);
+  --bots-bar-shadow: 0 8px 20px -12px rgb(0 0 0 / 22%);
+  --bots-bubble-lift: linear-gradient(180deg, rgb(255 255 255 / 45%), transparent);
+}
+
+/* Pages: the bot list, You and Settings sit on the page level; the canvas and the iOS top-edge
+   strip follow it so no band of another colour shows. */
+:root[data-bots-app]
+  :is(
+    [data-bots-page],
+    [data-bots-page] > header,
+    [data-bots-page] [data-pull-frame] > ul,
+    [data-connections],
+    [data-app-modal],
+    [data-bot-tab-pane]
+  ),
+:root[data-bots-app]:has(
+    [data-bot-tab-pane][data-active="true"],
+    :is([data-bots-page], [data-connections], [data-app-modal]):not(
+      [data-bot-tab-pane][data-active="false"] *
+    )
+  )
+  :is(body, [data-top-edge]),
+html[data-bots-app]:has(
+    [data-bot-tab-pane][data-active="true"],
+    :is([data-bots-page], [data-connections], [data-app-modal]):not(
+      [data-bot-tab-pane][data-active="false"] *
+    )
+  ) {
+  background-color: var(--bots-page) !important;
+}
+:root[data-bots-app] [data-bots-top-bar] {
+  background-color: var(--bots-page);
+}
+
+/* Lists: the sheet lists (You, the Memory sheet) sit on the list surface between hairlines. */
+:root[data-bots-app] .sheet-list {
+  border-block: 1px solid var(--color-bot-hairline);
+  background: var(--bots-list-surface);
+}
+:root[data-bots-app] [data-bot-row-content] {
+  border-radius: inherit;
+}
+:root[data-bots-app] [data-bot-row-content]:hover {
+  background: var(--bots-hover);
+}
+:root[data-bots-app] [data-bot-row-content][aria-current="page"] {
+  background: var(--bots-selected);
+  box-shadow: inset 0 0 0 1px var(--bots-ring);
+}
+/* On touch each bot row is its own card: inset from the screen edges, 6px apart, no hairlines.
+   The card level sits below the list surface, so a row reads as neutral and the unread dot and
+   bold name stay the only emphasis. The row clips its swipe actions to its radius; at rest they
+   have no width, so their colour never shows at the corners. The content stays square inside the
+   clip, so a swiped row meets its actions along a straight edge. */
+@media (pointer: coarse) {
+  :root[data-bots-app] [data-bot-list] {
+    padding-inline: 0.75rem;
+  }
+  :root[data-bots-app] [data-bot-list] > li + li {
+    margin-top: 0.375rem;
+  }
+  :root[data-bots-app] [data-bot-row] {
+    border-radius: 0.75rem;
+    box-shadow:
+      var(--bots-raised-shadow),
+      0 0 0 1px var(--bots-ring);
+  }
+  :root[data-bots-app] [data-bot-row-content],
+  :root[data-bots-app] [data-bot-row-content]:hover {
+    border-radius: 0;
+    background: linear-gradient(180deg, var(--bots-card-top), var(--bots-card-bottom));
+    box-shadow: inset 0 1px 0 var(--bots-lit-soft);
+  }
+  :root[data-bots-app] [data-bot-row-content][data-pressed="true"],
+  :root[data-bots-app] [data-bot-row-content][aria-current="page"] {
+    background:
+      var(--bots-selected), linear-gradient(180deg, var(--bots-card-top), var(--bots-card-bottom));
+    box-shadow: inset 0 1px 0 var(--bots-lit-soft);
+  }
+  :root[data-bots-app] .sheet-list button:active {
+    background: var(--bots-selected), var(--bots-list-surface);
+    box-shadow: none;
+  }
+  :root[data-bots-app] [data-bot-list] [data-bot-row-text]::after {
+    display: none;
+  }
+  /* The push prompt is a quieter card: the same surface, no lift. */
+  :root[data-bots-app] [data-bot-list] > [data-push-prompt] {
+    min-height: 2.75rem;
+    padding-block: 0.25rem;
+    border-radius: 0.75rem;
+    background: linear-gradient(180deg, var(--bots-card-top), var(--bots-card-bottom));
+    box-shadow:
+      inset 0 1px 0 var(--bots-lit-soft),
+      0 0 0 1px var(--bots-ring);
+  }
+}
+@media (hover: hover) {
+  :root[data-bots-app] .sheet-list button:hover {
+    background: var(--bots-hover);
+  }
+}
+
+/* Bands: Settings groups and the phone Settings index sit on the list surface like You's lists,
+   lit along their top edge. On a phone they run edge to edge; wider screens keep the group's
+   rounded box. */
+:root[data-bots-app]
+  :is(
+    [data-slot="settings-group"].rounded-xl,
+    [data-settings-index-list] [role="tree"] > [role="group"] > [data-slot="sidebar-menu"]
+  ) {
+  border-color: transparent;
+  background: var(--bots-list-surface);
+  box-shadow:
+    inset 0 1px 0 var(--bots-lit-soft),
+    inset 0 -1px 0 var(--color-bot-hairline);
+}
+@media (max-width: 767px) {
+  :root[data-bots-app]
+    :is(
+      [data-slot="settings-group"].rounded-xl,
+      [data-settings-index-list] [role="tree"] > [role="group"] > [data-slot="sidebar-menu"]
+    ) {
+    border-radius: 0;
+  }
+  /* A Settings page's groups run edge to edge: centred in the page column, as wide as the
+     screen; the page clips sideways so the bleed never scrolls. */
+  :root[data-bots-app] [data-settings-page-scroll] {
+    overflow-x: clip;
+  }
+  :root[data-bots-app] [data-slot="settings-group"].rounded-xl {
+    margin-inline: calc(50% - 50vw);
+    padding-inline: calc(50vw - 50%);
+  }
+  /* The index's groups span its content box; rows keep their inset and are separated by a
+     hairline from the text. */
+  :root[data-bots-app] [data-settings-index-list] [role="tree"] {
+    gap: 1.25rem;
+  }
+  :root[data-bots-app] [data-settings-index-list] [role="tree"] > [role="group"] {
+    margin-inline: calc(-1 * var(--sidebar-content-inset));
+    border-top-width: 0;
+    padding-top: 0;
+  }
+  :root[data-bots-app]
+    [data-settings-index-list]
+    [role="tree"]
+    > [role="group"]
+    > [data-slot="sidebar-menu"] {
+    gap: 0;
+    padding-inline: var(--sidebar-content-inset);
+  }
+  :root[data-bots-app]
+    [data-settings-index-list]
+    [data-slot="sidebar-menu-item"]
+    + [data-slot="sidebar-menu-item"] {
+    background: linear-gradient(var(--color-bot-hairline), var(--color-bot-hairline)) 2.125rem 0 /
+      100% 1px no-repeat;
+  }
+
+  /* Settings pages take the index's density: text from a 16px inset, the title and a compact
+     control on one line, the description full width under them, hairlines from the text. The
+     page scrolls under the home indicator instead of stopping above it. */
+  :root[data-bots-app] [data-app-modal]:has([data-settings-page-scroll]) {
+    padding-bottom: 0;
+  }
+  :root[data-bots-app] [data-settings-page-scroll] {
+    scrollbar-gutter: auto;
+  }
+  :root[data-bots-app] [data-settings-page-scroll] > div {
+    gap: 1.5rem;
+    padding: 1rem 1rem calc(2rem + env(safe-area-inset-bottom));
+  }
+  :root[data-bots-app]
+    [data-settings-page-scroll]
+    section
+    > [data-settings-scroll-target]:not([data-slot]) {
+    padding-inline: 0;
+  }
+  :root[data-bots-app] [data-settings-page-scroll] [data-slot="settings-group"] {
+    padding-inline: 0;
+  }
+  :root[data-bots-app] [data-settings-page-scroll] [data-slot="settings-group"] > * + * {
+    border-top-color: transparent;
+    background: linear-gradient(var(--color-bot-hairline), var(--color-bot-hairline)) 1rem 0 / 100%
+      1px no-repeat;
+  }
+  :root[data-bots-app] [data-settings-page-scroll] [data-slot="settings-row"] {
+    padding: 0.75rem 1rem;
+  }
+  :root[data-bots-app] [data-settings-page-scroll] [data-settings-row-main] {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "title control" "description description" "status status";
+    align-items: center;
+    gap: 0.125rem 0.75rem;
+  }
+  :root[data-bots-app] [data-settings-page-scroll] [data-settings-row-text] {
+    display: contents;
+  }
+  :root[data-bots-app] [data-settings-page-scroll] [data-settings-row-title] {
+    grid-area: title;
+  }
+  :root[data-bots-app] [data-settings-page-scroll] [data-settings-row-description] {
+    grid-area: description;
+    max-width: none;
+    margin: 0;
+    text-wrap: pretty;
+  }
+  :root[data-bots-app] [data-settings-page-scroll] [data-settings-row-status] {
+    grid-area: status;
+  }
+  :root[data-bots-app] [data-settings-page-scroll] [data-settings-row-control] {
+    grid-area: control;
+    width: auto;
+    min-width: 0;
+    justify-content: flex-end;
+  }
+  /* Fields and option groups need the width: they take their own line under the text. */
+  :root[data-bots-app]
+    [data-settings-page-scroll]
+    [data-settings-row-main]:has(
+      > [data-settings-row-control]
+        :is(
+          [data-slot="input-control"],
+          [data-slot="textarea-control"],
+          [data-slot="input-group"],
+          [role="radiogroup"],
+          [data-slot="toggle-group"]
+        )
+    ) {
+    grid-template-areas: "title title" "description description" "status status" "control control";
+  }
+  :root[data-bots-app]
+    [data-settings-page-scroll]
+    [data-settings-row-main]:has(
+      > [data-settings-row-control]
+        :is(
+          [data-slot="input-control"],
+          [data-slot="textarea-control"],
+          [data-slot="input-group"],
+          [role="radiogroup"],
+          [data-slot="toggle-group"]
+        )
+    )
+    > [data-settings-row-control] {
+    width: 100%;
+    margin-top: 0.5rem;
+  }
+  /* A picker in a row reads as its value and chevron, as on the index. */
+  :root[data-bots-app]
+    [data-settings-page-scroll]
+    [data-settings-row-control]
+    [data-slot="select-trigger"] {
+    width: auto;
+    max-width: 13rem;
+    min-height: 2rem;
+    border-color: transparent;
+    background: none;
+    box-shadow: none;
+    min-width: 0;
+    padding-inline: 0.25rem 0.125rem;
+    font-size: 0.875rem;
+    color: var(--muted-foreground);
+  }
+}
+
+/* Row cards on a phone: the Settings index, Settings pages and You take the bot list's cards.
+   Each row is its own card (the card level, a lit top edge, a ring and the raised shadow), 12px
+   from the screen edges and 6px apart, with no hairlines. Headings and notes line up with the
+   text inside the cards. */
+@media (max-width: 767px) {
+  :root[data-bots-app]
+    :is(
+      [data-settings-index-list] [role="tree"] > [role="group"] > [data-slot="sidebar-menu"],
+      [data-settings-page-scroll] [data-slot="settings-group"].rounded-xl,
+      [data-connections] ul.sheet-list
+    ) {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    background: none;
+    box-shadow: none;
+  }
+  :root[data-bots-app]
+    :is(
+      [data-settings-index-list]
+        [role="tree"]
+        > [role="group"]
+        > [data-slot="sidebar-menu"]
+        > [data-slot="sidebar-menu-item"],
+      [data-settings-page-scroll] [data-slot="settings-group"].rounded-xl > *,
+      [data-connections] ul.sheet-list > li
+    ) {
+    overflow: hidden;
+    border-top-width: 0;
+    border-radius: 0.75rem;
+    background: linear-gradient(180deg, var(--bots-card-top), var(--bots-card-bottom));
+    box-shadow:
+      inset 0 1px 0 var(--bots-lit-soft),
+      0 0 0 1px var(--bots-ring),
+      var(--bots-raised-shadow);
+  }
+  :root[data-bots-app] [data-connections] ul.sheet-list > li::before {
+    display: none;
+  }
+  :root[data-bots-app] [data-connections] ul.sheet-list button:active {
+    background: var(--bots-selected);
+  }
+  /* Insets: the index's and You's lists from the screen edge, a Settings page's groups from its
+     16px column. */
+  :root[data-bots-app]
+    :is(
+      [data-settings-index-list] [role="tree"] > [role="group"] > [data-slot="sidebar-menu"],
+      [data-connections] ul.sheet-list
+    ) {
+    padding-inline: 0.75rem;
+  }
+  /* The index's search sits in the group's 8px padding; 4px more meets the cards' edges. */
+  :root[data-bots-app] [data-settings-index-list] [data-settings-search-row] {
+    padding-inline: 0.25rem;
+  }
+  :root[data-bots-app] [data-settings-index-list] [data-settings-search-row] > div {
+    border-radius: 0.75rem;
+  }
+  :root[data-bots-app] [data-settings-page-scroll] [data-slot="settings-group"].rounded-xl {
+    margin-inline: -0.25rem;
+  }
+  :root[data-bots-app]
+    [data-settings-page-scroll]
+    section
+    > [data-settings-scroll-target]:not([data-slot]) {
+    padding-inline: 0.75rem;
+  }
+  :root[data-bots-app] [data-connections] section > :is(h2, div:first-child, p) {
+    padding-inline: 2rem;
+  }
+}
+
+/* Raised: icon tiles, the pull-to-refresh disc, secondary and outline buttons (starters
+   included), select triggers. The rim paints in the transparent border: fill over the padding
+   box, rim and fill again under the border. */
+:root[data-bots-app]
+  :is(
+    [data-bot-avatar],
+    [data-pull-disc],
+    [data-slot="button"]:is([data-variant="secondary"], [data-variant="outline"]),
+    [data-slot="select-trigger"]
+  ) {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(180deg, var(--bots-raised-top), var(--bots-raised-bottom)) padding-box,
+    var(--bots-rim) border-box,
+    linear-gradient(180deg, var(--bots-raised-top), var(--bots-raised-bottom)) border-box;
+  box-shadow: var(--bots-raised-shadow);
+}
+:root[data-bots-app]
+  :is(
+    [data-slot="button"]:is([data-variant="secondary"], [data-variant="outline"]),
+    [data-slot="select-trigger"]
+  )::before {
+  box-shadow: none;
+}
+
+/* Sunken: form fields, the Settings search and the off switch. Bare fields elsewhere (the
+   sidebar's search) stay bare. */
+:root[data-bots-app]
+  :is(
+    [data-slot="dialog-popup"],
+    [data-slot="sheet-popup"],
+    [data-bot-page],
+    [data-slot="settings-group"],
+    .sheet-list
+  )
+  :is([data-slot="input-control"], [data-slot="textarea-control"], [data-slot="input-group"]):not(
+    [data-slot="input-group"] *,
+    [data-settings-search-row] *
+  ),
+:root[data-bots-app] [data-settings-index-list] [data-settings-search-row] > div,
+:root[data-bots-app] [data-slot="switch"]:not([data-checked]) {
+  border-color: transparent;
+  background: linear-gradient(180deg, var(--bots-well-top), var(--bots-well-bottom));
+  box-shadow:
+    inset 0 1px 1px var(--bots-well-shade),
+    inset 0 0 0 1px var(--bots-ring);
+}
+:root[data-bots-app]
+  :is(
+    [data-slot="input-control"],
+    [data-slot="textarea-control"],
+    [data-slot="input-group"]
+  )::before {
+  box-shadow: none;
+}
+
+/* Popovers: menus, selects, popovers, tooltips and toasts. */
+:root[data-bots-app]
+  :is(
+    [data-slot="menu-popup"],
+    [data-slot="menu-sub-content"],
+    [data-slot="select-popup"],
+    [data-slot="combobox-popup"],
+    [data-slot="autocomplete-popup"],
+    [data-slot="popover-popup"],
+    [data-slot="preview-card-popup"],
+    [data-slot="tooltip-popup"],
+    [data-slot="toast-popup"],
+    [data-slot="toast"]
+  ) {
+  border-color: transparent;
+  background: linear-gradient(180deg, var(--bots-popover-top), var(--bots-popover-bottom));
+  box-shadow:
+    inset 0 1px 0 var(--bots-lit-soft),
+    inset 0 0 0 1px var(--bots-ring),
+    var(--bots-popover-shadow);
+}
+:root[data-bots-app]
+  :is(
+    [data-slot="menu-popup"],
+    [data-slot="select-popup"],
+    [data-slot="popover-popup"],
+    [data-slot="tooltip-popup"]
+  )::before {
+  box-shadow: none;
+  border-color: transparent;
+}
+
+/* Dialogs and sheets: the popover's fill and edge with the longest shadow. Full-screen bot pages
+   and the Settings route modal stay on the page level. */
+:root[data-bots-app]
+  :is(
+    [data-slot="dialog-popup"]:not([data-bot-page], [data-app-modal]),
+    [data-slot="alert-dialog-popup"],
+    [data-slot="command-dialog-popup"],
+    [data-slot="sheet-popup"]:not([data-bot-page])
+  ) {
+  border-color: transparent;
+  background: linear-gradient(180deg, var(--bots-popover-top), var(--bots-popover-bottom));
+  box-shadow:
+    inset 0 1px 0 var(--bots-lit-soft),
+    inset 0 0 0 1px var(--bots-ring),
+    var(--bots-dialog-shadow);
+}
+:root[data-bots-app]
+  :is(
+    [data-slot="dialog-popup"],
+    [data-slot="alert-dialog-popup"],
+    [data-slot="sheet-popup"]
+  )::before {
+  box-shadow: none;
+}
+:root[data-bots-app] :is([data-slot="dialog-footer"], [data-slot="alert-dialog-footer"]) {
+  border-color: var(--bots-ring);
+  background: transparent;
+}
+
+/* Floating controls over a phone page. The tab bar, search, header discs, the composer and its
+   notices are glass: a translucent fill over a static backdrop blur, with a lit top edge and a
+   ring drawn as inset shadows so the edge never stacks over the fill. These few are the only
+   blurred elements in bots mode (see the rule that stills backdrop filters above). */
+@media (max-width: 767px) {
+  :root[data-bots-app]
+    :is(
+      [data-bots-tab-bar] > .surface-glass,
+      [data-bots-tab-search],
+      [data-sidebar-control] [data-slot="button"][href],
+      [data-bot-header-actions] :is([data-slot="button"], [data-slot="menu-trigger"]),
+      [data-settings-page-header] [data-slot="button"],
+      [data-bots-mode="true"] [data-composer-banner-surface],
+      [data-bot-composer="true"] [data-chat-composer-attach] button
+    ),
+  /* The capsule is a pseudo-element, which :is() cannot hold. */
+  :root[data-bots-app] [data-bot-composer="true"] [data-chat-composer-surface]::after {
+    -webkit-backdrop-filter: var(--bots-glass-filter) !important;
+    backdrop-filter: var(--bots-glass-filter) !important;
+  }
+  :root[data-bots-app]
+    :is(
+      [data-bots-tab-bar] > .surface-glass,
+      [data-bots-tab-search],
+      [data-bots-mode="true"] [data-composer-banner-surface],
+      [data-bot-composer="true"] [data-chat-composer-attach] button
+    ),
+  :root[data-bots-app] [data-bot-composer="true"] [data-chat-composer-surface]::after {
+    border-color: transparent;
+    background: linear-gradient(180deg, var(--bots-glass-top), var(--bots-glass-bottom));
+    box-shadow:
+      inset 0 1px 0 var(--bots-lit),
+      inset 0 0 0 1px var(--bots-ring),
+      var(--bots-float-shadow);
+  }
+  /* WebKit drops backdrop filters from view-transition snapshots, so through a push or pop the
+     glass is opaque rather than clear. */
+  html:active-view-transition[data-bots-app]
+    :is(
+      [data-bots-tab-bar] > .surface-glass,
+      [data-bots-tab-search],
+      [data-sidebar-control] [data-slot="button"][href],
+      [data-bot-header-actions] :is([data-slot="button"], [data-slot="menu-trigger"]),
+      [data-settings-page-header] [data-slot="button"],
+      [data-bots-mode="true"] [data-composer-banner-surface],
+      [data-bot-composer="true"] [data-chat-composer-attach] button
+    ),
+  html:active-view-transition[data-bots-app]
+    [data-bot-composer="true"]
+    [data-chat-composer-surface]::after {
+    background: linear-gradient(180deg, var(--bots-float-top), var(--bots-float-bottom)) !important;
+  }
+  /* A composer notice floats over the transcript as a glass pill a step above the composer. */
+  [data-bots-mode="true"] [data-slot="composer-banner-attachment"] {
+    margin-bottom: 0.5rem;
+  }
+  /* Its fill is denser than the tab bar's: its sentence sits over text. */
+  :root[data-bots-app] [data-bots-mode="true"] [data-composer-banner-surface] {
+    border-radius: 1.375rem;
+    padding-inline: 0.375rem;
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--bots-float-top) 86%, transparent),
+      color-mix(in srgb, var(--bots-float-bottom) 82%, transparent)
+    );
+  }
+  [data-bots-mode="true"] [data-slot="composer-banner-content"] {
+    color: var(--foreground);
+  }
+  /* Your bubble sits a step above the bot's and carries the light; the bot's keeps only a lit
+     top edge, so the two speakers never meet in tone. */
+  :root[data-bots-app] [data-bot-user-bubble] {
+    background-image: var(--bots-bubble-lift);
+    box-shadow: inset 0 1px 0 var(--bots-ring);
+  }
+  :root[data-bots-app] [data-bot-bubble] {
+    box-shadow: inset 0 1px 0 var(--bots-lit-soft);
+  }
+  /* A reply holding a table or code reads as a card: a tighter radius, the table's header on a
+     faint band. */
+  :root[data-bots-app] [data-bot-bubble]:has(table, pre) {
+    border-radius: 0.75rem;
+  }
+  :root[data-bots-app] [data-bot-bubble] .chat-markdown thead {
+    background: color-mix(in srgb, var(--foreground) 5%, transparent);
+  }
+}
+
+/* Desktop, dark: the content pane sits one step above the black sidebar and chrome, with an edge
+   between them. Everything in the pane mixes from the pane's own background. */
+@media (min-width: 768px) {
+  :root.dark[data-bots-app] {
+    --bots-chrome-background: var(--background);
+  }
+  :root.dark[data-bots-app] [data-slot="sidebar-inset"] {
+    --background: color-mix(in srgb, var(--foreground) 4%, var(--bots-chrome-background));
+    --bots-page: var(--background);
+    background-color: var(--background);
+    box-shadow: inset 1px 0 0 var(--bots-ring);
+  }
+}
+
+/* The desktop composer: a raised tray lit from above. */
+@media (min-width: 768px) {
+  :root[data-bots-app] [data-bots-mode="true"] [data-slot="composer-shell"] {
+    --chat-composer-outline: transparent;
+  }
+  :root[data-bots-app] [data-bots-mode="true"] [data-slot="composer-shell"]::before {
+    background: linear-gradient(180deg, var(--bots-composer-top), var(--bots-composer-bottom));
+  }
+  :root[data-bots-app] [data-bots-mode="true"] [data-slot="composer-host"] {
+    box-shadow:
+      inset 0 1px 0 var(--bots-lit),
+      inset 0 0 0 1px var(--bots-ring),
+      var(--bots-composer-shadow);
+  }
+  /* With a notice above it, the tray is the composer card alone; the host also holds the notice. */
+  :root[data-bots-app]
+    [data-bots-mode="true"]
+    [data-slot="composer-shell"]:has([data-composer-banner-surface="attached"])
+    [data-slot="composer-host"] {
+    box-shadow: none;
+  }
+  :root[data-bots-app]
+    [data-bots-mode="true"]
+    [data-slot="composer-shell"]:has([data-composer-banner-surface="attached"])
+    [data-chat-composer-main-surface] {
+    background: linear-gradient(180deg, var(--bots-composer-top), var(--bots-composer-bottom));
+    box-shadow:
+      inset 0 1px 0 var(--bots-lit),
+      inset 0 0 0 1px var(--bots-ring),
+      var(--bots-composer-shadow);
+  }
+}
+
+/* You takes Settings' language: white semibold section titles, the bands' lit top edge and bottom
+   hairline, and on desktop rounded groups in a centred column. */
+:root[data-bots-app] [data-connections] :is(section > h2, section > div:first-child > h3) {
+  color: var(--foreground);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 600;
+}
+:root[data-bots-app] [data-connections] .sheet-list {
+  border-block: 0;
+  box-shadow:
+    inset 0 1px 0 var(--bots-lit-soft),
+    inset 0 -1px 0 var(--color-bot-hairline);
+}
+@media (max-width: 767px) {
+  :root[data-bots-app] [data-connections] :is(section > h2, section > div:first-child > h3) {
+    font-size: 1rem;
+    line-height: 1.5rem;
+  }
+}
+@media (min-width: 768px) {
+  :root[data-bots-app] [data-you-column] {
+    width: 100%;
+    max-width: 48rem;
+    margin-inline: auto;
+    padding: 0.5rem 1.5rem 2.5rem;
+  }
+  :root[data-bots-app] [data-connections] .sheet-list {
+    overflow: hidden;
+    border-radius: 0.75rem;
+  }
+}
+
+/* The top bars lift off the page only once something scrolls under them. Their edge and shadow
+   live on a pseudo-element behind the bar's content, whose opacity follows the first 28px of the
+   scroller's offset through a named scroll timeline: it fades in and out with the finger and
+   paints nothing while the page is still. */
+:root[data-bots-app] :is([data-chat-header], [data-bots-top-bar]) {
+  isolation: isolate;
+}
+:root[data-bots-app] :is([data-chat-header], [data-bots-top-bar])::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  box-shadow:
+    0 1px 0 var(--bots-bar-edge),
+    var(--bots-bar-shadow);
+  opacity: 0;
+}
+@keyframes bots-bar-edge-in {
+  to {
+    opacity: 1;
+  }
+}
+@keyframes bots-bar-title-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@supports (animation-timeline: scroll()) {
+  /* Each bar's nearest common ancestor with its scroller carries the timeline's name. */
+  :root[data-bots-app]
+    :is([data-chat-column], [data-connections], [data-app-modal], [data-bot-tab-pane]) {
+    timeline-scope: --bots-bar;
+  }
+  :root[data-bots-app]
+    :is(
+      [data-bots-mode="true"] .messages-timeline-scroll,
+      [data-bots-scroller],
+      [data-settings-index-list] [data-slot="scroll-area-viewport"]
+    ) {
+    scroll-timeline: --bots-bar block;
+  }
+  /* Bots mode stills every animation (above); the longhands opt this one back in. */
+  :root[data-bots-app] :is([data-chat-header], [data-bots-top-bar])::after {
+    animation-name: bots-bar-edge-in !important;
+    animation-duration: auto !important;
+    animation-timing-function: linear !important;
+    animation-fill-mode: both !important;
+    animation-timeline: --bots-bar !important;
+    animation-range: 0 28px !important;
+  }
+  /* The bar's inline title fades in as the large title passes under it. */
+  :root[data-bots-app] [data-bots-bar-title] {
+    animation-name: bots-bar-title-in !important;
+    animation-duration: auto !important;
+    animation-timing-function: linear !important;
+    animation-fill-mode: both !important;
+    animation-timeline: --bots-bar !important;
+    animation-range: 24px 56px !important;
+  }
+}
+/* Without scroll timelines the edge and title follow the bar's scrolled state, in one short fade. */
+@supports not (animation-timeline: scroll()) {
+  :root[data-bots-app] :is([data-chat-header], [data-bots-top-bar])[data-scrolled="true"]::after {
+    opacity: 1;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    :root[data-bots-app] :is([data-chat-header], [data-bots-top-bar])::after,
+    :root[data-bots-app] [data-bots-bar-title] {
+      transition: opacity 180ms ease-out !important;
+    }
+  }
+}
+
+/* Phone header controls float like the tab bar: the back arrow, a bot's menu and a Settings
+   page's controls are matching glass discs, and the bot's raised avatar keeps a gap from the back
+   disc. The list's New bot pencil is a raised disc. The `:is(:hover, :not(:hover))`
+   matches the plain-glyph rule above so a touch's sticky hover cannot bring it back. */
+@media (max-width: 767px) {
+  :root[data-bots-app]
+    :is(
+      [data-sidebar-control] [data-slot="button"][href],
+      [data-bot-header-actions] :is([data-slot="button"], [data-slot="menu-trigger"]),
+      [data-settings-page-header] [data-slot="button"]
+    ):is(:hover, :not(:hover)) {
+    width: 2.25rem;
+    height: 2.25rem;
+    border: 1px solid transparent;
+    border-radius: 9999px;
+    background: linear-gradient(180deg, var(--bots-glass-top), var(--bots-glass-bottom));
+    box-shadow:
+      inset 0 1px 0 var(--bots-lit),
+      inset 0 0 0 1px var(--bots-ring),
+      var(--bots-raised-shadow);
+  }
+  :root[data-bots-app]
+    :is(
+      [data-sidebar-control] [data-slot="button"][href],
+      [data-bot-header-actions] :is([data-slot="button"], [data-slot="menu-trigger"]),
+      [data-settings-page-header] [data-slot="button"]
+    ):is(:active, [data-pressed], [aria-expanded="true"]) {
+    background:
+      var(--bots-selected), linear-gradient(180deg, var(--bots-glass-top), var(--bots-glass-bottom));
+  }
+  :root[data-bots-app] [data-bot-header] [data-bot-avatar] {
+    margin-inline-start: 0.5rem;
+  }
+  :root[data-bots-app] [data-bots-page] > header [data-slot="button"] {
+    border: 1px solid transparent;
+    border-radius: 9999px;
+    background:
+      linear-gradient(180deg, var(--bots-raised-top), var(--bots-raised-bottom)) padding-box,
+      var(--bots-rim) border-box,
+      linear-gradient(180deg, var(--bots-raised-top), var(--bots-raised-bottom)) border-box;
+    box-shadow: var(--bots-raised-shadow);
+  }
+  /* The composer's placeholder reads on the lit capsule. */
+  :root[data-bots-app] [data-bot-composer="true"] [data-composer-placeholder] {
+    color: color-mix(in srgb, var(--foreground) 60%, transparent);
+  }
+  /* Code in a reply sits in a sunken well, below the card it is in. */
+  :root[data-bots-app] [data-bot-bubble] .chat-markdown-codeblock {
+    border-color: transparent;
+    background: linear-gradient(180deg, var(--bots-well-top), var(--bots-well-bottom));
+    box-shadow:
+      inset 0 1px 1px var(--bots-well-shade),
+      inset 0 0 0 1px var(--bots-ring);
+  }
+  :root[data-bots-app] [data-bot-bubble] .chat-markdown-codeblock pre {
+    background: transparent;
+  }
+}
+
+/* Primary actions carry white labels, and in named dark themes a failure or a destructive action
+   reads red, not the theme's tint. `:root:root` outranks the theme blocks
+   (`html[data-theme-id]:not(...)`). */
+:root:root[data-bots-app] {
+  --primary-foreground: #fff;
+}
+:root:root.dark[data-theme-id][data-bots-app] {
+  --error: #e5484d;
+  --error-foreground: #ff6b6b;
+  --destructive: var(--error);
+  --destructive-foreground: var(--error-foreground);
+}
+
+/* Notices over the transcript are opaque, so the message under them never reads through: the
+   glass alert keeps its tint over the full page colour. */
+:root[data-bots-app] .chat-banner-lane {
+  --glass-opacity: 100%;
+}
+
+/* Light: every bots screen shares the list's page grey; the bot's replies are white cards on it
+   and your bubbles a soft grey step. */
+:root:not(.dark)[data-bots-app] [data-bots-mode="true"] {
+  --background: var(--bots-page);
+  --color-bot-bubble: #fff;
+  --color-bot-fill: color-mix(in srgb, var(--foreground) 9%, var(--bots-page));
+}
+@media (max-width: 767px) {
+  :root:not(.dark)[data-bots-app] [data-bot-bubble] {
+    box-shadow:
+      inset 0 0 0 1px var(--bots-ring),
+      0 1px 2px rgb(0 0 0 / 6%);
+  }
+}
+
+/* Desktop panes: light and named dark themes set the sidebar a step below the content pane, and
+   a named theme's selected row keeps its accent. */
+@media (min-width: 768px) {
+  :root:not(.dark)[data-bots-app] {
+    --sidebar: color-mix(in srgb, var(--foreground) 9%, var(--background));
+  }
+  :root.dark[data-theme-id][data-bots-app] {
+    --sidebar: color-mix(in srgb, #000 30%, var(--background));
+    --bots-selected: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--primary) 18%, transparent),
+      color-mix(in srgb, var(--primary) 10%, transparent)
+    );
+  }
+}
+
+/* The You model picker spans its row; its name starts at the icon like the rows around it. */
+[data-bot-model-field] button {
+  text-align: start;
+}

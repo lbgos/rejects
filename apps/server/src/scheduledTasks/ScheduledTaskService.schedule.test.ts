@@ -1,3 +1,30 @@
+import { idleThreadProjection, liveThreadShell } from "../mcp/McpToolAccess.testkit.ts";
+const threadId = ThreadId.make("scheduled-task-test");
+const projection = () => {
+  const empty = idleThreadProjection(liveThreadShell(threadId));
+  return {
+    ...empty,
+    runs: [
+      {
+        id: RunId.make("run-1"),
+        threadId,
+        ordinal: 1,
+        providerInstanceId: empty.thread.modelSelection.instanceId,
+        modelSelection: empty.thread.modelSelection,
+        providerThreadId: null,
+        userMessageId: MessageId.make("message-1"),
+        rootNodeId: null,
+        activeAttemptId: RunAttemptId.make("attempt-1"),
+        status: "running" as const,
+        requestedAt: empty.thread.createdAt,
+        startedAt: empty.thread.createdAt,
+        completedAt: null,
+        checkpointId: null,
+        contextHandoffId: null,
+      },
+    ],
+  };
+};
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { expect, it } from "@effect/vitest";
@@ -5,8 +32,10 @@ import {
   type OrchestrationV2ConversationMessage,
   type OrchestrationV2Run,
   MessageId,
+  RunAttemptId,
   RunId,
   ScheduledTaskUpsertInput,
+  ThreadId,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
@@ -391,6 +420,111 @@ it.effect(
         expect(yield* Deferred.await(launched)).toBe(created.task.title);
       }).pipe(Effect.provide(ScheduledTaskService.layer.pipe(Layer.provide(layerDependencies))));
     }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
+);
+
+it.effect("consumes a scheduled one-time wake and preserves its completion when edited", () =>
+  Effect.gen(function* () {
+    const now = Date.parse("2026-10-27T12:00:00Z");
+    yield* TestClock.setTime(now);
+    let ticks: Effect.Effect<void> = Effect.void;
+    let dispatches = 0;
+    const dependencies = Layer.mergeAll(
+      NodeCrypto.layer,
+      Layer.succeed(Scheduler.Scheduler, {
+        register: <E, R>(name: string, tick: Effect.Effect<void, E, R>) =>
+          Effect.context<R>().pipe(
+            Effect.map((context) => {
+              if (name === "scheduled-tasks")
+                ticks = Effect.provideContext(tick, context).pipe(Effect.orDie);
+            }),
+          ),
+      }),
+      Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
+      Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+        namedProjectsRoot: "/projects",
+        isScratchProject: () => Effect.succeed(false),
+      }),
+      Layer.mock(ThreadManagementService.ThreadManagementService)({
+        getThreadShell: () =>
+          Effect.succeed({
+            projectId: "project-reminder",
+            deletedAt: null,
+            archivedAt: null,
+          } as never),
+        sendToThread: (input) =>
+          Effect.sync(() => {
+            dispatches += 1;
+            const snapshot = projection();
+            const run = snapshot.runs[0]!;
+            return {
+              dispatch: { sequence: 1, storedEvents: [] },
+              projection: snapshot,
+              message: {
+                id: input.messageId,
+                threadId: input.threadId,
+                runId: run.id,
+                nodeId: null,
+                role: "user" as const,
+                text: input.text,
+                attachments: [],
+                streaming: false,
+                createdAt: run.requestedAt,
+                updatedAt: run.requestedAt,
+                createdBy: input.createdBy,
+                creationSource: input.creationSource,
+              },
+              run,
+              turnItem: null,
+              delivery: "queued" as const,
+            };
+          }),
+      }),
+      Layer.mock(SecretRequests.SecretRequests)({}),
+      ManagedPolicy.layerTest(),
+    );
+    yield* Effect.gen(function* () {
+      const service = yield* ScheduledTaskService.ScheduledTaskService;
+      const input = yield* decodeUpsertInput({
+        title: "Review seasons",
+        prompt: "Review seasons",
+        enabled: true,
+        schedule: { type: "once", runAt: "2026-10-28T18:00:00+02:00" },
+        projectId: "project-reminder",
+        threadId,
+        workspaceStrategy: { type: "root" },
+        modelSelection: { instanceId: "codex", model: "gpt-6-luna" },
+        runtimeMode: "full-access",
+        interactionMode: "default",
+      });
+      const created = (yield* service.upsert(input)).task;
+      expect(created.nextRunAt).toBe("2026-10-28T16:00:00.000Z");
+      yield* TestClock.setTime(Date.parse("2026-10-28T16:00:00Z"));
+      yield* ticks;
+      expect(dispatches).toBe(1);
+      expect((yield* service.list()).tasks[0]).toMatchObject({
+        nextRunAt: null,
+        runCount: 1,
+        lastRunStatus: "succeeded",
+      });
+      expect(
+        (yield* service.upsert({ ...input, id: created.id, title: "Updated" })).task.nextRunAt,
+      ).toBeNull();
+      yield* TestClock.setTime(Date.parse("2026-10-30T18:00:00Z"));
+      yield* ticks;
+      expect(dispatches).toBe(1);
+      expect((yield* service.list()).tasks[0]?.nextRunAt).toBeNull();
+      const expired = yield* service
+        .upsert({ ...input, title: "Expired reminder" })
+        .pipe(Effect.flip);
+      expect(expired.message).toContain("Pick a time in the future");
+      const rescheduled = yield* service.upsert({
+        ...input,
+        id: created.id,
+        schedule: { type: "once", runAt: "2026-10-31T16:00:00Z" },
+      });
+      expect(rescheduled.task.nextRunAt).toBe("2026-10-31T16:00:00.000Z");
+    }).pipe(Effect.provide(ScheduledTaskService.layer.pipe(Layer.provide(dependencies))));
+  }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );
 
 it.effect("a fixed-time slot missed while the server was off shows on the task", () =>

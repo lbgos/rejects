@@ -6,6 +6,7 @@ import { formatGeneratedBranchName, sanitizeFeatureBranchName } from "@t3tools/s
 import { extractJsonObject } from "@t3tools/shared/schemaJson";
 
 import type { ProviderTextGeneration } from "./textGeneration.ts";
+import type { TextGenerationUsage } from "./textGeneration.ts";
 import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
@@ -17,14 +18,16 @@ import {
   sanitizeCommitSubject,
   sanitizePrTitle,
   sanitizeThreadTitle,
+  toJsonSchemaObject,
 } from "./textGenerationUtils.ts";
 
 export const TranscriptionPostProcessingOutput = Schema.Struct({ transcription: Schema.String });
 
-export type Operation = keyof ProviderTextGeneration;
+export type Operation = string;
 
 export interface Request<S extends Schema.Top> {
   readonly operation: Operation;
+  readonly structured?: boolean;
   readonly cwd: string;
   readonly prompt: string;
   readonly outputSchema: S;
@@ -32,6 +35,7 @@ export interface Request<S extends Schema.Top> {
   readonly attachments?: ReadonlyArray<ChatAttachment> | undefined;
   /** Investigate cwd with read-only tools across turns; fail if the runner cannot guarantee read-only access. */
   readonly investigate?: { readonly timeoutMs: number } | undefined;
+  readonly onUsage?: ((usage: TextGenerationUsage) => void) | undefined;
 }
 
 const INVESTIGATION_TIMEOUT_MS = 15 * 60_000;
@@ -54,12 +58,18 @@ export const withoutInvestigation =
       : run(request);
 
 export const decodeJsonReply = <S extends Schema.Top>(
-  request: Pick<Request<S>, "operation" | "outputSchema">,
+  request: Pick<Request<S>, "operation" | "outputSchema" | "structured">,
   provider: string,
   text: string,
 ) => {
   const decodeOutput = Schema.decodeEffect(Schema.fromJsonString(request.outputSchema));
-  return decodeOutput(extractJsonObject(text)).pipe(
+  const json = request.structured
+    ? text
+        .trim()
+        .replace(/^```(?:json)?\s*\n?/i, "")
+        .replace(/\s*```$/, "")
+    : extractJsonObject(text);
+  return decodeOutput(json).pipe(
     Effect.mapError(
       (cause) =>
         new TextGenerationError({
@@ -195,6 +205,33 @@ export function fromRunner(name: string, run: Runner): ProviderTextGeneration {
   });
 
   return {
+    generateStructured: (input) =>
+      Effect.try({
+        try: () => toJsonSchemaObject(Schema.toEncoded(input.outputSchema)),
+        catch: (cause) =>
+          new TextGenerationError({
+            operation: input.operation,
+            detail: "Could not encode structured output schema.",
+            cause,
+          }),
+      }).pipe(
+        Effect.flatMap(Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))),
+        Effect.mapError(
+          (cause) =>
+            new TextGenerationError({
+              operation: input.operation,
+              detail: "Could not encode structured output schema.",
+              cause,
+            }),
+        ),
+        Effect.flatMap((schema) =>
+          run({
+            ...input,
+            structured: true,
+            prompt: `${input.prompt}\n\nReturn only JSON matching this schema:\n${schema}`,
+          }),
+        ),
+      ),
     generateCommitMessage,
     generatePrContent,
     generateBranchName,

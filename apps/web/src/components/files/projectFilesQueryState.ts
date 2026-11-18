@@ -5,7 +5,9 @@ import {
   ProjectReadFileError,
   type ProjectReadFileResult,
   T3_PROJECT_FILE_NAME,
+  type ThreadId,
 } from "@t3tools/contracts";
+import { isHostPath } from "@t3tools/shared/path";
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -65,10 +67,12 @@ function getProjectEntriesQueryAtom(
   });
 }
 
+/** `threadId` names the chat that linked a host path, so a sandboxed bot's link opens its file. */
 export function getProjectFileQueryAtom(
   environmentId: EnvironmentId,
   cwd: string,
   relativePath: string | null,
+  threadId?: ThreadId,
 ) {
   return projectEnvironment.readFile({
     environmentId,
@@ -76,6 +80,9 @@ export function getProjectFileQueryAtom(
       cwd,
       relativePath: relativePath ?? EMPTY_PROJECT_FILE_PATH,
       ...(relativePath === T3_PROJECT_FILE_NAME ? { allowMissing: true } : {}),
+      ...(threadId !== undefined && relativePath !== null && isHostPath(relativePath)
+        ? { threadId }
+        : {}),
     },
   });
 }
@@ -242,6 +249,7 @@ export function useProjectFileQuery(
   cwd: string,
   relativePath: string | null,
   enabled = true,
+  threadId?: ThreadId,
 ): ProjectFileQueryState {
   // Read media-like paths too; a failed read is how folders with those names are detected.
   const fileAccess = useFilesystemReadAccess(environmentId);
@@ -249,7 +257,7 @@ export function useProjectFileQuery(
   const isQueryEnabled = enabled;
   const atom =
     enabled && canReadFiles
-      ? getProjectFileQueryAtom(environmentId, cwd, relativePath)
+      ? getProjectFileQueryAtom(environmentId, cwd, relativePath, threadId)
       : EMPTY_PROJECT_FILE_QUERY_ATOM;
   const result = useAtomValue(atom);
   const refreshAtom = useAtomRefresh(atom);

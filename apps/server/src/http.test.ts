@@ -398,9 +398,11 @@ it.layer(
         const response = yield* request(resource, { headers });
         expect(response.status).toBe(200);
         expect(yield* response.text).toBe(nextHtml);
-        expect(response.headers["cache-control"]).toBe("no-cache");
+        // A stored page lets an iOS Home Screen app boot a stale bundle without asking the server.
+        expect(response.headers["cache-control"]).toBe("no-store");
         expect(response.headers["content-security-policy"]).toBe("frame-ancestors 'none'");
         expect(response.headers["x-frame-options"]).toBe("DENY");
+        expect(response.headers["cross-origin-opener-policy"]).toBeUndefined();
         expect(response.headers["etag"]).toBeUndefined();
         expect(response.headers["last-modified"]).toBeUndefined();
       }
@@ -411,6 +413,27 @@ it.layer(
       expect(head.status).toBe(200);
       expect(head.headers["content-length"]).toBe(String(Buffer.byteLength(nextHtml)));
       expect(yield* head.text).toBe("");
+    }),
+  );
+
+  it.effect("bounces a process-swap navigation through one COOP response to the clean URL", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const staticDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-static-swap-" });
+      const request = yield* makeStaticRequest(staticDir);
+      for (const [resource, target] of [
+        ["/threads/a?x=1&t3-process-swap=1&y=%22", "/threads/a?x=1&amp;y=%22"],
+        ["//evil.example/?t3-process-swap=1", "/evil.example/"],
+      ] as const) {
+        const response = yield* request(resource);
+        expect(response.status).toBe(200);
+        expect(response.headers["cross-origin-opener-policy"]).toBe("same-origin");
+        expect(response.headers["cache-control"]).toBe("no-store");
+        expect(response.headers["x-frame-options"]).toBe("DENY");
+        expect(yield* response.text).toBe(
+          `<!doctype html><meta http-equiv="refresh" content="0;url=${target}">`,
+        );
+      }
     }),
   );
 

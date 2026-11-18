@@ -80,8 +80,11 @@ function StatBlock({
   tone?: "default" | "warning" | "danger";
 }) {
   return (
-    <div className="min-w-0 border-border/60 px-4 py-3 sm:px-5">
-      <div className="flex min-w-0 items-center gap-1.5 text-2xs font-medium uppercase tracking-widest text-muted-foreground/70">
+    <div data-stat-row className="min-w-0 border-border/60 px-4 py-3 sm:px-5">
+      <div
+        data-stat-label
+        className="flex min-w-0 items-center gap-1.5 text-2xs font-medium uppercase tracking-widest text-muted-foreground/70"
+      >
         <span className="min-w-0 truncate">{label}</span>
         {tooltip ? (
           <Tooltip>
@@ -101,6 +104,7 @@ function StatBlock({
         ) : null}
       </div>
       <div
+        data-stat-value
         className={cn(
           "mt-1 truncate font-mono text-lg font-semibold tabular-nums text-foreground",
           tone === "warning" && "text-warning-foreground",
@@ -115,7 +119,7 @@ function StatBlock({
 
 function StatsGrid({ children }: { children: ReactNode }) {
   return (
-    <div className="relative grid grid-cols-2 sm:grid-cols-4">
+    <div data-stat-grid className="relative grid grid-cols-2 sm:grid-cols-4">
       <span
         className="pointer-events-none absolute inset-y-0 left-1/2 w-px bg-border/60"
         aria-hidden

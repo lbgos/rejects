@@ -1,0 +1,16 @@
+[Unit]
+Description=rejects shared browser
+After=network-online.target
+
+[Service]
+User=bots
+Environment=DISPLAY=:98
+RuntimeDirectory=rejects-browser
+ExecStart=/usr/bin/sh -c 'Xvfb :98 -screen 0 1280x800x24 -nolisten tcp -ac -noreset & xvfb=$!; trap "kill $xvfb" EXIT; while ! test -S /tmp/.X11-unix/X98; do sleep 0.1; done; chromium --remote-debugging-address=127.0.0.1 --remote-debugging-port=9223 --user-data-dir=/home/bots/rejects-browser-profile --no-first-run --no-default-browser-check --disable-dev-shm-usage --disable-gpu --window-size=1280,800 --lang=en-US about:blank'
+Restart=on-failure
+MemoryMax=1800M
+CPUQuota=150%
+TasksMax=512
+
+[Install]
+WantedBy=multi-user.target

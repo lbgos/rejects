@@ -1,3 +1,7 @@
+import * as BotStore from "../bots/BotStore.ts";
+import * as ConnectionStore from "../connections/ConnectionStore.ts";
+import { sealedBy } from "../bots/sealed.ts";
+import { AgentSandbox } from "@t3tools/shared/AgentScope";
 import {
   isRuntimeModeAbove,
   managedRuntimeModeCeilingMessage,
@@ -88,6 +92,11 @@ export const layer: Layer.Layer<RuntimePolicyV2> = Layer.succeed(RuntimePolicyV2
   }),
 });
 
+const BUILTIN_TOOLS_OFF_DRIVERS: ReadonlySet<string> = new Set(["claudeAgent", "opencode"]);
+
+/** Every bot, wake and worker thread has its own process, and warm ones filled the service's memory. OpenCode sessions borrow one shared server, so they keep the default. */
+export const BOT_IDLE_TIMEOUT_MS = 30_000;
+
 function providerRuntimeMode(
   runtimeMode: RuntimeMode,
   supportedRuntimeModes: ReadonlyArray<RuntimeMode> | undefined,
@@ -146,6 +155,8 @@ export const layerFromProjectStore: Layer.Layer<
 > = Layer.effect(
   RuntimePolicyV2,
   Effect.gen(function* () {
+    const bots = yield* Effect.serviceOption(BotStore.BotStore);
+    const connections = yield* Effect.serviceOption(ConnectionStore.ConnectionStore);
     const projects = yield* ProjectStore.ProjectStoreV2;
     const providerInstances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
     // The same ceiling the orchestrator enforces, fixed for the server's life.
@@ -159,6 +170,43 @@ export const layerFromProjectStore: Layer.Layer<
           instance === undefined
             ? undefined
             : (yield* instance.snapshot.getSnapshot).supportedRuntimeModes;
+        if (Option.isSome(bots))
+          yield* bots.value.inherit(input.thread).pipe(
+            Effect.mapError(
+              (cause) =>
+                new RuntimePolicyResolveError({
+                  projectId: input.thread.projectId,
+                  providerInstanceId: input.modelSelection.instanceId,
+                  cause,
+                }),
+            ),
+          );
+        const bot = Option.isSome(bots) ? yield* bots.value.owner(input.thread.id) : undefined;
+        if (
+          bot &&
+          supportedRuntimeModes !== undefined &&
+          !supportedRuntimeModes.includes("full-access")
+        )
+          return yield* new RuntimePolicyResolveError({
+            projectId: input.thread.projectId,
+            providerInstanceId: input.modelSelection.instanceId,
+            cause: "Bots require full-access support.",
+          });
+        const sealed =
+          bot === undefined || Option.isNone(bots)
+            ? undefined
+            : yield* sealedBy(bot, bots.value, connections);
+        // No sandbox means no shell: a bot outside one keeps only T3's MCP tools.
+        const unsandboxed =
+          bot !== undefined &&
+          Option.isNone(yield* (yield* AgentSandbox).identity(input.thread.id));
+        const toolsOff = sealed !== undefined || unsandboxed;
+        if (toolsOff && !BUILTIN_TOOLS_OFF_DRIVERS.has(instance?.driverKind ?? ""))
+          return yield* new RuntimePolicyResolveError({
+            projectId: input.thread.projectId,
+            providerInstanceId: input.modelSelection.instanceId,
+            cause: `${sealed === undefined ? "Without the bot sandbox, a bot" : `A bot with ${sealed}`} runs only on Claude or OpenCode, which can turn their own tools off.`,
+          });
         const cwd =
           input.thread.worktreePath ??
           (yield* projects.get(input.thread.projectId).pipe(
@@ -185,9 +233,22 @@ export const layerFromProjectStore: Layer.Layer<
             ),
           ));
         return ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
-          runtimeMode: providerRuntimeMode(input.thread.runtimeMode, supportedRuntimeModes),
-          interactionMode: input.thread.interactionMode,
+          runtimeMode: bot
+            ? "full-access"
+            : providerRuntimeMode(input.thread.runtimeMode, supportedRuntimeModes),
+          interactionMode: bot ? "default" : input.thread.interactionMode,
           cwd,
+          // Claude Code's own web search comes back empty through a proxied model; bots search with
+          // web_search and web_browse.
+          ...(toolsOff
+            ? { builtinTools: "none" as const }
+            : bot && instance?.driverKind === "claudeAgent"
+              ? { builtinTools: "noWeb" as const }
+              : {}),
+          ...(bot && instance?.driverKind !== "opencode"
+            ? { idleTimeoutMs: BOT_IDLE_TIMEOUT_MS }
+            : {}),
+          ...(bot ? { compactionManaged: true } : {}),
           ...(maxRuntimeMode === undefined ? {} : { maxRuntimeMode }),
         });
       }),

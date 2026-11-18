@@ -53,6 +53,7 @@ import {
 import {
   idleCompactionOf,
   isCompactionCommandMessage,
+  messagesKeptByOffers,
   type MessageId,
   type OrchestrationV2IdleCompaction,
   type WorktreeSetupSnapshot,
@@ -65,7 +66,10 @@ import {
 } from "@t3tools/contracts";
 import type { ThreadRunSummary } from "@t3tools/client-runtime/state/shell";
 import type { ToolCallVisibility } from "@t3tools/contracts/settings";
-import { resolveT3McpToolDefinition } from "@t3tools/shared/t3McpToolPresentation";
+import {
+  resolveT3McpToolDefinition,
+  resolveT3McpToolName,
+} from "@t3tools/shared/t3McpToolPresentation";
 import { compactDynamicToolOutput } from "@t3tools/shared/toolOutput";
 import { htmlRenderReferencesEqual, type HtmlRenderReference } from "@t3tools/shared/htmlRender";
 import { mcpAppReferencesEqual, type McpAppReference } from "@t3tools/shared/mcpApp";
@@ -568,6 +572,7 @@ type MessagesTimelineRowContent =
       createdAt: string;
       runId: RunId;
       label: string;
+      toolCount: number;
       expanded: boolean;
     }
   | {
@@ -826,7 +831,7 @@ function deriveSupersededAttemptFolds(
       entry.attempt?.status !== "superseded" ||
       retainedAttemptIds.has(entry.attempt.id) ||
       unfoldedRunIds.has(entry.attempt.runId) ||
-      (entry.kind === "message" && entry.message.role === "user") ||
+      (entry.kind === "message" && (entry.message.role === "user" || false)) ||
       (entry.kind === "event" && entry.projectedItem.item.type === "handoff") ||
       entry.kind === "html-render" ||
       entry.kind === "mcp-app" ||
@@ -1034,9 +1039,17 @@ function itemizedFailedRunIds(
   );
 }
 
+const isButtonsCall = (entry: TimelineEntry) => {
+  const item = entry.kind === "work" ? entry.entry.structuredPayload : undefined;
+  const tool =
+    item?.type === "dynamic_tool" && item.toolName ? resolveT3McpToolName(item.toolName) : null;
+  return tool === "offer_replies" || tool === "propose_bots";
+};
+
 function deriveTurnFolds(input: {
   timelineEntries: ReadonlyArray<TimelineEntry>;
   terminalAssistantMessageIds: ReadonlySet<string>;
+  collapseScheduledWakes?: boolean;
   latestRun: TimelineLatestRun | null;
   unfoldedRunIds: ReadonlySet<RunId>;
   runlessWorkActive: boolean;
@@ -1156,10 +1169,17 @@ function deriveTurnFolds(input: {
     const terminalEntryIndex = group.terminalEntry
       ? group.entries.findIndex((entry) => entry.id === group.terminalEntry?.id)
       : group.entries.length;
+    const answeredByButtons = messagesKeptByOffers(group.entries, (entry) =>
+      entry.kind === "message" && entry.message.role === "assistant"
+        ? "message"
+        : isButtonsCall(entry)
+          ? "offer"
+          : "other",
+    );
     // Folded dividers lose their place in the turn, so only the latest stays visible.
     const visibleCompactionId = group.entries.findLast(timelineEntryIsCompaction)?.id;
     for (const [index, entry] of group.entries.entries()) {
-      if (entry.id === group.terminalEntry?.id) {
+      if (entry.id === group.terminalEntry?.id || answeredByButtons.has(index)) {
         continue;
       }
       const isCompaction = timelineEntryIsCompaction(entry);
@@ -1249,6 +1269,59 @@ function deriveTurnFolds(input: {
         hiddenEntryIds: segmentHiddenIds(entries),
         entryIds: new Set(entries.map((entry) => entry.id)),
         label: segmentMs !== null ? `Continued for ${formatDuration(segmentMs)}` : "Continued",
+      });
+    }
+  }
+  if (input.collapseScheduledWakes) {
+    let wake: { runId: RunId; entries: TimelineEntry[] } | null = null;
+    const wakes = new Map<RunId, TimelineEntry[]>();
+    for (const entry of input.timelineEntries) {
+      if (timelineEntryStartsResponse(entry)) {
+        wake =
+          entry.kind === "message" && entry.message.scheduledTaskId && entry.message.runId
+            ? { runId: entry.message.runId, entries: [] }
+            : null;
+        if (wake) wakes.set(wake.runId, wake.entries);
+      }
+      if (wake) wake.entries.push(entry);
+    }
+    for (const [runId, entries] of wakes) {
+      if (input.unfoldedRunIds.has(runId) || interruptedRunIds.has(runId)) continue;
+      const terminal = entries.some(
+        (e) => e.kind === "message" && input.terminalAssistantMessageIds.has(e.message.id),
+      );
+      const first = entries[0];
+      if (!terminal || !first) continue;
+      for (const [key, fold] of foldsByAnchorEntryId)
+        if (fold.runId === runId) foldsByAnchorEntryId.delete(key);
+      const notified = entries.some(
+        (e) =>
+          e.kind === "work" &&
+          e.entry.structuredPayload?.type === "dynamic_tool" &&
+          e.entry.structuredPayload.toolName?.endsWith("notify_user") &&
+          e.entry.structuredPayload.status === "completed",
+      );
+      const title =
+        first.kind === "message"
+          ? /^\[Wake: ([^\]\n]+)\]/.exec(first.message.text)?.[1]
+          : undefined;
+      foldsByAnchorEntryId.set(first.id, {
+        runId,
+        anchorEntryId: first.id,
+        createdAt: first.createdAt,
+        // A wake that notified keeps what it said in view: it is what the push pointed at.
+        hiddenEntryIds: new Set(
+          entries
+            .filter(
+              (e) =>
+                !input.liveSubagentEntryIds.has(e.id) &&
+                !timelineEntryIsPersistentResourceCard(e) &&
+                !(notified && e.kind === "message" && e.message.role === "assistant"),
+            )
+            .map((e) => e.id),
+        ),
+        entryIds: new Set(entries.map((e) => e.id)),
+        label: `${new Date(first.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })} ${title ?? "wake"} · ${notified ? "notified" : "quiet"}`,
       });
     }
   }
@@ -1525,6 +1598,7 @@ function deriveTimelineTurnFolds(
     | "isWorking"
     | "runlessWorkActive"
     | "runningRunId"
+    | "collapseScheduledWakes"
     | "toolCallVisibility"
     | "revealedMessageId"
   >,
@@ -1541,6 +1615,7 @@ function deriveTimelineTurnFolds(
   return deriveTurnFolds({
     timelineEntries,
     terminalAssistantMessageIds: deriveTerminalAssistantMessageIds(timelineEntries),
+    collapseScheduledWakes: input.collapseScheduledWakes ?? false,
     latestRun: input.latestRun ?? null,
     unfoldedRunIds: new Set([...activeVisualResponseRunIds, ...failedRunIds]),
     runlessWorkActive: input.isWorking && input.runlessWorkActive === true,
@@ -1549,11 +1624,20 @@ function deriveTimelineTurnFolds(
   });
 }
 
+const CHAT_ONLY_TOOLS: ReadonlySet<string> = new Set([
+  "react",
+  "status",
+  "offer_replies",
+  "hand_off",
+  "show_ui",
+]);
+
 export function deriveMessagesTimelineRows(input: {
   timelineEntries: ReadonlyArray<TimelineEntry>;
   pendingApprovalRequestIds?: ReadonlySet<RuntimeRequestId>;
   latestRun?: TimelineLatestRun | null;
   runningRunId?: RunId | null;
+  collapseScheduledWakes?: boolean;
   expandedRunIds?: ReadonlySet<RunId>;
   expandedAttemptIds?: ReadonlySet<RunAttemptId>;
   expandedWorkGroupIds?: ReadonlySet<string>;
@@ -1626,6 +1710,7 @@ export function deriveMessagesTimelineRows(input: {
       : deriveTurnFolds({
           timelineEntries: timelineEntries,
           terminalAssistantMessageIds,
+          collapseScheduledWakes: input.collapseScheduledWakes ?? false,
           latestRun: input.latestRun ?? null,
           unfoldedRunIds: new Set([...activeVisualResponseRunIds, ...failedRunIds]),
           runlessWorkActive,
@@ -1633,6 +1718,14 @@ export function deriveMessagesTimelineRows(input: {
           retainedAssistantReplyEntryIds: retainedAssistantReplyIds,
         });
   const timelineEntryById = new Map(timelineEntries.map((entry) => [entry.id, entry]));
+  const toolCount = (entryIds: ReadonlySet<string>) =>
+    [...entryIds].filter((id) => {
+      const entry = timelineEntryById.get(id);
+      if (entry?.kind !== "work" || entry.entry.tone !== "tool") return false;
+      const item = entry.entry.structuredPayload;
+      const name = item?.type === "dynamic_tool" && item.toolName ? item.toolName : null;
+      return !(name && CHAT_ONLY_TOOLS.has(resolveT3McpToolName(name) ?? ""));
+    }).length;
   const collapsedEntryIds = new Set<string>();
   const collapsedFoldMemberIds = new Set<string>();
   for (const fold of foldsByAnchorEntryId.values()) {
@@ -1908,6 +2001,7 @@ export function deriveMessagesTimelineRows(input: {
         createdAt: turnFold.createdAt,
         runId: turnFold.runId,
         label: turnFold.label,
+        toolCount: toolCount(turnFold.hiddenEntryIds),
         expanded: input.expandedRunIds?.has(turnFold.runId) ?? false,
       });
     }
@@ -2347,9 +2441,12 @@ export function deriveMessagesTimelineRows(input: {
     }
   }
 
-  const result = attachTrailingToolGroupsToAssistant(
+  const attached = attachTrailingToolGroupsToAssistant(
     attachCreatedThreadSummaries(nextRows, timelineEntries, collapsedFoldMemberIds),
   );
+  const result = input.collapseScheduledWakes
+    ? attached.filter((row) => row.kind !== "assistant-meta")
+    : attached;
   return result.map((row, index) => {
     if (timelineRowIsWorkLog(row) && timelineRowIsWorkLog(result[index + 1])) {
       return { ...row, continuesWorkLog: true };
@@ -2460,6 +2557,7 @@ export function timelineTurnFoldRunIdsByEntryId(
     | "isWorking"
     | "runlessWorkActive"
     | "runningRunId"
+    | "collapseScheduledWakes"
     | "toolCallVisibility"
     | "revealedMessageId"
   >,
@@ -2867,4 +2965,8 @@ export function sameRowsInput(
     return false;
   }
   return Object.keys(left).length === Object.keys(right).length;
+}
+
+export function runInterruptDetail(message: string): string | null {
+  return message.replace(/^run interrupted\b\s*/iu, "").trim() || null;
 }

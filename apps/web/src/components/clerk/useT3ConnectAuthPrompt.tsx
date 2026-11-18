@@ -1,7 +1,5 @@
 import { useClerk } from "@clerk/react";
 
-import { isElectron } from "../../env";
-import { resolveClerkSignInProps } from "./authRedirect";
 import { retryClerkLoad } from "./clerkLoadFailure";
 
 export function useT3ConnectAuthPrompt() {
@@ -11,7 +9,7 @@ export function useT3ConnectAuthPrompt() {
       retryClerkLoad();
       return;
     }
-    clerk.openSignIn(resolveClerkSignInProps(window.location.href, isElectron));
+    clerk.openSignIn();
   };
   return { openAuthPrompt };
 }

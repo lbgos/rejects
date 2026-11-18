@@ -1,8 +1,47 @@
 import type { ContextMenuItem } from "@t3tools/contracts";
+import { safeAreaBottom, safeAreaTop } from "./safeArea";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<string, string> }>> = {
+  activity: [
+    {
+      tag: "path",
+      attrs: {
+        d: "M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2",
+      },
+    },
+  ],
+  bell: [
+    { tag: "path", attrs: { d: "M10.268 21a2 2 0 0 0 3.464 0" } },
+    {
+      tag: "path",
+      attrs: {
+        d: "M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326",
+      },
+    },
+  ],
+  "bell-off": [
+    { tag: "path", attrs: { d: "M10.268 21a2 2 0 0 0 3.464 0" } },
+    {
+      tag: "path",
+      attrs: {
+        d: "M17 17H4a1 1 0 0 1-.74-1.673C4.59 13.956 6 12.499 6 8a6 6 0 0 1 .258-1.742",
+      },
+    },
+    { tag: "path", attrs: { d: "m2 2 20 20" } },
+    { tag: "path", attrs: { d: "M8.668 3.01A6 6 0 0 1 18 8c0 2.687.77 4.653 1.707 6.05" } },
+  ],
+  brain: [
+    { tag: "path", attrs: { d: "M12 18V5" } },
+    { tag: "path", attrs: { d: "M15 13a4.17 4.17 0 0 1-3-4 4.17 4.17 0 0 1-3 4" } },
+    { tag: "path", attrs: { d: "M17.598 6.5A3 3 0 1 0 12 5a3 3 0 1 0-5.598 1.5" } },
+    { tag: "path", attrs: { d: "M17.997 5.125a4 4 0 0 1 2.526 5.77" } },
+    { tag: "path", attrs: { d: "M18 18a4 4 0 0 0 2-7.464" } },
+    { tag: "path", attrs: { d: "M19.967 17.483A4 4 0 1 1 12 18a4 4 0 1 1-7.967-.517" } },
+    { tag: "path", attrs: { d: "M6 18a4 4 0 0 1-2-7.464" } },
+    { tag: "path", attrs: { d: "M6.003 5.125a4 4 0 0 0-2.526 5.77" } },
+  ],
   archive: [
     { tag: "rect", attrs: { width: "20", height: "5", x: "2", y: "3", rx: "1" } },
     { tag: "path", attrs: { d: "M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" } },
@@ -14,6 +53,14 @@ const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<stri
     { tag: "line", attrs: { x1: "12", x2: "15", y1: "14", y2: "11" } },
     { tag: "circle", attrs: { cx: "12", cy: "14", r: "8" } },
   ],
+  zap: [
+    {
+      tag: "path",
+      attrs: {
+        d: "M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z",
+      },
+    },
+  ],
   "chevron-right": [{ tag: "path", attrs: { d: "m9 19 7-7-7-7" } }],
   "circle-check": [
     { tag: "circle", attrs: { cx: "12", cy: "12", r: "10" } },
@@ -22,6 +69,10 @@ const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<stri
   clock: [
     { tag: "path", attrs: { d: "M12 6v6l4 2" } },
     { tag: "circle", attrs: { cx: "12", cy: "12", r: "10" } },
+  ],
+  pause: [
+    { tag: "rect", attrs: { x: "14", y: "3", width: "5", height: "18", rx: "1" } },
+    { tag: "rect", attrs: { x: "5", y: "3", width: "5", height: "18", rx: "1" } },
   ],
   pencil: [
     {
@@ -65,6 +116,29 @@ const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<stri
     },
     { tag: "path", attrs: { d: "m22 10-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 10" } },
   ],
+  "message-badge": [
+    {
+      tag: "path",
+      attrs: {
+        d: "M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719",
+      },
+    },
+    { tag: "circle", attrs: { cx: "18.5", cy: "5.5", r: "3.5", fill: "currentColor" } },
+  ],
+  "shield-check": [
+    {
+      tag: "path",
+      attrs: {
+        d: "M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z",
+      },
+    },
+    { tag: "path", attrs: { d: "m9 12 2 2 4-4" } },
+  ],
+  monitor: [
+    { tag: "rect", attrs: { width: "20", height: "14", x: "2", y: "3", rx: "2" } },
+    { tag: "line", attrs: { x1: "8", x2: "16", y1: "21", y2: "21" } },
+    { tag: "line", attrs: { x1: "12", x2: "12", y1: "17", y2: "21" } },
+  ],
   "message-square": [
     {
       tag: "path",
@@ -103,6 +177,18 @@ const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<stri
       },
     },
   ],
+  play: [
+    {
+      tag: "path",
+      attrs: {
+        d: "M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z",
+      },
+    },
+  ],
+  reply: [
+    { tag: "path", attrs: { d: "M20 18v-2a4 4 0 0 0-4-4H4" } },
+    { tag: "path", attrs: { d: "m9 17-5-5 5-5" } },
+  ],
   "refresh-cw": [
     { tag: "path", attrs: { d: "M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" } },
     { tag: "path", attrs: { d: "M21 3v5h-5" } },
@@ -117,6 +203,17 @@ const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<stri
       },
     },
     { tag: "circle", attrs: { cx: "12", cy: "12", r: "3" } },
+  ],
+  sliders: [
+    { tag: "path", attrs: { d: "M10 5H3" } },
+    { tag: "path", attrs: { d: "M12 19H3" } },
+    { tag: "path", attrs: { d: "M14 3v4" } },
+    { tag: "path", attrs: { d: "M16 17v4" } },
+    { tag: "path", attrs: { d: "M21 12h-9" } },
+    { tag: "path", attrs: { d: "M21 19h-5" } },
+    { tag: "path", attrs: { d: "M21 5h-7" } },
+    { tag: "path", attrs: { d: "M8 10v4" } },
+    { tag: "path", attrs: { d: "M8 12H3" } },
   ],
   "user-plus": [
     { tag: "path", attrs: { d: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" } },
@@ -198,13 +295,16 @@ function createIconElement(name: string, tone: "neutral" | "destructive"): SVGSV
 
 function clampMenuPosition(menu: HTMLDivElement, preferredLeft: number, preferredTop: number) {
   const rect = menu.getBoundingClientRect();
+  const edge = window.matchMedia("(pointer: coarse)").matches ? 8 : 4;
+  const ceiling = edge + safeAreaTop();
+  const bottom = edge + safeAreaBottom();
   const left = Math.min(
-    Math.max(4, preferredLeft),
-    Math.max(4, window.innerWidth - rect.width - 4),
+    Math.max(edge, preferredLeft),
+    Math.max(edge, window.innerWidth - rect.width - edge),
   );
   const top = Math.min(
-    Math.max(4, preferredTop),
-    Math.max(4, window.innerHeight - rect.height - 4),
+    Math.max(ceiling, preferredTop),
+    Math.max(ceiling, window.innerHeight - rect.height - bottom),
   );
   menu.style.left = `${left}px`;
   menu.style.top = `${top}px`;

@@ -18,6 +18,7 @@ import {
   ShieldQuestionIcon,
 } from "lucide-react";
 
+import { isBotThread, pollBots, readBots, subscribeBots } from "../bots/state";
 import { getClientSettings, subscribeClientSettings } from "../hooks/useSettings";
 import { isWindowsPlatform } from "../lib/utils";
 import { environmentSummaries } from "../state/presentation";
@@ -243,6 +244,8 @@ export function startThreadNotifications(
     const delegatedUnderParent = registry.get(environmentThreadShells.delegatedUnderParentAtom);
     const changed: Array<[NotificationState | undefined, NotificationState]> = [];
     for (const rawThread of threads) {
+      // Bots notify through their own channel and keep their conversations out of thread alerts.
+      if (isBotThread(environmentId, rawThread)) continue;
       if (
         isShownUnderParent(
           { environmentId, threadId: rawThread.id },
@@ -444,5 +447,80 @@ export function startThreadNotifications(
     watched.clear();
     stopModeListeners();
     closeToasts(() => true);
+  };
+}
+
+export function startBotNotifications(
+  registry: AtomRegistry.AtomRegistry,
+  router: AnyRouter,
+): () => void {
+  const notified = new Map<ThreadId, string | null>();
+  const polls = new Map<EnvironmentId, () => void>();
+
+  const observe = () => {
+    const { notificationMode: mode, inAppNotificationsEnabled } = getClientSettings();
+    const active = (router.state.matches.at(-1)?.params ?? {}) as {
+      environmentId?: string;
+      threadId?: string;
+    };
+    for (const environmentId of polls.keys()) {
+      for (const bot of readBots(environmentId)) {
+        const prior = notified.get(bot.threadId);
+        notified.set(bot.threadId, bot.notifiedAt);
+        if (prior === undefined || prior === bot.notifiedAt || !bot.notifiedAt) continue;
+        if (hasNotificationSound(mode)) {
+          void playNotificationSound("completion", () =>
+            hasNotificationSound(getClientSettings().notificationMode),
+          );
+        }
+        if (
+          !inAppNotificationsEnabled ||
+          document.visibilityState !== "visible" ||
+          !document.hasFocus() ||
+          (active.environmentId === environmentId && active.threadId === bot.threadId)
+        )
+          continue;
+        toastManager.add({
+          type: "success",
+          title: bot.name,
+          description: bot.lastNotification ?? "",
+          actionProps: {
+            children: "Open bot",
+            onClick: () => {
+              void router.navigate({
+                to: "/$environmentId/$threadId",
+                params: { environmentId, threadId: bot.threadId },
+              });
+            },
+          },
+        });
+      }
+    }
+  };
+
+  const syncEnvironments = () => {
+    const ids = new Set(registry.get(environmentSummaries.environmentIdsAtom));
+    for (const [environmentId, stop] of polls) {
+      if (ids.has(environmentId)) continue;
+      stop();
+      polls.delete(environmentId);
+    }
+    for (const environmentId of ids) {
+      if (polls.has(environmentId)) continue;
+      polls.set(environmentId, pollBots(environmentId));
+    }
+  };
+
+  const unsubscribeEnvironments = registry.subscribe(
+    environmentSummaries.environmentIdsAtom,
+    syncEnvironments,
+    { immediate: true },
+  );
+  const unsubscribeBots = subscribeBots(observe);
+  return () => {
+    unsubscribeEnvironments();
+    unsubscribeBots();
+    for (const stop of polls.values()) stop();
+    polls.clear();
   };
 }

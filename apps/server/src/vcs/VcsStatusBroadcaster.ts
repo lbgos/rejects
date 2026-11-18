@@ -505,6 +505,11 @@ export const make = Effect.gen(function* () {
     options?: Parameters<GitWorkflowService.GitWorkflowService["Service"]["remoteStatus"]>[1],
   ) {
     const branch = yield* workflow.currentBranch(cwd);
+    // A local repository without a remote has no host to poll.
+    const local = yield* getOrLoadLocalStatus(cwd);
+    if (!local.isRepo || (!local.hasPrimaryRemote && !local.sourceControlProvider)) {
+      return { branch, value: null, fingerprint: fingerprintStatusPart(null) };
+    }
     // GitManager's remote TTL cache is keyed by cwd, not the checked-out branch.
     yield* workflow.invalidateRemoteStatus(cwd);
     const previousRemote = (yield* getCachedStatus(cwd))?.remote;

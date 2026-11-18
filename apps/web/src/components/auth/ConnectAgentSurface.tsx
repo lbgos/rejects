@@ -31,6 +31,7 @@ import { Input } from "../ui/input";
 import { RadioGroup } from "../ui/radio-group";
 import { Spinner } from "../ui/spinner";
 import { StandalonePage, StandalonePageHeader } from "../ui/standalone-page";
+import { CLI_COMMAND_NAME } from "@t3tools/shared/cliRelease";
 
 export const accessConfig: Record<
   AuthMcpClientAccess,
@@ -117,7 +118,7 @@ const primaryTransport: McpApprovalTransport = {
 const decodeAuthorizationRequest = Schema.decodeSync(AuthMcpAuthorizationRequest);
 
 /** The agent's OAuth request from this page's query; other parameters are ignored. */
-export function readAuthorizationRequest(): AuthMcpAuthorizationRequest {
+function readAuthorizationRequest(): AuthMcpAuthorizationRequest {
   return decodeAuthorizationRequest(Object.fromEntries(new URL(window.location.href).searchParams));
 }
 
@@ -130,7 +131,7 @@ export function ConnectAgentSurface() {
  * The consent screen for one agent sign-in. `acceptsCode` shows the sign-in code field;
  * `requireLevelChoice` starts with no level picked; `footer` sits under the actions.
  */
-export function McpConsent({
+function McpConsent({
   authorization,
   transport,
   acceptsCode = false,
@@ -316,8 +317,8 @@ export function McpConsent({
               value={pairingCode}
             />
             <p className="text-xs text-muted-foreground">
-              Get one from Use T3 Code in another app (MCP), Settings → Sharing & access, or{" "}
-              <code>t3 auth pairing create</code> on this machine.
+              Get one from Use rejects in another app (MCP), Settings → Sharing & access, or{" "}
+              <code>{CLI_COMMAND_NAME} auth pairing create</code> on this machine.
             </p>
           </div>
         ) : null}

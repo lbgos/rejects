@@ -8,6 +8,8 @@ import { FetchHttpClient, HttpClient } from "effect/http";
 import { Atom } from "effect/reactivity";
 import { useState } from "react";
 
+import { useMediaQuery } from "../../hooks/useMediaQuery";
+
 import {
   decodeThirdPartyLicenseManifest,
   filterThirdPartyLicenseEntries,
@@ -67,18 +69,21 @@ function LicenseNoticeRow({
   entry,
   open,
   onOpenChange,
+  phone,
 }: {
   readonly entry: ThirdPartyLicenseEntry;
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
+  readonly phone: boolean;
 }) {
   return (
-    <Collapsible open={open} onOpenChange={onOpenChange}>
+    <Collapsible data-license-entry open={open} onOpenChange={onOpenChange}>
       <article>
-        <div className="flex min-h-10 items-center hover:bg-muted/35 sm:min-h-9">
+        <div data-license-row className="flex min-h-10 items-center hover:bg-muted/35 sm:min-h-9">
           <CollapsibleTrigger className="group flex min-h-10 min-w-0 flex-1 items-center gap-2.5 px-3 text-left sm:min-h-9 sm:px-4">
             <ChevronRightIcon
               aria-hidden
+              data-license-chevron
               className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-200 group-data-panel-open:rotate-90"
             />
             <span className="flex min-w-0 flex-1 items-baseline gap-2">
@@ -87,11 +92,13 @@ function LicenseNoticeRow({
                 <code className="shrink-0 text-xs text-muted-foreground">{entry.version}</code>
               ) : null}
             </span>
-            <span className="max-w-[42%] shrink-0 truncate text-xs text-muted-foreground">
-              {entry.license} · {formatLicenseBundles(entry.bundles)}
-            </span>
+            {phone ? null : (
+              <span className="max-w-[42%] shrink-0 truncate text-xs text-muted-foreground">
+                {entry.license} · {formatLicenseBundles(entry.bundles)}
+              </span>
+            )}
           </CollapsibleTrigger>
-          {entry.sourceUrl ? (
+          {entry.sourceUrl && !phone ? (
             <Button
               aria-label={`View project source for ${entry.name}`}
               className="me-3 shrink-0 sm:me-4"
@@ -106,7 +113,25 @@ function LicenseNoticeRow({
         </div>
         <CollapsiblePanel>
           {open ? (
-            <div className="px-9 pt-1 pb-4 sm:px-10">
+            <div className="px-9 pt-1 pb-4 max-md:px-4 sm:px-10">
+              {phone ? (
+                <p className="pb-2 text-sm text-muted-foreground">
+                  {entry.license} · {formatLicenseBundles(entry.bundles)}
+                  {entry.sourceUrl ? (
+                    <>
+                      {" · "}
+                      <a
+                        className="text-foreground underline underline-offset-2"
+                        href={entry.sourceUrl}
+                        rel="noreferrer noopener"
+                        target="_blank"
+                      >
+                        Project source
+                      </a>
+                    </>
+                  ) : null}
+                </p>
+              ) : null}
               <pre className="max-w-[76ch] whitespace-pre-wrap break-words font-mono text-xs/5 text-foreground/80">
                 {entry.noticeText}
               </pre>
@@ -227,6 +252,7 @@ export function OpenSourceLicensesPanel() {
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [openEntryKey, setOpenEntryKey] = useState<string | null>(null);
+  const phone = useMediaQuery("max-md");
   const manifest = result._tag === "Success" ? result.value : null;
   const entries = manifest?.entries ?? [];
   const filteredEntries = filterThirdPartyLicenseEntries(entries, query);
@@ -240,10 +266,25 @@ export function OpenSourceLicensesPanel() {
 
   return (
     <SettingsPageContainer>
+      {phone && manifest ? (
+        <label className="flex h-9 items-center gap-1.5 rounded-(--control-radius) bg-accent px-2 text-muted-foreground">
+          <SearchIcon aria-hidden className="size-4 shrink-0" />
+          <input
+            aria-label="Search open-source licenses"
+            className="min-w-0 flex-1 bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground"
+            onChange={(event) => setQuery(event.currentTarget.value)}
+            placeholder="Search"
+            type="search"
+            value={query}
+          />
+        </label>
+      ) : null}
       <SettingsSection
         title="Third-party notices"
         headerAction={
-          manifest ? (
+          manifest && phone ? (
+            <LicenseCount filteredCount={filteredEntries.length} totalCount={entries.length} />
+          ) : manifest ? (
             <LicenseHeaderAction
               query={query}
               onQueryChange={setQuery}
@@ -266,6 +307,7 @@ export function OpenSourceLicensesPanel() {
                     entry={entry}
                     open={openEntryKey === entryKey}
                     onOpenChange={(open) => setOpenEntryKey(open ? entryKey : null)}
+                    phone={phone}
                   />
                 );
               })

@@ -213,6 +213,7 @@ import {
   markdownImageCopy,
 } from "./chat/ChatMarkdownMedia";
 import { MarkdownExternalLinkContent } from "./chat/MarkdownExternalLink";
+import { BotThreadContext } from "../bots/context";
 import { MarkdownFileLink } from "./chat/MarkdownFileLink";
 import { canUseMarkdownFileShellActions } from "./chat/MarkdownFileLink.logic";
 import { rehypeChipPunctuation } from "./chat/markdownChipPunctuation";
@@ -570,6 +571,9 @@ function useChatMarkdownState({
     reportFailure: false,
     refresh: true,
   });
+  // A bot's paths name its sandbox, which the server maps from the full path; the shared
+  // workspace root holds every bot's folder, so a relative lookup there finds the wrong files.
+  const botThread = use(BotThreadContext);
   const openPreview = useAtomCommand(previewEnvironment.open, {
     reportFailure: false,
   });
@@ -859,6 +863,7 @@ function useChatMarkdownState({
     const openAt = (path: string) =>
       useRightPanelStore.getState().openFile(threadRef, path, fileLinkMeta.line);
     if (
+      botThread ||
       fileLinkMeta.workspaceLookupPath === null ||
       !cwd ||
       workspaceLinkLookupQuery(panelPath, cwd) === null
@@ -896,8 +901,10 @@ function useChatMarkdownState({
         fileLinkMeta.basename.slice(fileLinkMeta.basename.lastIndexOf(".")),
       ) !== null;
     const panelPath =
-      fileLinkMeta.workspaceRelativePath ??
-      (!canPreviewMedia && isHostPath(fileLinkMeta.filePath) ? fileLinkMeta.filePath : null);
+      botThread && isHostPath(fileLinkMeta.filePath)
+        ? fileLinkMeta.filePath
+        : (fileLinkMeta.workspaceRelativePath ??
+          (!canPreviewMedia && isHostPath(fileLinkMeta.filePath) ? fileLinkMeta.filePath : null));
 
     return (
       <MarkdownFileLink

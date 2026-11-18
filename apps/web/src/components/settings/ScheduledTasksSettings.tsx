@@ -436,6 +436,7 @@ export function ScheduledTasksSettings(target: {
   return (
     <SettingsPageContainer>
       <SettingsSection
+        data-scheduled-tasks
         {...searchableSetting("scheduled-tasks")}
         variant="plain"
         headerAction={
@@ -780,6 +781,7 @@ function ScheduledTaskRow({
   };
   return (
     <SettingsRow
+      data-scheduled-task-row
       title={task.title}
       description={<span className="line-clamp-2">{task.prompt}</span>}
       status={
@@ -821,6 +823,7 @@ function ScheduledTaskRow({
             <MenuTrigger
               render={
                 <Button
+                  data-row-actions
                   size="icon-sm"
                   variant="ghost"
                   disabled={busy || !canOperate}
@@ -1510,7 +1513,7 @@ function ScheduledTaskEditorForm({
     if (schedule.type === "once" && !offersOnce) {
       reportFailure(
         "Once is not available here",
-        "This environment runs an older T3 Code. Update it to schedule a one-time task, or pick another schedule.",
+        "This environment runs an older rejects. Update it to schedule a one-time task, or pick another schedule.",
       );
       return;
     }

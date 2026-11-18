@@ -1,4 +1,4 @@
-import { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import { ATTACHMENT_UPLOAD_CHUNK_BYTES, EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { Atom, AsyncResult } from "effect/reactivity";
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -106,7 +106,11 @@ class TestXmlHttpRequest {
     this.listeners.set(event, listener);
   }
 
-  send(): void {}
+  body: Blob | null = null;
+
+  send(body: Blob): void {
+    this.body = body;
+  }
 
   abort(): void {
     this.listeners.get("abort")?.();
@@ -348,6 +352,71 @@ describe("attachmentUploadQueue", () => {
       },
       expect.anything(),
     );
+  });
+
+  it("sends a file within the old 50 MiB cap as one request older servers accept", async () => {
+    const file = new File([new Uint8Array(40 * 1024 * 1024)], "deck.pdf", {
+      type: "application/pdf",
+    });
+    const attachment: ComposerFileAttachment = {
+      type: "file",
+      id: "deck",
+      name: file.name,
+      mimeType: file.type,
+      sizeBytes: file.size,
+      file,
+    };
+    startAttachmentUpload({ environmentId: firstEnvironment, image: attachment });
+    await vi.waitFor(() => expect(TestXmlHttpRequest.requests).toHaveLength(1));
+    const settled = awaitAttachmentUploads([attachment.id]);
+    const request = TestXmlHttpRequest.requests[0]!;
+    expect(request.url).toBe(
+      "https://environment.test/api/attachments/upload/pending-environment-1-deck.pdf",
+    );
+    expect(request.body).toBe(file);
+    request.complete();
+    await settled;
+    expect(TestXmlHttpRequest.requests).toHaveLength(1);
+    expect(readAttachmentUpload(attachment.id)).toMatchObject({ status: "ready" });
+  });
+
+  it("sends a file larger than one chunk as offset requests", async () => {
+    const file = new File([new Uint8Array(ATTACHMENT_UPLOAD_CHUNK_BYTES + 3)], "clip.mov", {
+      type: "video/quicktime",
+    });
+    const attachment: ComposerFileAttachment = {
+      type: "file",
+      id: "clip",
+      name: file.name,
+      mimeType: file.type,
+      sizeBytes: file.size,
+      file,
+    };
+    startAttachmentUpload({ environmentId: firstEnvironment, image: attachment });
+    await vi.waitFor(() => expect(TestXmlHttpRequest.requests).toHaveLength(1));
+    const settled = awaitAttachmentUploads([attachment.id]);
+
+    const first = TestXmlHttpRequest.requests[0]!;
+    expect(first.url).toBe(
+      "https://environment.test/api/attachments/upload/pending-environment-1-clip.mov?offset=0",
+    );
+    expect(first.body?.size).toBe(ATTACHMENT_UPLOAD_CHUNK_BYTES);
+    first.complete();
+
+    await vi.waitFor(() => expect(TestXmlHttpRequest.requests).toHaveLength(2));
+    const second = TestXmlHttpRequest.requests[1]!;
+    expect(second.url).toBe(
+      `https://environment.test/api/attachments/upload/pending-environment-1-clip.mov?offset=${ATTACHMENT_UPLOAD_CHUNK_BYTES}`,
+    );
+    expect(second.body?.size).toBe(3);
+    second.progress(1, 3);
+    expect(readAttachmentUpload(attachment.id)).toMatchObject({
+      status: "uploading",
+      progress: (ATTACHMENT_UPLOAD_CHUNK_BYTES + 1) / file.size,
+    });
+    second.complete();
+    await settled;
+    expect(readAttachmentUpload(attachment.id)).toMatchObject({ status: "ready" });
   });
 
   it("persists a background completion's ids to the draft with no composer mounted", async () => {

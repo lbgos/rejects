@@ -5,6 +5,7 @@ import {
   EnvironmentHttpApi,
 } from "@t3tools/contracts";
 import { isDevProxiedPath } from "@t3tools/shared/devProxy";
+import { processSwapReturnPath } from "@t3tools/shared/processSwap";
 import { injectMcpAppCookieBootstrap, injectMcpAppThemeBootstrap } from "@t3tools/shared/mcpApp";
 import { decodeOtlpTraceRecords } from "@t3tools/shared/observability";
 import * as ByteSize from "effect/ByteSize";
@@ -480,12 +481,13 @@ export const layerAttachmentUploadRoute = HttpRouter.add(
       return HttpServerResponse.text("Not Found", { status: 404 });
     }
 
+    // `?offset=` marks one chunk of the upload; without it the body is the whole file.
+    const offsetParam = url.value.searchParams.get("offset");
+    const offset = offsetParam === null ? 0 : Number(offsetParam);
     const contentLengthHeader = request.headers["content-length"];
-    if (
-      contentLengthHeader !== undefined &&
-      (!Number.isInteger(Number(contentLengthHeader)) ||
-        Number(contentLengthHeader) !== claims.sizeBytes)
-    ) {
+    const length =
+      contentLengthHeader === undefined ? claims.sizeBytes - offset : Number(contentLengthHeader);
+    if (offsetParam === null && length !== claims.sizeBytes) {
       return HttpServerResponse.text("Content-Length must match the upload size.", {
         status: 400,
       });
@@ -493,7 +495,10 @@ export const layerAttachmentUploadRoute = HttpRouter.add(
 
     // Keep the request stream in the route scope until the response is sent.
     const bodyPull = yield* Stream.toPull(request.stream);
-    const stored = yield* storeAttachmentUpload(claims, Stream.fromPull(Effect.succeed(bodyPull)));
+    const stored = yield* storeAttachmentUpload(claims, Stream.fromPull(Effect.succeed(bodyPull)), {
+      offset,
+      length,
+    });
     return stored.ok
       ? HttpServerResponse.empty({ status: 204 })
       : HttpServerResponse.text(stored.detail, { status: stored.status });
@@ -570,6 +575,9 @@ const SPA_FRAME_HEADERS = {
   "X-Frame-Options": "DENY",
 };
 
+const escapeHtmlAttribute = (value: string) =>
+  value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;");
+
 const handleStaticAndDevRequest = Effect.fn("handleStaticAndDevRequest")(
   function* (immutableBuildAssets: ReadonlySet<string>) {
     const request = yield* HttpServerRequest.HttpServerRequest;
@@ -577,6 +585,23 @@ const handleStaticAndDevRequest = Effect.fn("handleStaticAndDevRequest")(
 
     if (Option.isNone(url)) {
       return HttpServerResponse.text("Bad Request", { status: 400 });
+    }
+
+    const processSwapReturn = processSwapReturnPath(url.value);
+    if (processSwapReturn !== null) {
+      // SPA HTML sends no COOP; this one response differs, so WebKit swaps web processes here and
+      // again on the way back, and the app itself keeps its usual headers.
+      return HttpServerResponse.text(
+        `<!doctype html><meta http-equiv="refresh" content="0;url=${escapeHtmlAttribute(processSwapReturn)}">`,
+        {
+          contentType: "text/html",
+          headers: {
+            ...SPA_FRAME_HEADERS,
+            "Cache-Control": "no-store",
+            "Cross-Origin-Opener-Policy": "same-origin",
+          },
+        },
+      );
     }
 
     const config = yield* ServerConfig.ServerConfig;
@@ -657,7 +682,13 @@ const handleStaticAndDevRequest = Effect.fn("handleStaticAndDevRequest")(
       !isHtml &&
       /^assets\/.+-[\w-]{8}\.[^/]+$/.test(relativePath) &&
       immutableBuildAssets.has(relativePath);
-    const cacheControl = immutable ? "public, max-age=31536000, immutable" : "no-cache";
+    // HTML is never stored: iOS restores a Home Screen app from a stored page without asking the
+    // server, which boots whatever bundle that old page named.
+    const cacheControl = immutable
+      ? "public, max-age=31536000, immutable"
+      : isHtml
+        ? "no-store"
+        : "no-cache";
     const validators = (info: FileSystem.File.Info) => {
       // Deployments can preserve HTML size and mtime while changing its bundle URLs.
       const modifiedAt = isHtml ? undefined : Option.getOrUndefined(info.mtime);

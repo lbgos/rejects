@@ -14,6 +14,7 @@ import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../../state/server";
 import { MiddleTruncate } from "../ui/middle-truncate";
 import * as DateTime from "effect/DateTime";
 import { WorkLogRow } from "./WorkLog";
+import { runInterruptDetail } from "./MessagesTimeline.logic";
 import {
   resolveHandoffEndpoints,
   type HandoffEndpoints,
@@ -79,7 +80,7 @@ export function V2LifecycleRow(props: {
     return (
       <TimelineSystemDivider
         label="Run interrupted"
-        detail={item.message}
+        detail={runInterruptDetail(item.message)}
         icon={CircleStopIcon}
         wrapDetail
       />

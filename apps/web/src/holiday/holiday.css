@@ -1,0 +1,98 @@
+/* The holiday theme (docs/internals/web-ui.md, "Holiday theme"). Every rule starts with the same
+   scope: the gate is on, the bots app, dark appearance. On the default theme it also retints the
+   accent and the user's bubbles; a named theme keeps its own and gets the lights on top. Light
+   appearance keeps its own look whole. Static paint only. */
+
+:root.dark[data-holiday][data-bots-app] {
+  /* lights.svg repeats these colours: change both together. */
+  --holiday-wire: #2b3a31;
+  --holiday-warm: #ffe6b0;
+  --holiday-berry: #f0605a;
+  --holiday-gold: #ffcf6b;
+  --holiday-fir: #48c98b;
+  /* Deeper than the berry light: the swipe actions put white labels on it (4.5:1 or more). */
+  --color-bot-unread: #cf3a35;
+}
+/* The default theme takes a candle-gold accent. */
+:root.dark[data-holiday][data-bots-app]:not([data-theme-id]:not([data-theme-id=""])) {
+  --primary: #ecc06c;
+  --primary-foreground: #1c1404;
+}
+
+/* The default theme's user bubbles are pine. bots.css sets the surface on each bots root, so each
+   is named. */
+:root.dark[data-holiday][data-bots-app]:not([data-theme-id]:not([data-theme-id=""])),
+:root.dark[data-holiday][data-bots-app]:not([data-theme-id]:not([data-theme-id=""]))
+  :is([data-bots-mode="true"], [data-app-modal]) {
+  --message-surface: #173c2a;
+}
+
+/* Links in replies look the same on every screen size: the accent on the default theme, the text
+   colour underlined on a named one, whose accent is not always readable as text. */
+:root.dark[data-holiday][data-bots-app]:not([data-theme-id]:not([data-theme-id=""]))
+  .chat-markdown
+  a:not(.chat-markdown-file-link, :has([data-slot="context-chip-label"])) {
+  color: var(--primary);
+}
+:root.dark[data-holiday][data-bots-app][data-theme-id]:not([data-theme-id=""])
+  .chat-markdown
+  a:not(.chat-markdown-file-link, :has([data-slot="context-chip-label"])) {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+/* The light string, inside the bottom of each `data-holiday-string` bar and behind its controls.
+   Those bars are solid and nothing scrolls into their box. `round` fits whole 3-bulb tiles to each
+   bar, stretching them a little (lights.svg does not keep its aspect ratio), so the wire never
+   breaks and neighbouring bars meet bulb to bulb. The wire stands in for the bar's scrolled edge. */
+:root.dark[data-holiday][data-bots-app] [data-holiday-string] {
+  isolation: isolate;
+  --bots-bar-edge: transparent;
+}
+:root.dark[data-holiday][data-bots-app] [data-holiday-string]::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: -1;
+  height: 14px;
+  background: url("./lights.svg") left bottom / 120px 14px round no-repeat;
+  pointer-events: none;
+}
+
+/* A phone's time label sits between two small stars (at 1x they read as plus signs). */
+@media (width < 48rem) {
+  :root.dark[data-holiday][data-bots-app] [data-holiday-stars]::before,
+  :root.dark[data-holiday][data-bots-app] [data-holiday-stars]::after {
+    content: "";
+    display: inline-block;
+    width: 0.4375rem;
+    height: 0.4375rem;
+    margin-inline: 0.5rem;
+    background: var(--holiday-gold);
+    opacity: 0.85;
+    clip-path: polygon(50% 0, 60% 40%, 100% 50%, 60% 60%, 50% 100%, 40% 60%, 0 50%, 40% 40%);
+  }
+}
+
+/* The phone's typing dots are three lights. */
+:root.dark[data-holiday][data-bots-app] [data-holiday-dot] {
+  background: var(--holiday-dot);
+  box-shadow: 0 0 6px 0 color-mix(in srgb, var(--holiday-dot) 55%, transparent);
+}
+:root.dark[data-holiday][data-bots-app] [data-holiday-dot="warm"] {
+  --holiday-dot: var(--holiday-warm);
+}
+:root.dark[data-holiday][data-bots-app] [data-holiday-dot="berry"] {
+  --holiday-dot: var(--holiday-berry);
+}
+:root.dark[data-holiday][data-bots-app] [data-holiday-dot="fir"] {
+  --holiday-dot: var(--holiday-fir);
+}
+
+/* HolidayWreath renders hidden, so it shows only inside this scope. */
+:root.dark[data-holiday][data-bots-app] [data-holiday-wreath] {
+  display: block;
+}

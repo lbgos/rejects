@@ -10,7 +10,7 @@ To see the page again, go to **Settings → About → Welcome page** and select
 
 The hosted app at app.t3.codes does not open the page. With no computer connected,
 it asks you to sign in to T3 Connect, then to install T3 Code and run
-`t3 connect` on your computer. From home, it adds compatible computers linked to your account and
+`rejects connect` on your computer. From home, it adds compatible computers linked to your account and
 opens the app. To add more computers later, use **Settings → Environments**.
 
 If T3 Code cannot confirm the workspace during startup, it shows

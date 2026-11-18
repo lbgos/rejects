@@ -13,6 +13,7 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
+import * as PlatformError from "effect/PlatformError";
 import * as Scope from "effect/Scope";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
@@ -20,7 +21,7 @@ import { ChildProcessSpawner } from "effect/process";
 import { describe, expect } from "vite-plus/test";
 
 import * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
-import { AgentScope } from "@t3tools/shared/AgentScope";
+import { AgentSandbox, AgentScope, AgentScopeThreadId } from "@t3tools/shared/AgentScope";
 import * as EffectAcpErrors from "effect-acp/errors";
 
 const __dirname = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
@@ -260,6 +261,60 @@ describe("AcpSessionRuntime", () => {
         ),
       ).toBe(event.error);
       expect(yield* runtime.notify("_test/exit", {}).pipe(Effect.flip)).toBe(event.error);
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+  );
+
+  it.effect("starts a cgroup-contained agent inside its thread's sandbox", () =>
+    Effect.gen(function* () {
+      const launches: Array<ReadonlyArray<string>> = [];
+      const lease: AcpSessionRuntime.AcpLinuxCgroupLease = {
+        contains: () => false,
+        exists: () => false,
+        path: "/sys/fs/cgroup/t3-acp-test",
+        relativePath: "/t3-acp-test",
+        kill: () => undefined,
+        populated: () => false,
+        remove: () => undefined,
+      };
+      const started = yield* AcpSessionRuntime.make({
+        ...mockRuntimeOptions,
+        ownDescendantProcessGroups: true,
+        processGroupPlatform: "linux",
+        linuxCgroupController: { create: () => lease },
+      }).pipe(
+        Effect.provideService(
+          ChildProcessSpawner.ChildProcessSpawner,
+          ChildProcessSpawner.make((command) => {
+            if (command._tag === "StandardCommand") launches.push(command.args.map(String));
+            return Effect.fail(
+              PlatformError.systemError({
+                _tag: "NotFound",
+                module: "acp-sandbox-test",
+                method: "spawn",
+              }),
+            );
+          }),
+        ),
+        Effect.provideService(AgentScopeThreadId, "thread-bot"),
+        Effect.provideService(AgentSandbox, {
+          ...AgentSandbox.defaultValue(),
+          launch: ({ threadId, command, args }) =>
+            Effect.succeed({
+              command: "/usr/bin/bwrap",
+              args: [`--bot=${threadId}`, "--", command, ...args],
+            }),
+        }),
+        Effect.exit,
+      );
+      expect(Exit.isFailure(started)).toBe(true);
+      const args = launches[0] ?? [];
+      expect(args.slice(args.indexOf("/usr/bin/bwrap"))).toEqual([
+        "/usr/bin/bwrap",
+        "--bot=thread-bot",
+        "--",
+        expect.stringMatching(/\/node$/),
+        mockAgentPath,
+      ]);
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 

@@ -36,6 +36,23 @@ Build new UI the same way. Compose or extend a component instead of copying its 
 When a call site repeats a treatment another one already uses, make it a variant or a slot on the
 shared component. A new composer banner or notice uses the `ComposerBanner` slots.
 
+## Holiday theme
+
+[`apps/web/src/holiday`](../../apps/web/src/holiday) holds a seasonal look, gated by
+[`gate.ts`](../../apps/web/src/holiday/gate.ts) (instance setting plus local date). Turning it on,
+off and forcing it for captures with `?holiday-preview=1` on any app URL:
+[Holiday theme](../operations/holiday-theme.md).
+
+Every rule in `holiday.css` starts with one scope: `data-holiday` on `<html>`, the bots app and
+dark appearance; light appearance keeps its own look whole. On the default theme it retints
+`primary` and `message`; a named theme (`data-theme-id`) keeps its own and gets the rest on top,
+with links in the text colour, since a theme's accent is not always readable as text.
+The rest is the `bot-unread` token and paint on elements that carry a `data-holiday-*` attribute:
+`data-holiday-string` (a solid top bar: chat header, sidebar header), `data-holiday-stars` (the
+time label), `data-holiday-dot` (typing dots) and `HolidayWreath` (empty chat). Keep these
+attributes when refactoring those elements; a new screen needs nothing unless it uses a colour
+literal. Nothing animates.
+
 ## Handlers in large components
 
 V8 gives every closure created in one render a single shared scope. A memoized handler keeps

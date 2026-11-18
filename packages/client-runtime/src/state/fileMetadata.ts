@@ -33,6 +33,8 @@ const METADATA_CACHE_LIMIT = 1024;
 interface CachedMetadata {
   value: FilesystemEntryMetadata | null;
   expires: number;
+  /** Answered for a bot chat's mapped path; host-path answers never replace it. */
+  mapped?: true;
 }
 
 type RetainedMetadata = Map<string, CachedMetadata>;
@@ -40,6 +42,8 @@ type RetainedMetadata = Map<string, CachedMetadata>;
 interface FileMetadataInput {
   path: string;
   threadId?: ThreadId;
+  /** A sandboxed bot's chat: the server maps its paths, so answers stay in the thread. */
+  mapped?: true;
 }
 
 class FileMetadataRequest extends Request.Class<
@@ -48,6 +52,7 @@ class FileMetadataRequest extends Request.Class<
     session: RpcSession;
     supervisor: EnvironmentSupervisor.EnvironmentSupervisor["Service"];
     retained?: RetainedMetadata;
+    mappedFor?: ThreadId;
   },
   FilesystemEntryMetadata | null,
   EnvironmentRpcFailure<typeof WS_METHODS.filesystemGetMetadata> | EnvironmentRpcUnavailableError
@@ -106,7 +111,7 @@ export function createFileMetadataAtoms<R, E>(
     for (const thread of retainedThreads.values()) {
       const retained = thread.sessions.get(session);
       const previous = retained?.get(key);
-      if (retained && previous)
+      if (retained && previous && !previous.mapped)
         retained.set(key, {
           ...entry,
           value:
@@ -120,12 +125,22 @@ export function createFileMetadataAtoms<R, E>(
       if (oldest !== undefined) entries.delete(oldest);
     }
   };
+  const mappedBatchKeys = new WeakMap<RpcSession, Map<ThreadId, object>>();
+  const batchKeyFor = (session: RpcSession, mappedFor: ThreadId | undefined) => {
+    if (mappedFor === undefined) return session;
+    let keys = mappedBatchKeys.get(session);
+    if (!keys) mappedBatchKeys.set(session, (keys = new Map()));
+    let key = keys.get(mappedFor);
+    if (!key) keys.set(mappedFor, (key = {}));
+    return key;
+  };
   const resolver = RequestResolver.makeWith<FileMetadataRequest>({
-    batchKey: (entry) => entry.request.session,
+    batchKey: (entry) => batchKeyFor(entry.request.session, entry.request.mappedFor),
     delay: Effect.yieldNow,
     collectWhile: (entries) => entries.size < FILESYSTEM_METADATA_BATCH_LIMIT,
     runAll: Effect.fnUntraced(function* (entries) {
       const session = entries[0].request.session;
+      const mappedFor = entries[0].request.mappedFor;
       let pending = [...entries];
       while (pending.length > 0) {
         const paths = [...new Set(pending.map((entry) => entry.request.path))];
@@ -142,7 +157,10 @@ export function createFileMetadataAtoms<R, E>(
         }
         const activeRequests = requests;
         pending = yield* Effect.gen(function* () {
-          const result = yield* request(WS_METHODS.filesystemGetMetadata, { paths }).pipe(
+          const result = yield* request(WS_METHODS.filesystemGetMetadata, {
+            paths,
+            ...(mappedFor === undefined ? {} : { threadId: mappedFor }),
+          }).pipe(
             Effect.provideService(
               EnvironmentSupervisor.EnvironmentSupervisor,
               entries[0].request.supervisor,
@@ -159,10 +177,11 @@ export function createFileMetadataAtoms<R, E>(
               continue;
             }
             const value = byPath.get(entry.request.path) ?? null;
-            remember(session, entry.request.path, value, now);
+            if (mappedFor === undefined) remember(session, entry.request.path, value, now);
             entry.request.retained?.set(entry.request.path, {
               value,
               expires: now + METADATA_STALE_TIME_MS,
+              ...(mappedFor === undefined ? {} : { mapped: true as const }),
             });
             entry.completeUnsafe(Exit.succeed(value));
           }
@@ -200,12 +219,18 @@ export function createFileMetadataAtoms<R, E>(
         retained = new Map();
         thread.sessions.set(session.value, retained);
       }
+      const mappedFor = input.mapped && input.threadId ? input.threadId : undefined;
       const retainedEntry = retained?.get(input.path);
       const now = yield* Clock.currentTimeMillis;
       // Agents mention paths before creating them, so misses must still expire within a thread.
-      if (retainedEntry && (retainedEntry.value !== null || retainedEntry.expires > now))
+      if (
+        retainedEntry &&
+        Boolean(retainedEntry.mapped) === (mappedFor !== undefined) &&
+        (retainedEntry.value !== null || retainedEntry.expires > now)
+      )
         return retainedEntry.value;
-      const cached = knownEntry(session.value, input.path, now);
+      const cached =
+        mappedFor === undefined ? knownEntry(session.value, input.path, now) : undefined;
       if (cached) {
         retained?.set(input.path, cached);
         return cached.value;
@@ -216,6 +241,7 @@ export function createFileMetadataAtoms<R, E>(
           session: session.value,
           supervisor,
           ...(retained ? { retained } : {}),
+          ...(mappedFor === undefined ? {} : { mappedFor }),
         }),
         resolver,
       );
@@ -241,10 +267,7 @@ export function createFileMetadataAtoms<R, E>(
       { initialValueTarget: query },
     ).pipe(Atom.setIdleTTL(0));
   });
-  const metadata = (target: {
-    environmentId: EnvironmentId;
-    input: { path: string; threadId?: ThreadId };
-  }) =>
+  const metadata = (target: { environmentId: EnvironmentId; input: FileMetadataInput }) =>
     refreshMissing(
       metadataFamily({
         ...target,

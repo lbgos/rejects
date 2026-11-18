@@ -7,6 +7,7 @@ import {
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 
+import { AgentAttachmentPaths } from "@t3tools/shared/AgentScope";
 import { providerMessageTextWithAttachmentPaths } from "./attachmentPrompt.ts";
 
 const document = ChatFileAttachment.make({
@@ -57,6 +58,28 @@ describe("provider attachment prompts", () => {
         }),
         "text extracted",
       );
+    }),
+  );
+  it.effect("names only the short path a sandbox staged, extracted text included", () =>
+    Effect.gen(function* () {
+      const path = "/attachments/thread-uuid-xlsx.xlsx";
+      const file = ChatFileAttachment.make({ ...document, name: "report.xlsx" });
+      const text = yield* providerMessageTextWithAttachmentPaths({
+        text: "Merge.",
+        attachments: [file],
+        resolveAttachmentPath: () => path,
+        resolveExtractedTextPath: () => Effect.succeed(path + ".txt"),
+      }).pipe(
+        Effect.provideService(
+          AgentAttachmentPaths,
+          new Map([[file.id, "/attachments/report.xlsx"]]),
+        ),
+      );
+      assert.include(
+        text,
+        "is saved at: /attachments/report.xlsx (text extracted to: /attachments/report.xlsx.txt)",
+      );
+      assert.notInclude(text, "thread-uuid");
     }),
   );
   it.effect("frames captured-window context as escaped untrusted JSON", () =>

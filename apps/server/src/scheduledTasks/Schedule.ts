@@ -10,9 +10,17 @@ function parseTimeOfDay(value: string): { hour: number; minute: number } | null 
   return { hour: Number(match[1]), minute: Number(match[2]) };
 }
 
+/** The user's zone when it is a valid IANA name, else the host's. */
+export function scheduleTimeZone(zoneId: string | undefined): DateTime.TimeZone {
+  const named = zoneId === undefined ? Option.none() : DateTime.zoneMakeNamed(zoneId);
+  return Option.getOrElse(named, DateTime.zoneMakeLocal);
+}
+
+/** Fixed times are wall-clock times in `timeZone`, whatever zone `from` or the host is in. */
 export function nextScheduledRunAt(
   schedule: ScheduledTaskSchedule,
   from: DateTime.DateTime,
+  timeZone: DateTime.TimeZone,
 ): DateTime.DateTime | null {
   if (schedule.type === "webhook") return null;
   if (schedule.type === "once") {
@@ -31,8 +39,9 @@ export function nextScheduledRunAt(
   if (time === null) return null;
   const weekdays =
     schedule.weekdays && schedule.weekdays.length > 0 ? new Set(schedule.weekdays) : null;
+  const local = DateTime.setZone(from, timeZone);
   for (let offset = 0; offset <= 7; offset += 1) {
-    const candidate = DateTime.setParts(DateTime.add(from, { days: offset }), {
+    const candidate = DateTime.setParts(DateTime.add(local, { days: offset }), {
       hour: time.hour,
       minute: time.minute,
       second: 0,

@@ -7,6 +7,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 import { TestClock } from "effect/testing";
 
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
@@ -19,6 +20,47 @@ import { OPENCODE2_TITLE_GENERATION } from "./OpenCode2TextGeneration.fixture.ts
 const layer = TestProviderHost.layer().pipe(Layer.provideMerge(NodeServices.layer));
 
 it.layer(layer)("OpenCode2TextGeneration", (it) => {
+  it.effect("decodes a structured response in a permission-gated temporary session", () =>
+    Effect.gen(function* () {
+      const entries = OPENCODE2_TITLE_GENERATION.map((entry) => {
+        if (entry.type !== "expect_outbound" || entry.label !== "session.create") return entry;
+        return {
+          ...entry,
+          frame: {
+            type: "session.create",
+            input: {
+              title: "T3 Code extraction",
+              location: { directory: "/tmp/learn-structured" },
+              model: { providerID: "opencode", id: "big-pickle" },
+              permissions: [{ action: "*", resource: "*", effect: "ask" }],
+            },
+          },
+        };
+      });
+      const server = yield* OpenCode2AdapterV2Testkit.replayServer({
+        provider: "opencode",
+        protocol: OpenCode2AdapterV2Testkit.OPENCODE2_HTTP_PROTOCOL,
+        version: "2.0.18",
+        scenario: "opencode2_structured_generation",
+        entries: [...entries, { type: "runtime_exit", status: "success" }],
+      });
+      const generation = yield* OpenCode2TextGeneration.make().pipe(
+        Effect.provideService(OpenCode2Server.OpenCode2Server, server),
+      );
+      const result = yield* generation.generateStructured({
+        cwd: "/tmp/learn-structured",
+        prompt: "Summarize the login change",
+        operation: "extraction",
+        outputSchema: Schema.Struct({ title: Schema.String }),
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("opencode"),
+          model: "opencode/big-pickle",
+        },
+      });
+      assert.deepEqual(result, { title: "Fix OAuth Login Redirect Loop" });
+    }).pipe(Effect.scoped),
+  );
+
   it.effect.each([false, true] as const)(
     "generates a title in a temporary session on the free tier and removes it (external: %s)",
     (external) =>

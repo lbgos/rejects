@@ -6,11 +6,14 @@ import { it, afterEach, describe, expect } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import { vi } from "vite-plus/test";
 
 import * as ServerConfig from "../config.ts";
+import { ThreadId } from "@t3tools/contracts";
+import { AgentSandbox } from "@t3tools/shared/AgentScope";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as WorkspaceEntries from "./WorkspaceEntries.ts";
@@ -347,6 +350,33 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceEntries", (it) => {
           .list({ cwd: linked, directoryPath: "../sibling" })
           .pipe(Effect.flip);
         expect(escape._tag).toBe("WorkspaceEntriesReadDirectoryError");
+
+        // A bot's chat lists the folder its sandbox path stands for.
+        const botEntries = yield* WorkspaceEntries.WorkspaceEntries.pipe(
+          Effect.provide(
+            Layer.fresh(WorkspaceEntries.layer).pipe(
+              Layer.provide(WorkspacePaths.layer),
+              Layer.provide(
+                Layer.succeed(AgentSandbox, {
+                  ...AgentSandbox.defaultValue(),
+                  filePath: ({ threadId, path: named }) =>
+                    Effect.succeed(
+                      threadId === "bot" && named === "/sandbox-home/shared"
+                        ? Option.some(linked)
+                        : Option.none(),
+                    ),
+                }),
+              ),
+            ),
+          ),
+        );
+        expect(
+          yield* botEntries.list({
+            cwd: "/sandbox-home/shared",
+            directoryPath: "",
+            threadId: ThreadId.make("bot"),
+          }),
+        ).toEqual({ entries: [{ path: "notes.md", kind: "file" }], truncated: false });
       }),
     );
 

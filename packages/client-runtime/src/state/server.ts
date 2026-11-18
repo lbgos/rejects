@@ -953,7 +953,6 @@ export function createServerEnvironmentAtoms<R, E>(
         atomRegistry.get(configValueAtom(target.environmentId))?.environment.serverVersion ??
         targetVersion;
       let currentStage: ServerUpdateStage = "downloading";
-      let desktopCommitLostTransport = false;
       atomRegistry.set(stateAtom, {
         status: "running",
         stage: currentStage,
@@ -1111,26 +1110,6 @@ export function createServerEnvironmentAtoms<R, E>(
                   return yield* Effect.failCause(exit.cause);
                 });
 
-            if (
-              updateResult.method === "desktop-app" &&
-              updateResult.desktopUpdateToken !== undefined
-            ) {
-              yield* Deferred.succeed(desktopCommitStarting, undefined);
-              yield* Deferred.await(desktopReconnectObserverArmed);
-              const commitExit = yield* environmentRegistry
-                .run(
-                  target.environmentId,
-                  request(WS_METHODS.serverCommitDesktopUpdate, {
-                    requestId: updateResult.desktopUpdateToken,
-                  }),
-                )
-                .pipe(Effect.exit);
-              if (Exit.isFailure(commitExit) && !isLegacyUpdateHandoffLoss(commitExit.cause)) {
-                return yield* Effect.failCause(commitExit.cause);
-              }
-              desktopCommitLostTransport = Exit.isFailure(commitExit);
-            }
-
             targetVersion = updateResult.targetVersion;
 
             currentStage = "resuming";
@@ -1144,27 +1123,10 @@ export function createServerEnvironmentAtoms<R, E>(
           }),
         );
 
-        // A track switch's desktop host already on its track's newest build only saved the
-        // track; nothing restarts.
-        if (
-          result.method === "desktop-app" &&
-          result.desktopUpdateToken === undefined &&
-          result.targetVersion === fromVersion
-        ) {
-          atomRegistry.set(stateAtom, IDLE_SERVER_UPDATE_STATE);
-          return result;
-        }
-
         yield* nudgeReconnectDuringUpdateRestart({
           stateChanges: environmentRegistry.stateChanges(target.environmentId),
           retryNow: environmentRegistry.retryNow(target.environmentId),
         }).pipe(Effect.forkChild);
-
-        if (result.method === "desktop-app" && desktopCommitLostTransport) {
-          yield* Deferred.await(desktopReconnected).pipe(
-            Effect.timeout(SERVER_UPDATE_RESUME_TIMEOUT),
-          );
-        }
 
         const waitForReady = environmentRegistry
           .followStream(target.environmentId, subscribe(WS_METHODS.subscribeServerLifecycle, {}))
@@ -1189,25 +1151,7 @@ export function createServerEnvironmentAtoms<R, E>(
             }),
           ),
         );
-        const desktopUpdateToken = result.desktopUpdateToken;
-        const resumed =
-          result.method === "desktop-app" && desktopUpdateToken !== undefined
-            ? yield* waitForDesktopUpdateTarget(
-                result.targetVersion,
-                nextReady,
-                runDesktopCommitWithReconnectObserver(
-                  environmentRegistry.stateChanges(target.environmentId),
-                  environmentRegistry
-                    .run(
-                      target.environmentId,
-                      request(WS_METHODS.serverCommitDesktopUpdate, {
-                        requestId: desktopUpdateToken,
-                      }),
-                    )
-                    .pipe(Effect.asVoid),
-                ),
-              )
-            : yield* nextReady;
+        const resumed = yield* nextReady;
         yield* validateServerUpdateReadyEvent(result, resumed);
 
         atomRegistry.set(stateAtom, IDLE_SERVER_UPDATE_STATE);

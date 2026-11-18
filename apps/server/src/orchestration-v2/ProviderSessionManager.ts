@@ -1,7 +1,13 @@
-import { AgentScope } from "@t3tools/shared/AgentScope";
+import {
+  AgentAttachmentPaths,
+  AgentSandbox,
+  AgentScope,
+  AgentScopeThreadId,
+} from "@t3tools/shared/AgentScope";
 import * as KeyedLock from "@t3tools/shared/KeyedLock";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import {
+  type ChatAttachment,
   isOrchestrationV2WorkActive,
   ModelSelection,
   type OrchestrationV2AppThread,
@@ -47,7 +53,8 @@ import {
   providerTurnsTotal,
   withMetrics,
 } from "../observability/Metrics.ts";
-import { ProviderWorkspaceMissingError } from "../provider/Errors.ts";
+import { ProviderLaunchRefusedError, ProviderWorkspaceMissingError } from "../provider/Errors.ts";
+import { CallPolicy } from "../policy/CallPolicy.ts";
 import * as ProviderInstallationGate from "../provider/ProviderInstallationGate.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
@@ -212,6 +219,7 @@ export class ProviderSessionActivityError extends Schema.TaggedError<ProviderSes
 export const ProviderSessionManagerV2Error = Schema.Union([
   ProviderSessionOpenError,
   ProviderWorkspaceMissingError,
+  ProviderLaunchRefusedError,
   ProviderSessionLookupError,
   ProviderSessionCloseError,
   ProviderSessionReleaseError,
@@ -299,6 +307,8 @@ interface LiveSessionEntry {
   /** Scope revocation to recorded credential ids so superseded sessions cannot revoke replacements opened before detach. */
   readonly mcpCredentialIdByThread: ReadonlyMap<ThreadId, string>;
   readonly supportsMultipleProviderThreads: boolean;
+  readonly sandbox: string | undefined;
+  readonly idleTimeoutMs: number;
   readonly runtime: ProviderAdapter.ProviderAdapterV2SessionRuntime;
   readonly exposedRuntime: ProviderAdapter.ProviderAdapterV2SessionRuntime;
   readonly eventSubscribers: Ref.Ref<
@@ -1513,7 +1523,7 @@ export const layerWithOptions = (
                 pinnedForMs: now - pinnedSinceMs,
               });
               // Recheck on this fiber; scheduleIdleReleaseInternal would interrupt it and self-deadlock.
-              yield* Effect.sleep(Duration.millis(idleTimeoutMs));
+              yield* Effect.sleep(Duration.millis(entry.idleTimeoutMs));
               return yield* releaseIfStillIdle(input);
             }
             yield* Effect.logWarning("orchestration-v2.driver-session.idle-release-pin-expired", {
@@ -1582,7 +1592,7 @@ export const layerWithOptions = (
 
         yield* cancelIdleFiber(entry.idleFiber);
         const generation = entry.idleGeneration + 1;
-        const idleFiber = yield* Effect.sleep(Duration.millis(idleTimeoutMs)).pipe(
+        const idleFiber = yield* Effect.sleep(Duration.millis(entry.idleTimeoutMs)).pipe(
           Effect.andThen(releaseIfStillIdle({ providerSessionId, generation })),
           Effect.forkIn(layerScope),
         );
@@ -2297,6 +2307,43 @@ export const layerWithOptions = (
       ): ProviderAdapter.ProviderAdapterV2SessionRuntime => {
         const providerSessionId = runtime.providerSessionId;
         const subscribeEvents = makeEventSubscription(eventSubscribers);
+        // A live session may outlast a change of the call policy, so every call that gives the
+        // model new content is checked: turns, steering and answers, the last two against the model
+        // of the thread's latest turn here.
+        const turnModels = new Map<string, ModelSelection>();
+        const policyRefusal = Effect.fn("ProviderSessionManager.policyRefusal")(function* (
+          threadId: string,
+          modelSelection: ModelSelection,
+        ) {
+          const refused = yield* (yield* CallPolicy).model({
+            instanceId: modelSelection.instanceId,
+            driver: runtime.driver,
+            model: modelSelection.model,
+          });
+          return Option.map(
+            refused,
+            (reason) => new ProviderLaunchRefusedError({ threadId, reason }),
+          );
+        });
+        const policyChecked = Effect.fn("ProviderSessionManager.policyChecked")(function* <A>(
+          input: ProviderAdapter.ProviderAdapterV2TurnInput,
+          start: Effect.Effect<A, ProviderAdapter.ProviderAdapterV2Error>,
+        ) {
+          turnModels.set(input.threadId, input.modelSelection);
+          const refused = yield* policyRefusal(input.threadId, input.modelSelection);
+          if (Option.isNone(refused)) return yield* start;
+          return yield* new ProviderAdapter.ProviderAdapterTurnStartError({
+            driver: runtime.driver,
+            threadId: input.threadId,
+            providerThreadId: input.providerThread.id,
+            runId: input.runId,
+            cause: refused.value,
+          });
+        });
+        // A runtime request names no thread, so any refused turn model on this session refuses it.
+        const answerRefusal = Effect.forEach(turnModels, ([threadId, model]) =>
+          policyRefusal(threadId, model),
+        ).pipe(Effect.map((refusals) => refusals.find(Option.isSome)));
         const turnMetrics = (operation: string, model?: string) =>
           withMetrics({
             counter: providerTurnsTotal,
@@ -2307,8 +2354,97 @@ export const layerWithOptions = (
               modelFamily: normalizeModelMetricLabel(model),
             },
           });
+        // A turn holds its thread loaded and the session busy until turn.terminal; a failed start
+        // ends the hold here because it may emit no terminal.
+        const runBusyTurn = (
+          input: Parameters<ProviderAdapter.ProviderAdapterV2SessionRuntime["startTurn"]>[0],
+          start: ProviderAdapter.ProviderAdapterV2SessionRuntime["startTurn"],
+          operation: "send" | "compact" | "keepwarm",
+        ) =>
+          observeActivity(
+            providerSessionId,
+            ensureThreadAttached({
+              providerSessionId,
+              threadId: input.threadId,
+              providerInstanceId: runtime.instanceId,
+            }),
+          ).pipe(
+            Effect.andThen(
+              holdThreadLoaded({
+                providerSessionId,
+                threadId: input.threadId,
+                providerThread: input.providerThread,
+              }),
+            ),
+            Effect.andThen(
+              Effect.acquireUseRelease(
+                markBusy(
+                  providerSessionId,
+                  busyTurnKey(input.providerThread.id, input.runOrdinal),
+                  runtime,
+                ).pipe(
+                  Effect.catchCause((cause) =>
+                    Effect.logWarning("orchestration-v2.driver-session.activity-failed", {
+                      providerSessionId,
+                      cause,
+                    }).pipe(Effect.as(true)),
+                  ),
+                  // A release between attach and markBusy leaves nothing to mark: fail the
+                  // start instead of running it on a runtime being torn down.
+                  Effect.flatMap((marked) =>
+                    marked
+                      ? Effect.void
+                      : Effect.fail(
+                          new ProviderAdapter.ProviderAdapterTurnStartError({
+                            driver: runtime.driver,
+                            threadId: input.threadId,
+                            providerThreadId: input.providerThread.id,
+                            runId: input.runId,
+                            cause: "The provider session was released while the turn started.",
+                          }),
+                        ),
+                  ),
+                ),
+                () =>
+                  policyChecked(input, start(input)).pipe(
+                    turnMetrics(operation, input.modelSelection.model),
+                  ),
+                (_, exit) =>
+                  Exit.isFailure(exit)
+                    ? observeActivity(
+                        providerSessionId,
+                        markIdle(providerSessionId, input.providerThread.id, input.runOrdinal),
+                      )
+                    : Effect.void,
+              ),
+            ),
+          );
+        const withAttachmentPaths = <A, E, R>(
+          input: {
+            readonly threadId: ThreadId;
+            readonly message: { readonly attachments: ReadonlyArray<ChatAttachment> };
+          },
+          effect: Effect.Effect<A, E, R>,
+        ) =>
+          input.message.attachments.length === 0
+            ? effect
+            : Effect.gen(function* () {
+                const sandbox = yield* AgentSandbox;
+                const paths = yield* sandbox.stageAttachments(
+                  input.threadId,
+                  input.message.attachments,
+                );
+                return yield* effect.pipe(Effect.provideService(AgentAttachmentPaths, paths));
+              });
+        const { compactThread, keepWarm } = runtime;
         return {
           ...runtime,
+          ...(compactThread === undefined
+            ? {}
+            : { compactThread: (input) => runBusyTurn(input, compactThread, "compact") }),
+          ...(keepWarm === undefined
+            ? {}
+            : { keepWarm: (input) => runBusyTurn(input, keepWarm, "keepwarm") }),
           // Pi replaces its session snapshot as metadata changes.
           get providerSession() {
             return runtime.providerSession;
@@ -2438,66 +2574,31 @@ export const layerWithOptions = (
               Effect.map(({ loaded }) => loaded),
             ),
           startTurn: (input) =>
-            observeActivity(
-              providerSessionId,
-              ensureThreadAttached({
-                providerSessionId,
-                threadId: input.threadId,
-                providerInstanceId: runtime.instanceId,
-              }),
-            ).pipe(
-              // Failed or stopped starts may omit turn.terminal; clear their turns so sessions can idle.
-              Effect.andThen(
-                holdThreadLoaded({
-                  providerSessionId,
-                  threadId: input.threadId,
-                  providerThread: input.providerThread,
-                }),
-              ),
-              Effect.andThen(
-                Effect.acquireUseRelease(
-                  markBusy(
-                    providerSessionId,
-                    busyTurnKey(input.providerThread.id, input.runOrdinal),
-                    runtime,
-                  ).pipe(
-                    Effect.catchCause((cause) =>
-                      Effect.logWarning("orchestration-v2.driver-session.activity-failed", {
-                        providerSessionId,
-                        cause,
-                      }).pipe(Effect.as(true)),
-                    ),
-                    // A release between attach and markBusy leaves nothing to mark: fail the
-                    // start instead of running it on a runtime being torn down.
-                    Effect.flatMap((marked) =>
-                      marked
-                        ? Effect.void
-                        : Effect.fail(
-                            new ProviderAdapter.ProviderAdapterTurnStartError({
-                              driver: runtime.driver,
-                              threadId: input.threadId,
-                              providerThreadId: input.providerThread.id,
-                              runId: input.runId,
-                              cause: "The provider session was released while the turn started.",
-                            }),
-                          ),
-                    ),
-                  ),
-                  () =>
-                    runtime.startTurn(input).pipe(turnMetrics("send", input.modelSelection.model)),
-                  (_, exit) =>
-                    Exit.isFailure(exit)
-                      ? observeActivity(
-                          providerSessionId,
-                          markIdle(providerSessionId, input.providerThread.id, input.runOrdinal),
-                        )
-                      : Effect.void,
-                ),
-              ),
+            runBusyTurn(
+              input,
+              (turn) => withAttachmentPaths(turn, runtime.startTurn(turn)),
+              "send",
             ),
           steerTurn: (input) =>
             observeActivity(providerSessionId, touchActivity(providerSessionId)).pipe(
-              Effect.andThen(runtime.steerTurn(input).pipe(turnMetrics("steer"))),
+              Effect.andThen(() => {
+                const model = turnModels.get(input.threadId);
+                return model === undefined
+                  ? Effect.succeedNone
+                  : policyRefusal(input.threadId, model);
+              }),
+              Effect.flatMap((refused) =>
+                Option.isSome(refused)
+                  ? Effect.fail(
+                      new ProviderAdapter.ProviderAdapterSteerRunError({
+                        driver: runtime.driver,
+                        providerThreadId: input.providerThread.id,
+                        providerTurnId: input.providerTurnId,
+                        cause: refused.value,
+                      }),
+                    )
+                  : withAttachmentPaths(input, runtime.steerTurn(input)).pipe(turnMetrics("steer")),
+              ),
             ),
           // A provider starved of memory can stop answering, so no caller may wait on it unbounded.
           interruptTurn: (input) =>
@@ -2522,10 +2623,19 @@ export const layerWithOptions = (
             ),
           respondToRuntimeRequest: (input) =>
             observeActivity(providerSessionId, touchActivity(providerSessionId)).pipe(
-              Effect.andThen(
-                runtime
-                  .respondToRuntimeRequest(input)
-                  .pipe(turnMetrics("runtime-request-response")),
+              Effect.andThen(answerRefusal),
+              Effect.flatMap((refused) =>
+                refused !== undefined
+                  ? Effect.fail(
+                      new ProviderAdapter.ProviderAdapterRuntimeRequestResponseError({
+                        driver: runtime.driver,
+                        requestId: input.requestId,
+                        cause: refused.value,
+                      }),
+                    )
+                  : runtime
+                      .respondToRuntimeRequest(input)
+                      .pipe(turnMetrics("runtime-request-response")),
               ),
             ),
         };
@@ -2959,9 +3069,37 @@ export const layerWithOptions = (
                 }
               }
               const key = sessionKey(input.providerSessionId);
+              const agentSandbox = yield* AgentSandbox;
+              const sandbox = Option.getOrUndefined(yield* agentSandbox.identity(input.threadId));
               const live = (yield* Ref.get(sessions)).get(key);
               if (live !== undefined) yield* releaseForLinkedEnvironments(live);
-              const existing = (yield* Ref.get(sessions)).get(key);
+              let existing = (yield* Ref.get(sessions)).get(key);
+              if (existing !== undefined && existing.sandbox !== sandbox) {
+                if (
+                  [...existing.attachedThreadIds].some((threadId) => threadId !== input.threadId)
+                ) {
+                  return yield* new ProviderSessionOpenError({
+                    instanceId: input.modelSelection.instanceId,
+                    providerSessionId: input.providerSessionId,
+                    cause: "This provider session runs in another agent sandbox.",
+                  });
+                }
+                yield* releaseEntry({
+                  providerSessionId: input.providerSessionId,
+                  reason: "manual_shutdown",
+                  detail: "The bot sandbox was switched; the provider restarts in the new mode.",
+                }).pipe(
+                  Effect.mapError(
+                    (cause) =>
+                      new ProviderSessionOpenError({
+                        instanceId: input.modelSelection.instanceId,
+                        providerSessionId: input.providerSessionId,
+                        cause,
+                      }),
+                  ),
+                );
+                existing = undefined;
+              }
               if (existing !== undefined) {
                 const attached = existing.attachedThreadIds.has(input.threadId);
                 if (!attached && !existing.supportsMultipleProviderThreads) {
@@ -2991,6 +3129,24 @@ export const layerWithOptions = (
                     }),
                 ),
               );
+              const refused = yield* agentSandbox.refusal(input.threadId, adapter.driver);
+              if (Option.isSome(refused)) {
+                return yield* new ProviderLaunchRefusedError({
+                  threadId: input.threadId,
+                  reason: refused.value,
+                });
+              }
+              const policyRefused = yield* (yield* CallPolicy).model({
+                instanceId: input.modelSelection.instanceId,
+                driver: adapter.driver,
+                model: input.modelSelection.model,
+              });
+              if (Option.isSome(policyRefused)) {
+                return yield* new ProviderLaunchRefusedError({
+                  threadId: input.threadId,
+                  reason: policyRefused.value,
+                });
+              }
               const openedWithLinkedEnvironments = yield* readLinkedEnvironments;
               const prepared = yield* prepareMcpSession(
                 input.threadId,
@@ -3031,6 +3187,7 @@ export const layerWithOptions = (
                 )
                 .pipe(
                   Effect.provideService(Scope.Scope, sessionScope),
+                  Effect.provideService(AgentScopeThreadId, input.threadId),
                   // Bound scope close after cleanup; a wedged finalizer must not hold the open lock or interrupter.
                   Effect.onError(() =>
                     dropReservation.pipe(
@@ -3064,6 +3221,9 @@ export const layerWithOptions = (
                 ReadonlyMap<number, Queue.Queue<ProviderSessionEventSignal, Cause.Done>>
               >(new Map());
               const exposedRuntime = decorateRuntime(runtime, eventSubscribers);
+              const supportsMultipleProviderThreads =
+                runtime.providerSession.capabilities.sessions
+                  .supportsMultipleProviderThreadsPerSession;
               const entry: LiveSessionEntry = {
                 attachedThreadIds: new Set([input.threadId]),
                 loadedProviderThreadKeyByThread: new Map(),
@@ -3073,9 +3233,11 @@ export const layerWithOptions = (
                   mcpCredentialId === undefined
                     ? new Map()
                     : new Map([[input.threadId, mcpCredentialId]]),
-                supportsMultipleProviderThreads:
-                  runtime.providerSession.capabilities.sessions
-                    .supportsMultipleProviderThreadsPerSession,
+                supportsMultipleProviderThreads,
+                sandbox,
+                idleTimeoutMs: supportsMultipleProviderThreads
+                  ? idleTimeoutMs
+                  : Math.max(1, input.runtimePolicy.idleTimeoutMs ?? idleTimeoutMs),
                 runtime,
                 exposedRuntime,
                 eventSubscribers,

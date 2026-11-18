@@ -13,7 +13,6 @@ import {
   runRanAfter,
   usageLimitBlockedRun,
 } from "@t3tools/shared/orchestrationV2ThreadError";
-import { canonicalizeGitCafePullRequestUrl } from "@t3tools/source-control-definitions/registry";
 import { threadPullRequestsOf } from "../sourceControl/threadPullRequests.ts";
 import {
   normalizeThreadPullRequestKey,
@@ -26,6 +25,8 @@ import {
   type ChatAttachment,
   CommandId,
   type GuestMessageId,
+  idleCompactionOf,
+  isBotKeepWarmMessage,
   isCompactionCommandMessage,
   isOrchestrationV2WorkActive,
   isProviderNativeSubagentThread,
@@ -79,6 +80,7 @@ import {
   TrimmedNonEmptyString,
   managedRuntimeModeCeilingMessage,
 } from "@t3tools/contracts";
+import { AgentSandbox } from "@t3tools/shared/AgentScope";
 import * as KeyedLock from "@t3tools/shared/KeyedLock";
 import { modelSelectionsEqual } from "@t3tools/shared/model";
 import { modelSwitchSince } from "./modelSwitch.ts";
@@ -200,6 +202,7 @@ import {
   ThreadForkServiceV2,
 } from "./ThreadForkService.ts";
 import { planThreadDeletion } from "./ThreadDeletion.ts";
+import { RECORDED_TURN_ITEM_PREFIX } from "./TurnItemPositionStore.ts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ServerSettings from "../serverSettings.ts";
 
@@ -688,6 +691,8 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
       return command.parentThreadId;
     case "secret_request.record":
     case "link_request.record":
+    case "message.record":
+    case "thread.context.reset":
       return command.threadId;
     case "thread.fork":
     case "thread.merge_back":
@@ -740,7 +745,7 @@ function delegatedTasksStopEffect(command: {
 
 const WORKSPACE_PREPARATION_INPUT = "Preparing workspace";
 const RUNTIME_REQUEST_DELIVERY_FAILED_MESSAGE =
-  "T3 Code could not confirm that your answer reached the agent. If the run stays stuck, stop it and try again.";
+  "rejects could not confirm that your answer reached the agent. If the run stays stuck, stop it and try again.";
 
 function withoutPreparationResult(
   item: Extract<OrchestrationV2TurnItem, { readonly type: "command_execution" }>,
@@ -886,7 +891,7 @@ function legacyPullRequestLink(
   return withPullRequestWatch(
     {
       ...key,
-      url: canonicalizeGitCafePullRequestUrl(linked.url),
+      url: linked.url,
       source: "manual",
       linkedAt: DateTime.formatIso(now),
       snapshot: null,
@@ -1642,25 +1647,35 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       ),
     );
 
-  const providerSessionIdFor = (input: {
+  // Shared-session drivers run one process per instance on the host and one per agent sandbox,
+  // whatever session the thread used before its sandbox was switched on.
+  const providerSessionIdFor = Effect.fn("Orchestrator.providerSessionIdFor")(function* (input: {
     readonly adapter: ProviderAdapter.ProviderAdapterV2["Service"];
     readonly providerInstanceId: ProviderInstanceId;
     readonly threadId: ThreadId;
-  }) =>
-    input.adapter.getCapabilities().pipe(
-      Effect.flatMap((capabilities) =>
-        capabilities.sessions.supportsMultipleProviderThreadsPerSession
-          ? Effect.succeed(
-              idAllocator.derive.providerSession({
-                providerInstanceId: input.providerInstanceId,
-              }),
-            )
-          : idAllocator.allocate.providerSession({
-              providerInstanceId: input.providerInstanceId,
-              threadId: input.threadId,
-            }),
-      ),
+    readonly current: ProviderSessionId | null | undefined;
+  }) {
+    const capabilities = yield* input.adapter.getCapabilities();
+    if (capabilities.sessions.supportsMultipleProviderThreadsPerSession) {
+      const sandbox = yield* (yield* AgentSandbox).identity(input.threadId);
+      if (Option.isSome(sandbox))
+        return idAllocator.derive.providerSession({
+          providerInstanceId: input.providerInstanceId,
+          sandbox: sandbox.value,
+        });
+      return (
+        input.current ??
+        idAllocator.derive.providerSession({ providerInstanceId: input.providerInstanceId })
+      );
+    }
+    return (
+      input.current ??
+      (yield* idAllocator.allocate.providerSession({
+        providerInstanceId: input.providerInstanceId,
+        threadId: input.threadId,
+      }))
     );
+  });
 
   const makeEvent =
     /* This helper runs for individual orchestration events; the enclosing operation owns the span. */
@@ -2440,8 +2455,16 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       }
       // Failed worktree creation would run queued work in the project checkout; wait for the user.
       const failedRun = latestExecutedRun(projection.runs);
+      const failedMessage = projection.messages.find(
+        (candidate) => candidate.id === failedRun?.userMessageId,
+      );
+      // A failed compaction or keep-warm turn left the conversation as it was; the message waiting
+      // behind it runs.
       const failureClass =
-        failedRun?.id === options?.failedRunId
+        failedRun?.id === options?.failedRunId &&
+        (failedMessage === undefined ||
+          (idleCompactionOf(failedMessage) === undefined &&
+            !isBotKeepWarmMessage(failedMessage.id)))
           ? latestRootProviderFailure(failedRun, projection.turnItems)?.class
           : undefined;
       const worktreeMissing =
@@ -2852,29 +2875,31 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                 }),
             ),
           ));
-      const providerSessionId =
-        (!canResumeAcrossInstances &&
-        queuedProviderThread.providerSessionId !== null &&
-        !switchPlan?.releaseProviderSessionIds.includes(queuedProviderThread.providerSessionId)
-          ? queuedProviderThread.providerSessionId
-          : null) ??
-        (yield* providerAdapters.get(queuedRun.providerInstanceId).pipe(
-          Effect.flatMap((adapter) =>
-            providerSessionIdFor({
-              adapter,
-              providerInstanceId: queuedRun.providerInstanceId,
-              threadId,
+      const providerSessionId = yield* providerAdapters.get(queuedRun.providerInstanceId).pipe(
+        Effect.flatMap((adapter) =>
+          providerSessionIdFor({
+            adapter,
+            providerInstanceId: queuedRun.providerInstanceId,
+            threadId,
+            current:
+              !canResumeAcrossInstances &&
+              queuedProviderThread.providerSessionId !== null &&
+              !switchPlan?.releaseProviderSessionIds.includes(
+                queuedProviderThread.providerSessionId,
+              )
+                ? queuedProviderThread.providerSessionId
+                : null,
+          }),
+        ),
+        Effect.mapError(
+          (cause) =>
+            new OrchestratorDispatchError({
+              commandId,
+              commandType: "message.dispatch",
+              cause,
             }),
-          ),
-          Effect.mapError(
-            (cause) =>
-              new OrchestratorDispatchError({
-                commandId,
-                commandType: "message.dispatch",
-                cause,
-              }),
-          ),
-        ));
+        ),
+      );
       const providerThread: OrchestrationV2ProviderThread = {
         ...deliveryProviderThread,
         providerSessionId,
@@ -4808,14 +4833,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               ? {
                   ...existing,
                   source: command.source,
-                  url: canonicalizeGitCafePullRequestUrl(command.url),
+                  url: command.url,
                   ...(command.repositoryWebUrl !== undefined && {
                     repositoryWebUrl: command.repositoryWebUrl,
                   }),
                 }
               : {
                   ...key,
-                  url: canonicalizeGitCafePullRequestUrl(command.url),
+                  url: command.url,
                   ...(command.repositoryWebUrl !== undefined && {
                     repositoryWebUrl: command.repositoryWebUrl,
                   }),
@@ -4836,7 +4861,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                 ? [
                     {
                       ...branchKey,
-                      url: canonicalizeGitCafePullRequestUrl(branch.url),
+                      url: branch.url,
                       source: "manual" as const,
                       linkedAt: DateTime.formatIso(now),
                       snapshot: null,
@@ -4923,7 +4948,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                   ...linked.filter((link) => !threadPullRequestKeysEqual(link, key)),
                   {
                     ...key,
-                    url: canonicalizeGitCafePullRequestUrl(command.link.url),
+                    url: command.link.url,
                     ...((command.link.repositoryWebUrl ?? dismissed?.repositoryWebUrl) !==
                       undefined && {
                       repositoryWebUrl:
@@ -6256,15 +6281,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         input.projection,
         input.modelSelection.instanceId,
       ).find((candidate) => candidate.id !== providerThread.id);
-      const targetProviderSessionId =
-        existingTargetProviderThread?.providerSessionId ??
-        (yield* mapDispatchError(input.command)(
-          providerSessionIdFor({
-            adapter: targetAdapter,
-            providerInstanceId: input.modelSelection.instanceId,
-            threadId: input.command.threadId,
-          }),
-        ));
+      const targetProviderSessionId = yield* mapDispatchError(input.command)(
+        providerSessionIdFor({
+          adapter: targetAdapter,
+          providerInstanceId: input.modelSelection.instanceId,
+          threadId: input.command.threadId,
+          current: existingTargetProviderThread?.providerSessionId,
+        }),
+      );
       const targetProviderThreadBase: OrchestrationV2ProviderThread =
         existingTargetProviderThread === undefined
           ? {
@@ -6691,6 +6715,17 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         (command.modelSelection ?? projection.thread.modelSelection).instanceId
     ) {
       projection = yield* getProjectionWithPendingEvents(command.threadId, events);
+    }
+    // A keep-warm turn yields to every turn: it never queues behind or ahead of one.
+    if (
+      isBotKeepWarmMessage(command.messageId) &&
+      projection.runs.some((run) => isActiveRun(run) || run.status === "queued")
+    ) {
+      return yield* new OrchestratorDispatchError({
+        commandId: command.commandId,
+        commandType: command.type,
+        cause: "The thread has a turn running or queued; idle upkeep skipped.",
+      });
     }
     if (command.manualContinuationOfRunId !== undefined) {
       const source = projection.runs.find((run) => run.id === command.manualContinuationOfRunId);
@@ -7845,15 +7880,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             }),
         ),
       );
-      const providerSessionId =
-        reusableProviderThread?.providerSessionId ??
-        (yield* mapDispatchError(command)(
-          providerSessionIdFor({
-            adapter,
-            providerInstanceId: modelSelection.instanceId,
-            threadId: command.threadId,
-          }),
-        ));
+      const providerSessionId = yield* mapDispatchError(command)(
+        providerSessionIdFor({
+          adapter,
+          providerInstanceId: modelSelection.instanceId,
+          threadId: command.threadId,
+          current: reusableProviderThread?.providerSessionId,
+        }),
+      );
       const providerThreadId =
         reusableProviderThread?.id ??
         idAllocator.derive.providerThread({
@@ -8282,15 +8316,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       isProviderSwitch && !canResumeAcrossInstances
         ? rootProviderThreadsForProvider(projection, modelSelection.instanceId)[0]
         : activeProviderThread;
-    const providerSessionId =
-      (canResumeAcrossInstances ? undefined : targetProviderThread?.providerSessionId) ??
-      (yield* mapDispatchError(command)(
-        providerSessionIdFor({
-          adapter,
-          providerInstanceId: modelSelection.instanceId,
-          threadId: command.threadId,
-        }),
-      ));
+    const providerSessionId = yield* mapDispatchError(command)(
+      providerSessionIdFor({
+        adapter,
+        providerInstanceId: modelSelection.instanceId,
+        threadId: command.threadId,
+        current: canResumeAcrossInstances ? undefined : targetProviderThread?.providerSessionId,
+      }),
+    );
     const existingProviderSession = projection.providerSessions.find(
       (candidate) => candidate.id === providerSessionId,
     );
@@ -10306,6 +10339,149 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     },
   );
 
+  const dispatchMessageRecord = Effect.fn("orchestrationV2.dispatch.messageRecord")(function* (
+    command: Extract<OrchestrationV2InternalCommand, { readonly type: "message.record" }>,
+    events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+  ) {
+    const projection = yield* projectionStore
+      .getThreadRecords(command.threadId, ["messages"], {
+        messageIds: [command.messageId],
+        turnItemTypes: [],
+      })
+      .pipe(
+        Effect.mapError(
+          (cause) => new OrchestratorProjectionError({ threadId: command.threadId, cause }),
+        ),
+      );
+    if (projection.thread.deletedAt !== null)
+      return yield* new OrchestratorDispatchError({
+        commandId: command.commandId,
+        commandType: command.type,
+        cause: `Thread ${command.threadId} is deleted.`,
+      });
+    if (projection.messages.some((message) => message.id === command.messageId)) return;
+    const now = yield* DateTime.now;
+    const ordinal = yield* nextTurnItemOrdinal(projection);
+    const record = {
+      threadId: command.threadId,
+      providerInstanceId: projection.thread.providerInstanceId,
+      occurredAt: now,
+    };
+    yield* emit(
+      events,
+      command,
+    )({
+      ...record,
+      type: "message.updated",
+      payload: {
+        id: command.messageId,
+        threadId: command.threadId,
+        runId: null,
+        nodeId: null,
+        role: "assistant",
+        text: command.text,
+        attachments: command.attachments ?? [],
+        streaming: false,
+        createdBy: "agent",
+        creationSource: "server",
+        createdAt: now,
+        updatedAt: now,
+      },
+    });
+    yield* emit(
+      events,
+      command,
+    )({
+      ...record,
+      type: "turn-item.updated",
+      payload: {
+        id: TurnItemId.make(`${RECORDED_TURN_ITEM_PREFIX}${command.messageId}`),
+        threadId: command.threadId,
+        runId: null,
+        nodeId: null,
+        providerThreadId: null,
+        providerTurnId: null,
+        nativeItemRef: null,
+        parentItemId: null,
+        ordinal,
+        status: "completed",
+        title: null,
+        startedAt: now,
+        completedAt: now,
+        updatedAt: now,
+        type: "assistant_message",
+        messageId: command.messageId,
+        text: command.text,
+        ...(command.attachments?.length ? { attachments: command.attachments } : {}),
+        streaming: false,
+      },
+    });
+  });
+
+  // A new provider thread with no native conversation becomes the thread's active one, so the
+  // next run starts fresh on the same provider session (ProviderTurnStartService ensureThread).
+  const dispatchContextReset = Effect.fn("orchestrationV2.dispatch.contextReset")(function* (
+    command: Extract<OrchestrationV2InternalCommand, { readonly type: "thread.context.reset" }>,
+    events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+  ) {
+    const projection = yield* projectionStore
+      .getThreadRecords(command.threadId, ["runs", "runtimeRequests", "providerThreads"], {
+        messageRoles: [],
+        turnItemTypes: [],
+      })
+      .pipe(
+        Effect.mapError(
+          (cause) => new OrchestratorProjectionError({ threadId: command.threadId, cause }),
+        ),
+      );
+    if (projection.thread.deletedAt !== null || threadHasUnfinishedWork(projection))
+      return yield* new OrchestratorDispatchError({
+        commandId: command.commandId,
+        commandType: command.type,
+        cause: `Thread ${command.threadId} has active work or is deleted.`,
+      });
+    const active = projection.providerThreads.find(
+      (candidate) => candidate.id === projection.thread.activeProviderThreadId,
+    );
+    if (
+      active === undefined ||
+      active.nativeThreadRef === null ||
+      active.providerSessionId === null
+    )
+      return;
+    const now = yield* DateTime.now;
+    yield* emit(
+      events,
+      command,
+    )({
+      type: "provider-thread.updated",
+      threadId: command.threadId,
+      driver: active.driver,
+      providerInstanceId: active.providerInstanceId,
+      occurredAt: now,
+      payload: {
+        id: idAllocator.derive.providerThread({
+          driver: active.driver,
+          nativeThreadId: `pending:reset:${command.commandId}`,
+        }),
+        driver: active.driver,
+        providerInstanceId: active.providerInstanceId,
+        providerSessionId: active.providerSessionId,
+        appThreadId: command.threadId,
+        ownerNodeId: null,
+        nativeThreadRef: null,
+        nativeConversationHeadRef: null,
+        status: "not_loaded",
+        firstRunOrdinal: null,
+        lastRunOrdinal: null,
+        handoffIds: [],
+        forkedFrom: null,
+        createdAt: now,
+        updatedAt: now,
+      },
+    });
+  });
+
   const dispatchSecretRequestRecord = Effect.fn("orchestrationV2.dispatch.secretRequestRecord")(
     function* (
       command: Extract<OrchestrationV2InternalCommand, { readonly type: "secret_request.record" }>,
@@ -11207,11 +11383,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const targetMessage = projection.messages.find(
       (message) => message.id === target?.userMessageId,
     );
-    // A compacting turn cannot take steering input, so steering skips the compaction instead.
+    // A compacting or keep-warm turn cannot take steering input, so steering skips it instead.
     if (
       target !== undefined &&
       targetMessage !== undefined &&
-      isCompactionCommandMessage(targetMessage)
+      (isCompactionCommandMessage(targetMessage) || isBotKeepWarmMessage(targetMessage.id))
     ) {
       if (goalCommand !== null) {
         yield* ensureGoalCommandSupported(command, queuedMessage, modelSelection.instanceId);
@@ -15168,6 +15344,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       case "link_request.record":
         yield* dispatchLinkRequestRecord(command, events, effects);
         break;
+      case "message.record":
+        yield* dispatchMessageRecord(command, events);
+        break;
+      case "thread.context.reset":
+        yield* dispatchContextReset(command, events);
+        break;
       default:
         return yield* dispatchUnsupported(command);
     }
@@ -15283,6 +15465,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           command.type === "subagent.stop" ||
           // Closing a share again, or after it ended, is not an error.
           command.type === "thread.guest-share.close" ||
+          // A message already recorded, or a context that is already fresh, is not an error.
+          command.type === "message.record" ||
+          command.type === "thread.context.reset" ||
           (command.type === "thread.delete" && command.onlyIfUnused === true),
         (_planned) =>
           new OrchestratorDispatchError({

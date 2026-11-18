@@ -793,9 +793,6 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         });
 
         expect(result.candidates.map((candidate) => [candidate.path, candidate.sources])).toEqual([
-          [piHomeWorkspace, ["pi"]],
-          [piFlatWorkspace, ["pi"]],
-          [piWorkspace, ["pi"]],
           [codexWorkspace, ["codex"]],
           [claudeWorkspace, ["claudeAgent"]],
         ]);
@@ -1418,168 +1415,163 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
       }),
     );
 
-    it.effect("imports recent Claude, Codex, and Pi sessions for the selected project only", () =>
-      Effect.gen(function* () {
-        const path = yield* Path.Path;
-        const nowMs = Date.parse("2026-08-24T12:00:00.000Z");
-        yield* TestClock.setTime(nowMs);
-        const claudeHomePath = yield* makeTempDir("t3code-claude-home-");
-        const codexHomePath = yield* makeTempDir("t3code-codex-home-");
-        const piAgentDir = yield* makeTempDir("t3code-pi-agent-");
-        const workspace = yield* makeTempDir("t3code-workspace-");
-        const otherWorkspace = yield* makeTempDir("t3code-workspace-other-");
+    it.effect(
+      "imports recent Claude and Codex sessions for the selected project only, skipping Pi",
+      () =>
+        Effect.gen(function* () {
+          const path = yield* Path.Path;
+          const nowMs = Date.parse("2026-08-24T12:00:00.000Z");
+          yield* TestClock.setTime(nowMs);
+          const claudeHomePath = yield* makeTempDir("t3code-claude-home-");
+          const codexHomePath = yield* makeTempDir("t3code-codex-home-");
+          const piAgentDir = yield* makeTempDir("t3code-pi-agent-");
+          const workspace = yield* makeTempDir("t3code-workspace-");
+          const otherWorkspace = yield* makeTempDir("t3code-workspace-other-");
 
-        const claudeTranscript = (cwd: string, sessionId: string) =>
-          `${JSON.stringify({
-            type: "user",
-            cwd,
-            sessionId,
-            timestamp: "2026-08-23T12:00:00.000Z",
-            message: { role: "user", content: "Fix the project" },
-          })}\n${JSON.stringify({
-            type: "assistant",
-            sessionId,
-            timestamp: "2026-08-23T12:01:00.000Z",
-            message: { role: "assistant", content: [{ type: "text", text: "Done" }] },
-          })}\n`;
+          const claudeTranscript = (cwd: string, sessionId: string) =>
+            `${JSON.stringify({
+              type: "user",
+              cwd,
+              sessionId,
+              timestamp: "2026-08-23T12:00:00.000Z",
+              message: { role: "user", content: "Fix the project" },
+            })}\n${JSON.stringify({
+              type: "assistant",
+              sessionId,
+              timestamp: "2026-08-23T12:01:00.000Z",
+              message: { role: "assistant", content: [{ type: "text", text: "Done" }] },
+            })}\n`;
 
-        yield* writeTranscript({
-          filePath: path.join(claudeHomePath, "projects", "-selected", "claude-recent.jsonl"),
-          contents: claudeTranscript(workspace, "claude-recent"),
-          mtimeMs: nowMs - 24 * 60 * 60 * 1000,
-        });
-        yield* writeTranscript({
-          filePath: path.join(claudeHomePath, "projects", "-selected", "claude-old.jsonl"),
-          contents: claudeTranscript(workspace, "claude-old"),
-          mtimeMs: nowMs - 31 * 24 * 60 * 60 * 1000,
-        });
-        yield* writeTranscript({
-          filePath: path.join(claudeHomePath, "projects", "-other", "claude-other.jsonl"),
-          contents: claudeTranscript(otherWorkspace, "claude-other"),
-          mtimeMs: nowMs - 24 * 60 * 60 * 1000,
-        });
-        yield* writeTranscript({
-          filePath: path.join(
-            codexHomePath,
-            "sessions",
-            "2026",
-            "08",
-            "24",
-            "rollout-codex-recent.jsonl",
-          ),
-          contents: [
-            encodeTranscriptRecord({
-              type: "session_meta",
-              payload: { id: "codex-recent", cwd: workspace },
-            }),
-            encodeTranscriptRecord({
-              type: "event_msg",
-              timestamp: "2026-08-24T10:00:00.000Z",
-              payload: { type: "user_message", message: "Review this code" },
-            }),
-            encodeTranscriptRecord({
-              type: "response_item",
-              timestamp: "2026-08-24T10:01:00.000Z",
-              payload: {
-                type: "message",
-                role: "assistant",
-                content: [{ type: "output_text", text: "Looks good" }],
-              },
-            }),
-          ].join("\n"),
-          mtimeMs: nowMs - 60 * 60 * 1000,
-        });
-        const piMessage = (
-          id: string,
-          parentId: string | null,
-          message: { readonly role: string; readonly content: unknown },
-        ) =>
-          encodeTranscriptRecord({
-            type: "message",
-            id,
-            parentId,
-            timestamp: "2026-08-24T11:00:00.000Z",
-            message,
+          yield* writeTranscript({
+            filePath: path.join(claudeHomePath, "projects", "-selected", "claude-recent.jsonl"),
+            contents: claudeTranscript(workspace, "claude-recent"),
+            mtimeMs: nowMs - 24 * 60 * 60 * 1000,
           });
-        // The user rewound to the first prompt; the abandoned branch stays in the file.
-        yield* writeTranscript({
-          filePath: path.join(piAgentDir, "sessions", "--selected--", "2026-08-24_pi.jsonl"),
-          contents: [
-            encodeTranscriptRecord({
-              type: "session",
-              version: 3,
-              id: "pi-recent",
-              cwd: workspace,
-            }),
-            piMessage("a1", null, { role: "user", content: "Plan the change" }),
-            piMessage("a2", "a1", {
-              role: "assistant",
-              content: [{ type: "text", text: "Abandoned answer" }],
-            }),
-            piMessage("a3", "a2", { role: "user", content: "Abandoned follow-up" }),
-            piMessage("b1", "a1", {
-              role: "assistant",
-              content: [
-                { type: "thinking", thinking: "Hidden reasoning" },
-                { type: "toolCall", id: "call-1", name: "bash", arguments: {} },
-              ],
-            }),
-            piMessage("bn", "b1", { role: "toolResult", content: null }),
-            piMessage("b2", "bn", {
-              role: "toolResult",
-              content: [{ type: "text", text: "Tool output" }],
-            }),
-            piMessage("b3", "b2", {
-              role: "assistant",
-              content: [{ type: "text", text: "Active answer" }],
-            }),
-            encodeTranscriptRecord({
-              type: "session_info",
-              id: "b4",
-              parentId: "b3",
-              name: "Pi refactor",
-            }),
-          ].join("\n"),
-          mtimeMs: nowMs - 30 * 60 * 1000,
-        });
-        // Version 1 sessions predate the entry tree.
-        yield* writeTranscript({
-          filePath: path.join(piAgentDir, "sessions", "--selected--", "2025-01-01_pi-v1.jsonl"),
-          contents: [
-            encodeTranscriptRecord({ type: "session", id: "pi-v1", cwd: workspace }),
-            encodeTranscriptRecord({
-              type: "message",
-              message: { role: "user", content: "Legacy prompt" },
-            }),
+          yield* writeTranscript({
+            filePath: path.join(claudeHomePath, "projects", "-selected", "claude-old.jsonl"),
+            contents: claudeTranscript(workspace, "claude-old"),
+            mtimeMs: nowMs - 31 * 24 * 60 * 60 * 1000,
+          });
+          yield* writeTranscript({
+            filePath: path.join(claudeHomePath, "projects", "-other", "claude-other.jsonl"),
+            contents: claudeTranscript(otherWorkspace, "claude-other"),
+            mtimeMs: nowMs - 24 * 60 * 60 * 1000,
+          });
+          yield* writeTranscript({
+            filePath: path.join(
+              codexHomePath,
+              "sessions",
+              "2026",
+              "08",
+              "24",
+              "rollout-codex-recent.jsonl",
+            ),
+            contents: [
+              encodeTranscriptRecord({
+                type: "session_meta",
+                payload: { id: "codex-recent", cwd: workspace },
+              }),
+              encodeTranscriptRecord({
+                type: "event_msg",
+                timestamp: "2026-08-24T10:00:00.000Z",
+                payload: { type: "user_message", message: "Review this code" },
+              }),
+              encodeTranscriptRecord({
+                type: "response_item",
+                timestamp: "2026-08-24T10:01:00.000Z",
+                payload: {
+                  type: "message",
+                  role: "assistant",
+                  content: [{ type: "output_text", text: "Looks good" }],
+                },
+              }),
+            ].join("\n"),
+            mtimeMs: nowMs - 60 * 60 * 1000,
+          });
+          const piMessage = (
+            id: string,
+            parentId: string | null,
+            message: { readonly role: string; readonly content: unknown },
+          ) =>
             encodeTranscriptRecord({
               type: "message",
-              message: { role: "assistant", content: [{ type: "text", text: "Legacy answer" }] },
-            }),
-          ].join("\n"),
-          mtimeMs: nowMs - 2 * 24 * 60 * 60 * 1000,
-        });
+              id,
+              parentId,
+              timestamp: "2026-08-24T11:00:00.000Z",
+              message,
+            });
+          yield* writeTranscript({
+            filePath: path.join(piAgentDir, "sessions", "--selected--", "2026-08-24_pi.jsonl"),
+            contents: [
+              encodeTranscriptRecord({
+                type: "session",
+                version: 3,
+                id: "pi-recent",
+                cwd: workspace,
+              }),
+              piMessage("a1", null, { role: "user", content: "Plan the change" }),
+              piMessage("a2", "a1", {
+                role: "assistant",
+                content: [{ type: "text", text: "Abandoned answer" }],
+              }),
+              piMessage("a3", "a2", { role: "user", content: "Abandoned follow-up" }),
+              piMessage("b1", "a1", {
+                role: "assistant",
+                content: [
+                  { type: "thinking", thinking: "Hidden reasoning" },
+                  { type: "toolCall", id: "call-1", name: "bash", arguments: {} },
+                ],
+              }),
+              piMessage("bn", "b1", { role: "toolResult", content: null }),
+              piMessage("b2", "bn", {
+                role: "toolResult",
+                content: [{ type: "text", text: "Tool output" }],
+              }),
+              piMessage("b3", "b2", {
+                role: "assistant",
+                content: [{ type: "text", text: "Active answer" }],
+              }),
+              encodeTranscriptRecord({
+                type: "session_info",
+                id: "b4",
+                parentId: "b3",
+                name: "Pi refactor",
+              }),
+            ].join("\n"),
+            mtimeMs: nowMs - 30 * 60 * 1000,
+          });
+          yield* writeTranscript({
+            filePath: path.join(piAgentDir, "sessions", "--selected--", "2025-01-01_pi-v1.jsonl"),
+            contents: [
+              encodeTranscriptRecord({ type: "session", id: "pi-v1", cwd: workspace }),
+              encodeTranscriptRecord({
+                type: "message",
+                message: { role: "user", content: "Legacy prompt" },
+              }),
+              encodeTranscriptRecord({
+                type: "message",
+                message: { role: "assistant", content: [{ type: "text", text: "Legacy answer" }] },
+              }),
+            ].join("\n"),
+            mtimeMs: nowMs - 2 * 24 * 60 * 60 * 1000,
+          });
 
-        const threads = yield* runRecentThreads({
-          claudeHomePath,
-          codexHomePath,
-          piAgentDir,
-          workspaceRoot: workspace,
-        });
+          const threads = yield* runRecentThreads({
+            claudeHomePath,
+            codexHomePath,
+            piAgentDir,
+            workspaceRoot: workspace,
+          });
 
-        expect(threads.map((thread) => thread.providerSessionId)).toEqual([
-          "pi-recent",
-          "codex-recent",
-          "claude-recent",
-          "pi-v1",
-        ]);
-        expect(threads.map((thread) => thread.messages.map((message) => message.text))).toEqual([
-          ["Plan the change", "Active answer"],
-          ["Review this code", "Looks good"],
-          ["Fix the project", "Done"],
-          ["Legacy prompt", "Legacy answer"],
-        ]);
-        expect(threads[0]).toMatchObject({ source: "pi", title: "Pi refactor" });
-      }),
+          expect(threads.map((thread) => thread.providerSessionId)).toEqual([
+            "codex-recent",
+            "claude-recent",
+          ]);
+          expect(threads.map((thread) => thread.messages.map((message) => message.text))).toEqual([
+            ["Review this code", "Looks good"],
+            ["Fix the project", "Done"],
+          ]);
+        }),
     );
 
     it.effect("keeps the provider instance that owns a custom session home", () =>

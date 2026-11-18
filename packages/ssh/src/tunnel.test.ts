@@ -297,103 +297,58 @@ describe("ssh tunnel scripts", () => {
     );
   });
 
-  it.each([
-    { host: "Darwin x86_64", system: "Darwin", machine: "x86_64", downloads: false },
-    { host: "Darwin arm64", system: "Darwin", machine: "arm64", downloads: true },
-  ])(
-    "only downloads a release archive the host can run: $host",
-    ({ system, machine, downloads }) => {
-      const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ssh-runner-"));
-      try {
-        const bin = NodePath.join(root, "bin");
-        NodeFS.mkdirSync(bin);
-        NodeFS.mkdirSync(NodePath.join(root, "home"));
-        NodeFS.writeFileSync(
-          NodePath.join(bin, "uname"),
-          `#!/bin/sh\ncase "$1" in -s) echo ${system} ;; -m) echo ${machine} ;; esac\n`,
-          { mode: 0o755 },
-        );
-        NodeFS.writeFileSync(
-          NodePath.join(bin, "curl"),
-          "#!/bin/sh\necho 'download attempt' >&2\necho 'curl: (6) Could not resolve host: github.com' >&2\nexit 6\n",
-          { mode: 0o755 },
-        );
-        const runner = NodePath.join(root, "run-t3.sh");
-        NodeFS.writeFileSync(runner, SshTunnel.buildRemoteT3RunnerScript(ARCHIVE));
-        const result = NodeChildProcess.spawnSync("sh", [runner, "--version"], {
-          encoding: "utf8",
-          env: { HOME: NodePath.join(root, "home"), PATH: `${bin}:${process.env.PATH ?? ""}` },
-        });
-        assert.notEqual(result.status, 0);
-        if (downloads) {
-          assert.include(result.stderr, "download attempt");
-          // A bare curl error does not tell the user that t3 itself could not be downloaded.
-          assert.include(result.stderr, ARCHIVE.archiveVersion);
-          assert.include(result.stderr, "https://github.com/pingdotgg/t3code/releases/download");
-        } else {
-          assert.notInclude(result.stderr, "download attempt");
-          assert.include(result.stderr, "has no t3 release archive.");
-        }
-      } finally {
-        NodeFS.rmSync(root, { recursive: true, force: true });
-      }
-    },
-  );
-
-  it("names gzip when a host with tar but no gzip cannot unpack the release archive", () => {
+  it("points a host without the runtime to the install guide and downloads nothing", () => {
     const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ssh-runner-"));
     try {
       const bin = NodePath.join(root, "bin");
-      const release = NodePath.join(root, "release");
-      const archive = `t3-${ARCHIVE.archiveVersion}-linux-x64.tar.gz`;
       NodeFS.mkdirSync(bin);
       NodeFS.mkdirSync(NodePath.join(root, "home"));
-      NodeFS.mkdirSync(NodePath.join(release, "t3"), { recursive: true });
-      NodeFS.writeFileSync(NodePath.join(release, "t3", "t3"), "#!/bin/sh\necho ok\n", {
-        mode: 0o755,
-      });
-      NodeChildProcess.execFileSync("tar", ["-czf", archive, "t3"], { cwd: release });
-      NodeChildProcess.execFileSync("sh", ["-c", `sha256sum ${archive} > SHA256SUMS`], {
-        cwd: release,
-      });
-      for (const tool of [
-        "sh",
-        "mkdir",
-        "mktemp",
-        "cat",
-        "rm",
-        "grep",
-        "cut",
-        "sha256sum",
-        "tar",
-        "mv",
-      ]) {
-        NodeFS.symlinkSync(
-          NodeChildProcess.execFileSync("sh", ["-c", `command -v ${tool}`], {
-            encoding: "utf8",
-          }).trim(),
-          NodePath.join(bin, tool),
-        );
-      }
       NodeFS.writeFileSync(
         NodePath.join(bin, "uname"),
         '#!/bin/sh\ncase "$1" in -s) echo Linux ;; -m) echo x86_64 ;; esac\n',
         { mode: 0o755 },
       );
-      NodeFS.writeFileSync(
-        NodePath.join(bin, "curl"),
-        `#!/bin/sh\nfor last; do :; done\nfor a; do case "$a" in http*) src="${release}/\${a##*/}" ;; esac; done\nexec cat "$src" > "$last"\n`,
-        { mode: 0o755 },
-      );
+      for (const fetcher of ["curl", "wget"]) {
+        NodeFS.writeFileSync(
+          NodePath.join(bin, fetcher),
+          `#!/bin/sh\necho 'download attempt' >&2\nexit 6\n`,
+          { mode: 0o755 },
+        );
+      }
       const runner = NodePath.join(root, "run-t3.sh");
       NodeFS.writeFileSync(runner, SshTunnel.buildRemoteT3RunnerScript(ARCHIVE));
-      const result = NodeChildProcess.spawnSync(NodePath.join(bin, "sh"), [runner, "--version"], {
+      const result = NodeChildProcess.spawnSync("sh", [runner, "--version"], {
         encoding: "utf8",
-        env: { HOME: NodePath.join(root, "home"), PATH: bin },
+        env: { HOME: NodePath.join(root, "home"), PATH: `${bin}:${process.env.PATH ?? ""}` },
       });
       assert.notEqual(result.status, 0);
-      assert.match(result.stderr, /(missing|needs) gzip/);
-      assert.notInclude(result.stderr, "Cannot exec");
+      assert.notInclude(result.stderr, "download attempt");
+      assert.equal(
+        result.stderr,
+        `rejects ${ARCHIVE.archiveVersion} is not installed on this host. Install it from https://github.com/lbgos/rejects/blob/main/docs/user/install.md, then connect again.\n`,
+      );
+
+      // The fork's home wins over an upstream ~/.t3 install of the same version.
+      for (const home of [".rejects", ".t3"]) {
+        const version = NodePath.join(
+          root,
+          "home",
+          home,
+          "runtime/versions",
+          ARCHIVE.archiveVersion,
+        );
+        NodeFS.mkdirSync(version, { recursive: true });
+        NodeFS.writeFileSync(NodePath.join(version, "t3"), `#!/bin/sh\necho "${home} $*"\n`, {
+          mode: 0o755,
+        });
+        NodeFS.writeFileSync(NodePath.join(version, ".install-complete"), ARCHIVE.archiveVersion);
+      }
+      const installed = NodeChildProcess.spawnSync("sh", [runner, "--version"], {
+        encoding: "utf8",
+        env: { HOME: NodePath.join(root, "home"), PATH: `${bin}:${process.env.PATH ?? ""}` },
+      });
+      assert.equal(installed.status, 0);
+      assert.equal(installed.stdout, ".rejects --version\n");
     } finally {
       NodeFS.rmSync(root, { recursive: true, force: true });
     }
@@ -1131,7 +1086,7 @@ describe("ssh tunnel scripts", () => {
         ).pipe(Effect.provide(localRemoteShellLayer(home)));
 
         const ownerPid = Number(
-          yield* fs.readFileString(path.join(home, ".t3", "userdata", "server.lock")),
+          yield* fs.readFileString(path.join(home, ".rejects", "userdata", "server.lock")),
         );
         assert.sameMembers(
           launches.map((launch) => launch.remoteServerKind),
@@ -1274,7 +1229,7 @@ server.listen(Number(flag("--port") ?? 0), "127.0.0.1", () => {
       // Reboot: our server is gone and its recorded PID now names something that
       // answers on the recorded port.
       process.kill(firstPid, "SIGKILL");
-      yield* fs.remove(`${home}/.t3/userdata/server-runtime.json`);
+      yield* fs.remove(`${home}/.rejects/userdata/server-runtime.json`);
       yield* fs.writeFileString(`${stateDir}/pid`, `${staleId}\n`);
       yield* fs.writeFileString(`${stateDir}/port`, `${holderPort}\n`);
 
@@ -1309,7 +1264,7 @@ server.listen(Number(flag("--port") ?? 0), "127.0.0.1", () => {
           launcherId,
         ).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, sshAsLocalShell));
       const runtimePid = fs
-        .readFileString(`${home}/.t3/userdata/server-runtime.json`)
+        .readFileString(`${home}/.rejects/userdata/server-runtime.json`)
         .pipe(Effect.map((runtime) => Number(JSON.parse(runtime).pid)));
       const launchedPids: Array<number> = [];
       yield* Effect.addFinalizer(() =>

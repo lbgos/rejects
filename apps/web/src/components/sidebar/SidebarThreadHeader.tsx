@@ -7,6 +7,8 @@ import {
   type RefObject,
 } from "react";
 
+import { Menu, MenuTrigger, MenuPopup, MenuItem } from "../ui/menu";
+import { BookOpenIcon, DumbbellIcon } from "lucide-react";
 import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
 import { SidebarInput, SidebarMenuButton } from "../ui/sidebar";
@@ -17,6 +19,7 @@ export interface SidebarThreadHeaderProps {
   projectScope: ReactNode;
   onNewProject: () => void;
   onNewThread: (event: ReactMouseEvent) => void;
+  onNewLearnSession?: (kind: "teach" | "practice") => void;
   newThreadDisabled: boolean;
   newThreadShortcutLabel: string | null | undefined;
   newThreadInProjectShortcutLabel: string | null | undefined;
@@ -36,6 +39,7 @@ export function SidebarThreadHeader({
   projectScope,
   onNewProject,
   onNewThread,
+  onNewLearnSession,
   newThreadDisabled,
   newThreadShortcutLabel,
   newThreadInProjectShortcutLabel,
@@ -97,7 +101,7 @@ export function SidebarThreadHeader({
         ) : null}
       </div>
       <div className="flex shrink-0 items-center">
-        {hasProjects ? (
+        {hasProjects && !onNewLearnSession ? (
           <>
             {projectScope}
             <SidebarHeaderIconButton label="Add project" onClick={onNewProject}>
@@ -105,26 +109,50 @@ export function SidebarThreadHeader({
             </SidebarHeaderIconButton>
           </>
         ) : null}
-        <SidebarHeaderIconButton
-          label="New thread"
-          tooltip={
-            showNewThreadInProjectHint ? (
-              <span className="flex flex-col gap-0.5">
-                <span>{newThreadLabel}</span>
-                <span className="text-muted-foreground">
-                  New thread in current project: Shift+click
-                  {newThreadInProjectShortcutLabel ? ` (${newThreadInProjectShortcutLabel})` : ""}
+        {onNewLearnSession ? (
+          <Menu>
+            <MenuTrigger
+              render={<SidebarHeaderIconButton label="New thread" disabled={newThreadDisabled} />}
+            >
+              <SquarePenIcon />
+            </MenuTrigger>
+            <MenuPopup align="end">
+              <MenuItem onClick={onNewThread}>
+                <SquarePenIcon />
+                New chat
+              </MenuItem>
+              <MenuItem onClick={() => onNewLearnSession("teach")}>
+                <BookOpenIcon />
+                New teach
+              </MenuItem>
+              <MenuItem onClick={() => onNewLearnSession("practice")}>
+                <DumbbellIcon />
+                New practice
+              </MenuItem>
+            </MenuPopup>
+          </Menu>
+        ) : (
+          <SidebarHeaderIconButton
+            label="New thread"
+            tooltip={
+              showNewThreadInProjectHint ? (
+                <span className="flex flex-col gap-0.5">
+                  <span>{newThreadLabel}</span>
+                  <span className="text-muted-foreground">
+                    New thread in current project: Shift+click
+                    {newThreadInProjectShortcutLabel ? ` (${newThreadInProjectShortcutLabel})` : ""}
+                  </span>
                 </span>
-              </span>
-            ) : (
-              newThreadLabel
-            )
-          }
-          disabled={newThreadDisabled}
-          onClick={onNewThread}
-        >
-          <SquarePenIcon />
-        </SidebarHeaderIconButton>
+              ) : (
+                newThreadLabel
+              )
+            }
+            disabled={newThreadDisabled}
+            onClick={onNewThread}
+          >
+            <SquarePenIcon />
+          </SidebarHeaderIconButton>
+        )}
       </div>
     </div>
   );

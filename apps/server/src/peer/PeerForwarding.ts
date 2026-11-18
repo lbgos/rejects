@@ -15,6 +15,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import type * as Tool from "effect/ai/Tool";
 
@@ -80,6 +81,14 @@ export class PeerForwarding extends Context.Service<
   }
 >()("t3/peer/PeerForwarding") {}
 
+/** It runs before an agent's call leaves. The followers of work already started (waits, reads and stops) are not agent calls and never pass through it. */
+export class ForwardedCallGuard extends Context.Service<
+  ForwardedCallGuard,
+  {
+    readonly check: (scope: Scope, toolName: string) => Effect.Effect<void, OrchestratorMcpFailure>;
+  }
+>()("t3/peer/PeerForwarding/ForwardedCallGuard") {}
+
 /** What an agent hears when it names another machine while the beta is off here. */
 export const linkedEnvironmentsOff = new OrchestratorMcpFailure({
   code: "capability_denied",
@@ -96,6 +105,7 @@ const make = Effect.gen(function* () {
   const links = yield* PeerLinks.PeerLinks;
   const crypto = yield* Digest.Digest;
   const threads = yield* ThreadManagement.ThreadManagementService;
+  const callGuard = yield* Effect.serviceOption(ForwardedCallGuard);
 
   /**
    * The caller's own limits and thread, which travel with every forwarded call: the peer sees only the
@@ -237,7 +247,10 @@ const make = Effect.gen(function* () {
           params as OrchestratorMcpThreadWaitInput,
         ) as Effect.Effect<Tool.Success<typeof tool>, OrchestratorMcpFailure>)
       : forward(scope, tool.name, tool.parametersSchema, tool.successSchema, environmentId, params);
-    return Effect.andThen(requireEnabled, forwarded);
+    const guarded = Option.isNone(callGuard)
+      ? Effect.void
+      : callGuard.value.check(scope, tool.name);
+    return requireEnabled.pipe(Effect.andThen(guarded), Effect.andThen(forwarded));
   };
 
   /**

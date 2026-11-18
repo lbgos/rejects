@@ -127,9 +127,10 @@ it.layer(NodeServices.layer)("build-npm-launcher", (it) => {
         const manifest = yield* decodeManifest(
           yield* fs.readFileString(path.join(output.packageDir, "package.json")),
         );
-        assert.equal(manifest.name, "t3");
+        assert.equal(manifest.name, "@lbgos/rejects");
         assert.equal(manifest.version, VERSION);
-        assert.deepStrictEqual(manifest.bin, { t3: "./bin/t3.mjs" });
+        assert.deepStrictEqual(manifest.bin, { rejects: "./bin/t3.mjs" });
+        assert.deepStrictEqual(manifest.publishConfig, { access: "public" });
         assert.isUndefined(manifest.dependencies);
         assert.isUndefined(manifest.optionalDependencies);
         assert.isAbove(npmReleaseDatabaseMigration(manifest) ?? 0, 0);
@@ -146,10 +147,11 @@ it.layer(NodeServices.layer)("build-npm-launcher", (it) => {
         const release = yield* serveFakeRelease(root);
         // regression: #32897
         release.failNextRequests(504, 524);
-        const home = path.join(root, "home");
+        // Without T3CODE_HOME the launcher uses the server's default home.
+        const home = path.join(root, "user", ".rejects");
         const env = {
           PATH: (yield* HostProcess.Environment).PATH,
-          T3CODE_HOME: home,
+          HOME: path.join(root, "user"),
           T3CODE_TEST_CALLS: path.join(root, "calls"),
           T3CODE_RELEASE_BASE_URL: release.baseUrl,
         };

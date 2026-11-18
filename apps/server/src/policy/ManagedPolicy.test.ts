@@ -399,7 +399,7 @@ it.layer(NodeServices.layer)("ManagedPolicy.load", (it) => {
       });
       assert.equal(
         disallowedDriverReason(policy.summary, ProviderDriverKind.make("cursor")),
-        "Example Corp's policy does not allow the Cursor provider.",
+        "Example Corp's policy does not allow the cursor provider.",
       );
       assert.isUndefined(disallowedDriverReason(policy.summary, ProviderDriverKind.make("codex")));
     }),
@@ -417,8 +417,7 @@ it.layer(NodeServices.layer)("ManagedPolicy.load", (it) => {
         [
           withProviders({ allowedDrivers: ["claudeAgent", "notAProvider"] }),
           withProviders({ instances: { notAProvider: { locked: true, binaryPath: "/x" } } }),
-          // Cursor has no launch arguments setting to pin.
-          withProviders({ instances: { cursor: { locked: true, launchArgs: "--x" } } }),
+          withProviders({ instances: { opencode: { locked: true, launchArgs: "--x" } } }),
           withProviders({ instances: { codex: { locked: true, homePath: "/x" } } }),
           withProviders({
             instances: { codex: { locked: true, environment: [{ name: "1BAD", value: "" }] } },

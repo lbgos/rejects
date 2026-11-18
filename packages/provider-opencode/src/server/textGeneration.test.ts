@@ -30,6 +30,7 @@ const runtimeMock = {
     authHeaders: [] as Array<string | null>,
     closeCalls: [] as string[],
     sessionCreateCalls: 0,
+    clientDirectories: [] as Array<string | undefined>,
     sessionCalls: [] as string[],
     onSessionCreate: undefined as ((signal?: AbortSignal) => Promise<never>) | undefined,
     onPrompt: undefined as
@@ -52,6 +53,7 @@ const runtimeMock = {
     this.state.authHeaders.length = 0;
     this.state.closeCalls.length = 0;
     this.state.sessionCreateCalls = 0;
+    this.state.clientDirectories.length = 0;
     this.state.sessionCalls.length = 0;
     this.state.onSessionCreate = undefined;
     this.state.onPrompt = undefined;
@@ -107,7 +109,7 @@ const OpenCodeRuntimeTestDouble: OpenCodeRuntime.OpenCodeRuntime["Service"] = {
           external: Boolean(serverUrl),
         }),
   runOpenCodeCommand: () => Effect.succeed({ stdout: "", stderr: "", code: 0 }),
-  createOpenCodeSdkClient: ({ baseUrl, serverPassword }) =>
+  createOpenCodeSdkClient: ({ baseUrl, serverPassword, directory }) =>
     ({
       provider: {
         list: async () => ({
@@ -119,6 +121,7 @@ const OpenCodeRuntimeTestDouble: OpenCodeRuntime.OpenCodeRuntime["Service"] = {
       session: {
         create: async (_input: unknown, options?: { readonly signal?: AbortSignal }) => {
           runtimeMock.state.sessionCreateCalls += 1;
+          runtimeMock.state.clientDirectories.push(directory);
           if (runtimeMock.state.onSessionCreate) {
             return runtimeMock.state.onSessionCreate(options?.signal);
           }
@@ -323,6 +326,24 @@ it.layer(layerOpenCodeTextGenerationTest)("OpenCodeTextGeneration", (it) => {
     ),
   );
 
+  it.effect("decodes structured arrays without extracting an inner object", () =>
+    withOpenCodeTextGeneration(DEFAULT_OPENCODE_SETTINGS, (generation) =>
+      Effect.gen(function* () {
+        runtimeMock.state.promptResult = {
+          data: { parts: [{ type: "text", text: '```json\n[{"count":2}]\n```' }] },
+        };
+        const result = yield* generation.generateStructured({
+          cwd: process.cwd(),
+          prompt: "Count nodes",
+          operation: "extraction",
+          outputSchema: Schema.Array(Schema.Struct({ count: Schema.Int })),
+          modelSelection: DEFAULT_TEST_MODEL_SELECTION,
+        });
+        expect(result).toEqual([{ count: 2 }]);
+      }),
+    ),
+  );
+
   it.effect("cancels only its prompt session while another generation uses the shared server", () =>
     withOpenCodeTextGeneration(DEFAULT_OPENCODE_SETTINGS, (textGeneration) =>
       Effect.gen(function* () {
@@ -377,6 +398,26 @@ it.layer(layerOpenCodeTextGenerationTest)("OpenCodeTextGeneration", (it) => {
           "delete other-session",
         ]);
         expect(runtimeMock.state.closeCalls).toEqual([]);
+      }),
+    ),
+  );
+
+  it.effect("generates structured data using the supplied schema and cwd", () =>
+    withOpenCodeTextGeneration(DEFAULT_OPENCODE_SETTINGS, (generation) =>
+      Effect.gen(function* () {
+        runtimeMock.state.promptResult = {
+          data: { parts: [{ type: "text", text: '{"count":2}' }] },
+        };
+        const result = yield* generation.generateStructured({
+          cwd: "/tmp/learn-structured",
+          prompt: "Count nodes",
+          operation: "extraction",
+          outputSchema: Schema.Struct({ count: Schema.Int }),
+          modelSelection: DEFAULT_TEST_MODEL_SELECTION,
+        });
+        expect(result).toEqual({ count: 2 });
+        expect(JSON.stringify(runtimeMock.state.promptParts)).toContain("count");
+        expect(runtimeMock.state.clientDirectories).toContain("/tmp/learn-structured");
       }),
     ),
   );

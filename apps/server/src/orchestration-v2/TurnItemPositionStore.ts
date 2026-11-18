@@ -16,6 +16,9 @@ export class TurnItemPositionStoreError extends Schema.TaggedError<TurnItemPosit
 
 const isTurnItemPositionStoreError = Schema.is(TurnItemPositionStoreError);
 
+/** Server-recorded messages, such as a bot wake's result, sit after the thread's latest run. */
+export const RECORDED_TURN_ITEM_PREFIX = "turn-item:recorded:";
+
 export interface TurnItemPositionStoreV2Shape {
   readonly allocate: (input: {
     readonly threadId: ThreadId;
@@ -60,14 +63,20 @@ export const layer: Layer.Layer<TurnItemPositionStoreV2, never, SqlClient.SqlCli
           if (existing[0] !== undefined) return existing[0].ordinal;
 
           const runRows =
-            runId === null
-              ? []
-              : yield* sql<{ readonly ordinal: number }>`
+            runId !== null
+              ? yield* sql<{ readonly ordinal: number }>`
                 SELECT ordinal
                 FROM orchestration_v2_projection_runs
                 WHERE thread_id = ${threadId} AND run_id = ${runId}
                 LIMIT 1
-              `;
+              `
+              : turnItemId.startsWith(RECORDED_TURN_ITEM_PREFIX)
+                ? yield* sql<{ readonly ordinal: number | null }>`
+                SELECT MAX(ordinal) AS ordinal
+                FROM orchestration_v2_projection_runs
+                WHERE thread_id = ${threadId}
+              `
+                : [];
           const runOrdinal = suppliedRunOrdinal ?? runRows[0]?.ordinal ?? null;
           const lowerBound = runOrdinal === null ? 0 : runOrdinal * 1_000_000;
           const upperBound = runOrdinal === null ? 999_999 : lowerBound + 999_999;

@@ -1,6 +1,13 @@
+import * as BotSegments from "../bots/BotSegments.ts";
+import * as BotStore from "../bots/BotStore.ts";
+import { sealedBy } from "../bots/sealed.ts";
+import * as ConnectionStore from "../connections/ConnectionStore.ts";
 import { makeAssistantStreamingFilter } from "./assistantStreaming.ts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import {
+  BOT_USAGE_KEEPWARM,
+  chargedTokens,
+  isBotKeepWarmMessage,
   isOrchestrationV2WorkActive,
   CommandId,
   type EventId,
@@ -32,6 +39,7 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schedule from "effect/Schedule";
@@ -40,6 +48,7 @@ import * as Stream from "effect/Stream";
 
 import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
 import * as McpAppModelContext from "../mcpApps/McpAppModelContext.ts";
+import { prependAppModelContext } from "../provider/appModelContext.ts";
 import * as PreviewAgentActivity from "../preview/PreviewAgentActivity.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as CheckpointService from "./CheckpointService.ts";
@@ -101,6 +110,11 @@ function isSettledSubagentStatus(status: OrchestrationV2Subagent["status"]): boo
 }
 
 /** A provider-native subagent's turns arrive on its parent's run, but the parent agent started them. */
+const STANDING_INSTRUCTIONS_IN_SYSTEM_PROMPT: ReadonlySet<string> = new Set([
+  "opencode",
+  "claudeAgent",
+]);
+
 const NATIVE_SUBAGENT_TURN_ORIGIN: ProviderUsageAnalytics.ProviderTurnOrigin = {
   createdBy: "agent",
   creationSource: "provider",
@@ -636,6 +650,9 @@ export const layer: Layer.Layer<
   RunExecutionServiceV2,
   Effect.gen(function* () {
     const scope = yield* Effect.scope;
+    const bots = yield* Effect.serviceOption(BotStore.BotStore);
+    const connections = yield* Effect.serviceOption(ConnectionStore.ConnectionStore);
+    const botTurns = yield* Effect.serviceOption(BotSegments.BotTurns);
     const checkpointService = yield* CheckpointService.CheckpointServiceV2;
     const eventSink = yield* EventSink.EventSinkV2;
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
@@ -960,6 +977,17 @@ export const layer: Layer.Layer<
           Effect.map(Fiber.join),
         ),
       startRootRun: Effect.fn("RunExecutionService.startRootRun")(function* (input) {
+        const compact =
+          input.message.attachments.length === 0 &&
+          input.message.text.trim().toLowerCase() === "/compact";
+        const keepWarm = isBotKeepWarmMessage(input.message.messageId);
+        const runFailure = (failure: ReturnType<typeof makeProviderFailure>) =>
+          compact
+            ? {
+                ...failure,
+                message: `Compaction did not finish; the conversation is unchanged. ${failure.message}`,
+              }
+            : failure;
         const rootTurnOrigin: ProviderUsageAnalytics.ProviderTurnOrigin = {
           createdBy: input.message.createdBy,
           creationSource: input.message.creationSource,
@@ -1611,6 +1639,31 @@ export const layer: Layer.Layer<
           accepted: boolean;
         }) {
           if (!accepted) return;
+          if (Option.isSome(bots)) {
+            if (event.type === "app_thread.created")
+              yield* bots.value.inherit(event.appThread).pipe(Effect.orDie);
+            if (event.type === "provider_turn.updated") {
+              const terminal = ["completed", "failed", "cancelled", "interrupted"].includes(
+                event.providerTurn.status,
+              );
+              const count = chargedTokens(
+                event.providerTurn.turnTokenUsage ?? event.providerTurn.tokenUsage ?? {},
+              );
+              const reached = yield* bots.value
+                .charge(event.threadId ?? input.run.threadId, event.providerTurn.id, count, {
+                  ended: terminal,
+                  ...(keepWarm ? { source: BOT_USAGE_KEEPWARM } : {}),
+                })
+                .pipe(Effect.orDie);
+              if (reached && event.providerTurn.status === "running")
+                yield* input.session
+                  .interruptTurn({
+                    providerThread: input.providerThread,
+                    providerTurnId: event.providerTurn.id,
+                  })
+                  .pipe(Effect.ignoreCause({ log: true }));
+            }
+          }
           if (
             event.type === "provider_turn.updated" &&
             event.providerTurn.runAttemptId === input.attempt.id &&
@@ -1849,13 +1902,15 @@ export const layer: Layer.Layer<
                     ...(abandonedProviderTurn === null ? {} : { abandonedProviderTurn }),
                     completedAt,
                     terminal: makeFailedTerminalEvent(
-                      makeProviderFailure({
-                        cause: squashed,
-                        message:
-                          knownProviderFailureMessage(squashed) ??
-                          userFacingDatabaseErrorMessage(squashed),
-                        class: "unknown",
-                      }),
+                      runFailure(
+                        makeProviderFailure({
+                          cause: squashed,
+                          message:
+                            knownProviderFailureMessage(squashed) ??
+                            userFacingDatabaseErrorMessage(squashed),
+                          class: "unknown",
+                        }),
+                      ),
                       latestItemOrdinal + 1,
                     ),
                     failureItemPersisted: false,
@@ -1927,7 +1982,61 @@ export const layer: Layer.Layer<
           key: `mcp_app_${entry.itemId.replace(/[^\w.-]/g, "_")}`,
           text: entry.text,
         }));
+        if (Option.isSome(bots)) {
+          yield* bots.value.inherit(input.appThread).pipe(Effect.orDie);
+        }
+        const standingInstructions = Option.isSome(bots)
+          ? yield* Effect.gen(function* () {
+              const owner = yield* bots.value.owner(input.run.threadId);
+              const sealed =
+                owner !== undefined &&
+                (yield* sealedBy(owner, bots.value, connections)) !== undefined;
+              return yield* bots.value.persona(input.run.threadId, { sealed });
+            })
+          : undefined;
+        // A keep-warm turn sends only its own text: the request is never saved.
+        const botContext =
+          Option.isSome(botTurns) && !keepWarm
+            ? yield* botTurns.value
+                .forTurn({
+                  run: input.run,
+                  providerThreadId: input.providerThread.id,
+                  message: input.message.text,
+                })
+                .pipe(
+                  Effect.catch((cause) =>
+                    Effect.logWarning("Bot turn context unavailable.", { cause }).pipe(
+                      Effect.as(undefined),
+                    ),
+                  ),
+                )
+            : undefined;
+        // The main bot routes the user's files unopened: it sees their ids, its provider gets none.
+        const heldFiles =
+          Option.isSome(bots) &&
+          input.message.attachments.length > 0 &&
+          (yield* bots.value.mainBot) === input.run.threadId
+            ? input.message.attachments
+            : [];
+        // Standing instructions stay identical between turns; what changes rides in bot_context.
+        const botPrefix = [
+          standingInstructions && !STANDING_INSTRUCTIONS_IN_SYSTEM_PROMPT.has(input.session.driver)
+            ? `<bot_standing_instructions>\n${standingInstructions}\n</bot_standing_instructions>`
+            : undefined,
+          botContext ? `<bot_context>\n${botContext}\n</bot_context>` : undefined,
+          heldFiles.length > 0
+            ? `<bot_files>\n${heldFiles
+                .map(
+                  (file) =>
+                    `- ${file.id}: ${file.name} (${file.mimeType}, ${file.sizeBytes} bytes)`,
+                )
+                .join("\n")}\n</bot_files>`
+            : undefined,
+        ]
+          .filter((part) => part !== undefined)
+          .join("\n\n");
         const turnInput = {
+          ...(standingInstructions ? { standingInstructions } : {}),
           appThread: input.appThread,
           threadId: input.run.threadId,
           runId: input.run.id,
@@ -1960,12 +2069,19 @@ export const layer: Layer.Layer<
           return;
         }
 
-        const compact =
-          input.message.attachments.length === 0 &&
-          input.message.text.trim().toLowerCase() === "/compact";
         const { message: _message, ...resumeInput } = turnInput;
-        const startTurn =
-          input.resume === true
+        const startTurn = keepWarm
+          ? (input.session.keepWarm?.(turnInput) ??
+            Effect.fail(
+              new ProviderAdapter.ProviderAdapterTurnStartError({
+                driver: input.session.driver,
+                threadId: input.run.threadId,
+                providerThreadId: input.providerThread.id,
+                runId: input.run.id,
+                cause: "This provider cannot keep its prompt cache warm.",
+              }),
+            ))
+          : input.resume === true
             ? (input.session.resumeTurn?.({ ...resumeInput, messageId: input.message.messageId }) ??
               Effect.fail(
                 new ProviderAdapter.ProviderAdapterTurnStartError({
@@ -1993,8 +2109,24 @@ export const layer: Layer.Layer<
                     }),
                   }),
                 ))
-              : input.session.startTurn(turnInput);
-        yield* Effect.andThen(shouldStart, startTurn).pipe(
+              : input.session.startTurn({
+                  ...turnInput,
+                  message: {
+                    ...turnInput.message,
+                    ...(heldFiles.length > 0 ? { attachments: [] } : {}),
+                    text: prependAppModelContext({
+                      driver: input.session.driver,
+                      text: botPrefix
+                        ? `${botPrefix}\n\n${turnInput.message.text}`
+                        : turnInput.message.text,
+                      appContext,
+                    }),
+                  },
+                });
+        const budget = Option.isSome(bots)
+          ? bots.value.assertBudget(input.run.threadId)
+          : Effect.void;
+        yield* Effect.andThen(shouldStart, Effect.andThen(budget, startTurn)).pipe(
           // Wait for acceptance so abandoned startup cannot leave a refresher
           // on the already-detached ingestion fiber.
           Effect.tap(() =>
@@ -2027,10 +2159,12 @@ export const layer: Layer.Layer<
                           },
                           openRunOwnedSubagents: openSubagents,
                           terminal: makeFailedTerminalEvent(
-                            makeProviderFailure({
-                              cause: Cause.squash(cause),
-                              class: Exit.isFailure(shouldStart) ? "unknown" : "provider_error",
-                            }),
+                            runFailure(
+                              makeProviderFailure({
+                                cause: Cause.squash(cause),
+                                class: Exit.isFailure(shouldStart) ? "unknown" : "provider_error",
+                              }),
+                            ),
                             latestItemOrdinal + 1,
                           ),
                           failureItemPersisted: false,

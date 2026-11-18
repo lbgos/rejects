@@ -3,6 +3,8 @@
 > For maintainers. Using T3 Code? See [docs/user](../user/).
 
 This document covers the unified release workflow for stable and nightly desktop releases.
+For this repository, only [npm publish](#0-npm-publish-cli) applies; the rest describes upstream
+T3 Code's `release.yml`.
 
 Beta is the product label, not a release channel or version suffix. Release channels
 remain stable and nightly. To ship 0.1.0 Beta, use `channel=stable` and
@@ -569,26 +571,26 @@ NSIS differential packaging remains enabled. A sidecar layout transition can
 produce a larger one-time download; subsequent small releases retain their
 blockmaps, with a 60 MB maximum for a representative sidecar-to-sidecar update.
 
-## 0) npm OIDC trusted publishing setup (CLI)
+## 0) npm publish (CLI)
 
-`build_bundle` builds the version-matched `t3.tgz` with `node scripts/build-npm-launcher.ts` and
-uploads it as the `npm-launcher` artifact. After the GitHub Release is published, `publish_cli`
-checks out only what it needs to set up the project's Node.js, downloads that exact upload by the
-artifact ID `build_bundle` outputs (never by name), checks the tarball version, and runs
-`npm publish --provenance` on it. That is the only package published per release.
+The npm package is `@lbgos/rejects`. Its `rejects` command downloads the server archive of the
+same version from this repository's GitHub Releases, so the release comes first:
 
-Checklist:
+1. Make the repository public. The launcher downloads `SHA256SUMS` and the archives without a
+   token, and gets a 404 from a private repository.
+2. Publish the GitHub Release `vX.Y.Z` on `lbgos/rejects` with a `t3-X.Y.Z-<platform>` archive
+   for every key in `packages/shared/src/cliRelease.ts` and their `SHA256SUMS`.
+3. Build the launcher: `node scripts/build-npm-launcher.ts --version X.Y.Z` writes
+   `npm-packages/rejects.tgz`.
+4. Publish it from a machine signed in to npm with publish rights on `@lbgos`:
+   `node apps/server/scripts/cli.ts publish --packages-dir npm-packages`.
+   `--dry-run` checks the tarball without publishing; `--tag nightly` sets the dist-tag.
 
-1. Confirm the npm org owns package `t3`.
-2. For `t3`, configure a Trusted Publisher in the npm package settings:
-   - Provider: GitHub Actions
-   - Repository: this repo
-   - Workflow file: `.github/workflows/release.yml`
-   - Environment (if used): match your npm trusted publishing config
-3. Ensure npm account and org policies allow trusted publishing for the package.
-4. Create release tag `vX.Y.Z` and push; the workflow publishes the GitHub Release and then the
-   launcher with npm dist-tag `latest`.
-5. Nightly runs publish with npm dist-tag `nightly`; preview runs do not publish.
+npm signs provenance only in supported CI such as GitHub Actions, so a publish from a
+maintainer's machine runs without `--provenance`. Once the package exists, configure a Trusted Publisher in the
+`@lbgos/rejects` npm package settings: provider GitHub Actions, repository `lbgos/rejects`, and
+the release workflow file. That workflow runs step 4 with `--provenance`. No workflow in this
+repository publishes, so every publish is manual until a release workflow exists.
 
 ## 1) Release validation and unsigned builds
 

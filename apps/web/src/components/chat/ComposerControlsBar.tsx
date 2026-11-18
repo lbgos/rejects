@@ -23,6 +23,7 @@ import { cn } from "~/lib/utils";
 import { resolveComposerTraitsInput } from "./composerProviderState";
 import { useApplyThreadModelPick } from "./useApplyThreadModelPick";
 import { useStableCallback } from "../../hooks/useStableCallback";
+import { RESTING_PROVIDER_ICON_CLASSNAME } from "./ProviderModelPicker";
 import {
   ComposerEffortColumn,
   ComposerPickerFooter,
@@ -68,6 +69,8 @@ export function ComposerControlsBar(props: {
   providerSetupInstanceId: ProviderInstanceId | undefined;
   onOpenProviderSetup: ChatComposerProps["onOpenProviderSetup"];
   providerCatalogPending: boolean;
+  pickerShowsThreadSelection: boolean;
+  botComposer: boolean;
   isSendBusy: boolean;
   multipleModelsEnabled: boolean;
   multipleModelSelections: ChatComposerProps["multipleModelSelections"];
@@ -112,6 +115,8 @@ export function ComposerControlsBar(props: {
     providerSetupInstanceId,
     onOpenProviderSetup,
     providerCatalogPending,
+    pickerShowsThreadSelection,
+    botComposer,
     isSendBusy,
     multipleModelsEnabled,
     multipleModelSelections,
@@ -180,6 +185,7 @@ export function ComposerControlsBar(props: {
         },
       ]
     : [];
+  const quietModelPicker = composerControlsCollapsed || botComposer;
   // Its own element, so typing (which rebuilds the controls around it) leaves it cached.
   const composerModelPicker = (
     <ComposerModelPicker
@@ -196,12 +202,12 @@ export function ComposerControlsBar(props: {
       selectedModelSelection={selectedModelSelection}
       onProviderModelSelect={onProviderModelSelect}
       activeInstanceId={
-        providerCatalogPending
+        pickerShowsThreadSelection
           ? (activeThreadModelSelection?.instanceId ?? selectedInstanceId)
           : selectedInstanceId
       }
       model={
-        providerCatalogPending
+        pickerShowsThreadSelection
           ? (activeThreadModelSelection?.model ?? selectedModelForPickerWithCustomFallback)
           : selectedModelForPickerWithCustomFallback
       }
@@ -210,11 +216,11 @@ export function ComposerControlsBar(props: {
       instanceEntries={providerInstanceEntries}
       keybindings={keybindings}
       modelOptionsByInstance={modelOptionsByInstance}
-      size={controlSize}
+      size={quietModelPicker ? "xs" : controlSize}
       triggerClassName={cn(
         "group/model-trigger",
         MODEL_TRIGGER_STATES,
-        composerControlsCollapsed ? "min-w-13 shrink text-xs!" : "min-w-13",
+        quietModelPicker ? "min-w-13 shrink text-xs!" : "min-w-13",
       )}
       triggerSuffix={effort.suffix}
       triggerDetail={effort.detail}
@@ -237,14 +243,20 @@ export function ComposerControlsBar(props: {
           ? "color-mix(in srgb, var(--chat-composer-glass-surface) var(--glass-opacity), transparent)"
           : "var(--contrast-input)"
       }
-      {...(modelPickerIconClassName
-        ? { activeProviderIconClassName: modelPickerIconClassName }
+      {...(modelPickerIconClassName || botComposer
+        ? {
+            activeProviderIconClassName: cn(
+              modelPickerIconClassName,
+              botComposer && RESTING_PROVIDER_ICON_CLASSNAME,
+            ),
+          }
         : {})}
       onOpenChange={onModelPickerOpenChange}
       getModelDisabledReason={getModelDisabledReason}
       onOpenProviderSetup={onOpenProviderSetup}
     />
   );
+  if (botComposer) return composerModelPicker;
   return showProviderUnavailable ? (
     <ComposerControl
       type="button"

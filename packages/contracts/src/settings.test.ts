@@ -326,34 +326,62 @@ describe("ClientSettings notifications", () => {
   });
 });
 
-describe("ClientSettings quit confirmation", () => {
-  it.each([
-    [true, "hold"],
-    [false, "direct"],
-  ] as const)("migrates the legacy %s value to %s", (legacyValue, mode) => {
-    const settings = decodeClientSettings({ confirmQuit: legacyValue });
+describe("ClientSettings retired desktop keys", () => {
+  it("still decodes stored settings that carry them", () => {
+    const settings = decodeClientSettings({
+      confirmQuit: "hold",
+      snapShotEnabled: true,
+      snapShotIncludeAccessibility: false,
+      snapShotShortcut: { kind: "both-shift-keys" },
+      snapShotPlaySound: false,
+      snapShotSound: "camera-shutter",
+      snapShotFlash: false,
+    });
 
-    expect(settings.confirmQuit).toBe(mode);
-    expect(encodeClientSettings(settings).confirmQuit).toBe(mode);
+    expect(settings.snapShotAnimations).toBe(true);
+    expect(encodeClientSettings(settings)).not.toHaveProperty("confirmQuit");
+  });
+});
+
+describe("provider instances for removed drivers", () => {
+  it("round-trips rows whose driver this build does not register", () => {
+    const stored = {
+      driver: "cursor",
+      displayName: "Cursor (retired)",
+      environment: [{ name: "CURSOR_API_KEY", value: "", sensitive: true, valueRedacted: true }],
+      enabled: false,
+      config: { binaryPath: "/opt/cursor/bin/cursor", model: "composer-2" },
+    };
+    const instanceId = ProviderInstanceId.make("cursor-main");
+    const decoded = decodeServerSettings({
+      providerInstances: { "cursor-main": stored, codex: { driver: "codex", enabled: true } },
+    });
+
+    expect(decoded.providerInstances[instanceId]).toEqual(stored);
+    expect(resolveProviderInstanceEnabled(decoded.providerInstances[instanceId]!)).toBe(false);
+
+    const encoded = encodeServerSettings(decoded);
+    expect(encoded.providerInstances?.[instanceId]).toEqual(stored);
+    expect(decodeServerSettings(encoded).providerInstances[instanceId]).toEqual(stored);
   });
 });
 
 describe("provider enabled defaults", () => {
   it("resolves instance enabled state with explicit false winning", () => {
-    const grok = ProviderDriverKind.make("grok");
+    const muse = ProviderDriverKind.make("muse");
     const codex = ProviderDriverKind.make("codex");
-    expect(resolveProviderInstanceEnabled({ driver: grok, config: {} })).toBe(false);
+    expect(resolveProviderInstanceEnabled({ driver: muse, config: {} })).toBe(false);
     expect(resolveProviderInstanceEnabled({ driver: codex, config: {} })).toBe(true);
     expect(
       resolveProviderInstanceEnabled({ driver: ProviderDriverKind.make("ollama"), config: {} }),
     ).toBe(true);
-    expect(resolveProviderInstanceEnabled({ driver: grok, enabled: true, config: {} })).toBe(true);
+    expect(resolveProviderInstanceEnabled({ driver: muse, enabled: true, config: {} })).toBe(true);
     expect(resolveProviderInstanceEnabled({ driver: codex, enabled: false, config: {} })).toBe(
       false,
     );
-    expect(resolveProviderInstanceEnabled({ driver: grok, config: { enabled: true } })).toBe(true);
+    expect(resolveProviderInstanceEnabled({ driver: muse, config: { enabled: true } })).toBe(true);
     expect(
-      resolveProviderInstanceEnabled({ driver: grok, enabled: true, config: { enabled: false } }),
+      resolveProviderInstanceEnabled({ driver: muse, enabled: true, config: { enabled: false } }),
     ).toBe(false);
     expect(
       resolveProviderInstanceEnabled({ driver: codex, enabled: false, config: { enabled: true } }),

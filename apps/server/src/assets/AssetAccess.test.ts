@@ -18,6 +18,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
@@ -43,6 +44,7 @@ import * as BuiltInDrivers from "../sourceControl/builtInDrivers.ts";
 import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
 import { sourceControlMediaResponse } from "./sourceControlMediaResponse.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { AgentSandbox } from "@t3tools/shared/AgentScope";
 
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof NodeFSP>();
@@ -323,6 +325,28 @@ describe("AssetAccess", () => {
         },
       }).pipe(Effect.flip);
       expect(directoryError._tag).toBe("AssetWorkspaceAssetNotFoundError");
+
+      const botFile = path.join(outside, "prices.xlsx");
+      yield* fs.writeFileString(botFile, "bot bytes");
+      const linked = yield* issueAssetUrl({
+        resource: {
+          _tag: "media-file",
+          threadId: ThreadId.make("bot"),
+          path: "/sandbox-home/shared/prices.xlsx",
+          disposition: "attachment",
+        },
+      }).pipe(
+        Effect.provideService(AgentSandbox, {
+          ...AgentSandbox.defaultValue(),
+          filePath: ({ threadId, path: named }) =>
+            Effect.succeed(
+              threadId === "bot" && named === "/sandbox-home/shared/prices.xlsx"
+                ? Option.some(botFile)
+                : Option.none(),
+            ),
+        }),
+      );
+      expect(linked.relativeUrl.endsWith("/prices.xlsx")).toBe(true);
     }).pipe(Effect.provide(layerTest)),
   );
 
@@ -1385,6 +1409,51 @@ describe("AssetAccess", () => {
       ).toMatchObject({ kind: "file", path: attachmentPath, download: true });
     }).pipe(Effect.provide(layerTest)),
   );
+
+  it.effect("downloads a bot-shared workbook and an image with their own name and type", () =>
+    Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      yield* fileSystem.makeDirectory(config.attachmentsDir, { recursive: true });
+      const xlsx = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+      for (const [id, extension, fileName, mimeType, disposition] of [
+        ["00000000-0000-4000-8000-000000000051-xlsx", "xlsx", "Q4 budget.xlsx", xlsx, undefined],
+        ["00000000-0000-4000-8000-000000000052", "png", "chart.png", "image/png", "attachment"],
+      ] as const) {
+        const attachmentId = `thread-1-${id}`;
+        yield* fileSystem.writeFile(
+          path.join(config.attachmentsDir, `${attachmentId}.${extension}`),
+          new Uint8Array([80, 75, 3, 4]),
+        );
+        const result = yield* issueAssetUrl({
+          resource: {
+            _tag: "attachment",
+            attachmentId,
+            fileName,
+            mimeType,
+            ...(disposition ? { disposition } : {}),
+          },
+        });
+        const suffix = result.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
+        const separatorIndex = suffix.indexOf("/");
+        const asset = yield* resolveAsset(
+          suffix.slice(0, separatorIndex),
+          suffix.slice(separatorIndex + 1),
+        );
+        if (asset?.kind !== "file") throw new Error("Expected an attachment file");
+        const response = HttpServerResponse.toWeb(yield* assetFileResponse(asset));
+        expect(response.headers.get("content-disposition")).toBe(
+          `attachment; filename="${fileName}"`,
+        );
+        expect(response.headers.get("content-type")).toBe(mimeType);
+        expect(new Uint8Array(yield* Effect.promise(() => response.arrayBuffer()))).toEqual(
+          new Uint8Array([80, 75, 3, 4]),
+        );
+      }
+    }).pipe(Effect.provide(layerTest)),
+  );
+
   it.effect("issues project favicon capabilities with a signed fallback", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

@@ -1,3 +1,4 @@
+import { APP_BASE_NAME } from "~/branding";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { TRIAGE_CLI_COMMAND } from "~/hooks/useStartTriage";
 
@@ -31,8 +32,8 @@ export function TriageDraftHero(props: {
             )}
           </TooltipTrigger>
           <TooltipPopup side="bottom">
-            The agent reads T3 Code's logs and source here, and asks before it applies a fix or
-            posts anything.
+            The agent reads {APP_BASE_NAME}'s logs and source here, and asks before it applies a fix
+            or posts anything.
           </TooltipPopup>
         </Tooltip>
         <span aria-hidden className="text-muted-foreground">

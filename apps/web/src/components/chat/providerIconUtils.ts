@@ -1,5 +1,6 @@
 import type { ProviderDriverKind } from "@t3tools/contracts";
 import { resolveModelShortName } from "@t3tools/client-runtime/provider-clients";
+import { formatModelSlugName } from "@t3tools/shared/model";
 
 export type ModelEsque = {
   slug: string;
@@ -41,4 +42,25 @@ export function getTriggerDisplayModelName(
 ): string {
   const shortName = resolveModelShortName(model, driverKind);
   return getDisplayModelName({ ...model, shortName }, { preferShortName: true });
+}
+
+// Brand spellings that capitalizing a slug word cannot produce.
+const SLUG_WORD_SPELLINGS: Readonly<Record<string, string>> = {
+  deepseek: "DeepSeek",
+  glm: "GLM",
+  minimax: "MiniMax",
+};
+
+export function formatUnlistedModelName(slug: string): string {
+  const name = slug.slice(slug.lastIndexOf("/") + 1);
+  const known = formatModelSlugName(name);
+  if (known !== name) return known;
+  const words = name.split("-").filter((word) => word !== "");
+  if (words.length === 0) return slug;
+  return words
+    .map(
+      (word) =>
+        SLUG_WORD_SPELLINGS[word.toLowerCase()] ?? word.charAt(0).toUpperCase() + word.slice(1),
+    )
+    .join(" ");
 }

@@ -928,8 +928,6 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
           providers: {
             codex: { binaryPath: "/opt/guard/bin/codex" },
             claudeAgent: { enabled: false },
-            cursor: { enabled: false },
-            grok: { enabled: false },
             opencode: { enabled: false },
           },
         }),
@@ -992,16 +990,16 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
       yield* fileSystem.writeFileString(
         serverConfig.settingsPath,
         JSON.stringify({
-          providers: { opencode: { serverUrl: "http://127.0.0.1:4096" }, cursor: {} },
+          providers: { opencode: { serverUrl: "http://127.0.0.1:4096" }, muse: {} },
           providerInstances: {
-            cursor_work: { driver: "cursor", config: {} },
+            muse_work: { driver: "muse", config: {} },
             opencode_unused: { driver: "opencode", config: {} },
           },
         }),
       );
       yield* recordProviderUsage("opencode");
-      yield* recordProviderUsage("grok", null);
-      yield* recordProviderUsage("cursor", "cursor_work");
+      yield* recordProviderUsage("muse", null);
+      yield* recordProviderUsage("muse", "muse_work");
 
       const settings = yield* serverSettings.getSettings;
 
@@ -1011,10 +1009,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
         config: { serverUrl: "http://127.0.0.1:4096" },
       });
 
-      assert.isTrue(settings.providerInstances[ProviderInstanceId.make("grok")]?.enabled);
-      assert.isTrue(settings.providerInstances[ProviderInstanceId.make("cursor_work")]?.enabled);
+      assert.isTrue(settings.providerInstances[ProviderInstanceId.make("muse_work")]?.enabled);
 
-      assert.isTrue(settings.providerInstances[ProviderInstanceId.make("cursor")]?.enabled);
+      assert.isTrue(settings.providerInstances[ProviderInstanceId.make("muse")]?.enabled);
       const unused = settings.providerInstances[ProviderInstanceId.make("opencode_unused")];
       assert.isDefined(unused);
       assert.isFalse(resolveProviderInstanceEnabled(unused));
@@ -1071,19 +1068,19 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
 
       const next = yield* serverSettings.updateSettings({
         providerInstances: {
-          [ProviderInstanceId.make("grok")]: {
-            driver: ProviderDriverKind.make("grok"),
+          [ProviderInstanceId.make("muse")]: {
+            driver: ProviderDriverKind.make("muse"),
             config: {},
           },
         },
       });
 
-      const grok = next.providerInstances[ProviderInstanceId.make("grok")];
-      assert.isDefined(grok);
-      assert.isFalse(resolveProviderInstanceEnabled(grok));
+      const muse = next.providerInstances[ProviderInstanceId.make("muse")];
+      assert.isDefined(muse);
+      assert.isFalse(resolveProviderInstanceEnabled(muse));
       const persisted = JSON.parse(yield* fileSystem.readFileString(serverConfig.settingsPath));
       assert.isUndefined(persisted.providers);
-      assert.isUndefined(persisted.providerInstances.grok.enabled);
+      assert.isUndefined(persisted.providerInstances.muse.enabled);
     }).pipe(Effect.provide(layerServerSettings())),
   );
 
@@ -2731,7 +2728,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
           })
           .pipe(Effect.flip);
         assert.equal(rejected.operation, "use-disallowed-provider");
-        assert.equal(rejected.message, "Example Corp's policy does not allow the Cursor provider.");
+        assert.equal(rejected.message, "Example Corp's policy does not allow the cursor provider.");
         // Switching it on for one project is enabling it too.
         const perProject = yield* service
           .updateSettings({

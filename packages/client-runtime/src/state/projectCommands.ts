@@ -109,8 +109,9 @@ export function createProjectEnvironmentAtoms<R, E>(
     execute: (input) =>
       fileMetadata.seedAfterRead(
         request(WS_METHODS.projectsReadFile, input),
+        // A bot chat's mapped answer is not the host path's metadata.
         (result, isCurrent) =>
-          result.exists === false
+          result.exists === false || input.threadId !== undefined
             ? Effect.void
             : fileMetadata.rememberFile(input.cwd, result, isCurrent),
       ),
@@ -154,7 +155,10 @@ export function createProjectEnvironmentAtoms<R, E>(
       execute: (input) =>
         fileMetadata.seedAfterRead(
           request(WS_METHODS.projectsListEntries, input),
-          (result, isCurrent) => fileMetadata.rememberEntries(input.cwd, result.entries, isCurrent),
+          (result, isCurrent) =>
+            input.threadId === undefined
+              ? fileMetadata.rememberEntries(input.cwd, result.entries, isCurrent)
+              : Effect.void,
         ),
     }),
     listIgnoredFiles: createEnvironmentRpcQueryAtomFamily(runtime, {

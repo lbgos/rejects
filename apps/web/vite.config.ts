@@ -283,7 +283,7 @@ function bootstrapTitlePlugin(): Plugin {
         hostedAppChannel: configuredHostedAppChannel,
         development,
       });
-      const title = formatAppDisplayName({ baseName: "T3 Code", stageLabel });
+      const title = formatAppDisplayName({ baseName: "rejects", stageLabel });
       return html.replace(/<title>[^<]*<\/title>/, `<title>${title}</title>`);
     },
   };
@@ -309,7 +309,7 @@ export default defineConfig(({ command }) => {
       tasks: {
         // A local tsbuildinfo is leftover build state, not a typecheck input.
         typecheck: {
-          command: "effect-tsgo tsrs --noEmit",
+          command: "effect-tsgo tsrs --noEmit --checkers 1",
           cache: { input: [{ auto: true }, "!*.tsbuildinfo"] },
         },
       },

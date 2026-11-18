@@ -442,7 +442,7 @@ export interface DesktopSshPasswordPromptRequest {
   expiresAt: string;
 }
 
-export const DesktopSshPasswordPromptCancelledType = "ssh-password-prompt-cancelled" as const;
+const DesktopSshPasswordPromptCancelledType = "ssh-password-prompt-cancelled" as const;
 
 export const DesktopSshPasswordPromptCancelledResultSchema = Schema.Struct({
   type: Schema.Literal(DesktopSshPasswordPromptCancelledType),
@@ -1344,6 +1344,7 @@ export type ConfirmDialogVariant = "default" | "destructive";
 
 export interface ConfirmDialogOptions {
   readonly variant?: ConfirmDialogVariant;
+  readonly confirmLabel?: string;
   /** Which button takes focus on open. Defaults to Cancel; destructive confirms always keep Cancel. */
   readonly initialFocus?: "confirm" | "cancel";
 }

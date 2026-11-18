@@ -3,8 +3,6 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { Atom } from "effect/reactivity";
 
-import { appAtomRegistry } from "~/rpc/atomRegistry";
-
 type DesktopCliCommandBridge = DesktopBridge["cliCommand"];
 
 class DesktopCliCommandUnavailableError extends Schema.TaggedError<DesktopCliCommandUnavailableError>()(
@@ -25,7 +23,7 @@ class DesktopCliCommandLoadError extends Schema.TaggedError<DesktopCliCommandLoa
   }
 }
 
-export function getDesktopCliCommandBridge(): DesktopCliCommandBridge | undefined {
+function getDesktopCliCommandBridge(): DesktopCliCommandBridge | undefined {
   return typeof window === "undefined" ? undefined : window.desktopBridge?.cliCommand;
 }
 
@@ -46,7 +44,3 @@ export const desktopCliCommandStateAtom = Atom.make(loadDesktopCliCommandState()
   Atom.swr({ staleTime: 30_000, revalidateOnMount: true }),
   Atom.withLabel("desktop:cli-command:load"),
 );
-
-export function refreshDesktopCliCommandState(): void {
-  appAtomRegistry.refresh(desktopCliCommandStateAtom);
-}

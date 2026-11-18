@@ -14,8 +14,7 @@ import {
 import * as Effect from "effect/Effect";
 
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
-import { CursorProviderCapabilitiesV2 } from "@t3tools/provider-cursor/testing";
-import { makeGrokAcpAdapterFlavor } from "@t3tools/provider-grok/testing";
+import { AcpProviderCapabilitiesV2 } from "@t3tools/provider-acp/server/adapter";
 import * as CommandPolicy from "./CommandPolicy.ts";
 
 const commandId = CommandId.make("command-policy-test");
@@ -212,33 +211,16 @@ it("queues a steer for a provider that cannot steer either way", () => {
   );
 });
 
-// regression: #27014 a Grok follow-up cancels the foreground tool the user wanted to finish
-it("does not steer a Grok follow-up by interrupting its running turn", () => {
-  const grok = makeGrokAcpAdapterFlavor(
-    { makeRuntime: () => Effect.never } as unknown as Parameters<
-      typeof makeGrokAcpAdapterFlavor
-    >[0],
-    "/home/ada",
-  ).capabilities;
-  const projection = dispatchProjection(grok);
-  for (const deliveryIntent of ["auto", "steer"] as const) {
-    const mode = CommandPolicy.resolveMessageDispatchIntent(
-      projection,
-      { type: "start_immediately" },
-      deliveryIntent,
-    );
-    assert.isFalse(
-      mode.type === "steer_active" && !grok.turns.supportsActiveSteering,
-      `${deliveryIntent} follow-up resolved to ${mode.type} by interrupt-restart`,
-    );
-  }
-});
-
-it.each(["/compact", " /LOGOUT "])("queues a steer sent while %s runs", (text) => {
+it.each([
+  { text: "/compact", id: userMessageId },
+  { text: " /LOGOUT ", id: userMessageId },
+  { text: "Reply with only: ok", id: "bots:keepwarm:run:1:1" },
+])("queues a steer sent while $text runs", ({ text, id }) => {
   const projection = dispatchProjection(baseCapabilities);
   const maintenance = {
     ...projection,
-    messages: [{ id: userMessageId, text, attachments: [] }],
+    runs: projection.runs.map((run) => ({ ...run, userMessageId: id })),
+    messages: [{ id, text, attachments: [] }],
   } as unknown as OrchestrationV2ThreadProjection;
   for (const deliveryIntent of ["auto", "steer"] as const) {
     assert.deepEqual(
@@ -270,28 +252,15 @@ it.each(["/compact", " /LOGOUT "])("queues a steer sent while %s runs", (text) =
 const layer = it.layer(CommandPolicy.layer);
 
 layer("CommandPolicyV2", (it) => {
-  it.effect("steers a live Cursor turn in place", () =>
-    Effect.gen(function* () {
-      const policy = yield* CommandPolicy.CommandPolicyV2;
-      const result = yield* policy.decideSteeringExecution({
-        commandId,
-        threadId,
-        providerInstanceId: ProviderInstanceId.make("cursor"),
-        capabilities: CursorProviderCapabilitiesV2,
-      });
-      assert.equal(result, "active_steering");
-    }),
-  );
-
-  it.effect("falls back to portable context when Cursor cannot fork natively", () =>
+  it.effect("falls back to portable context when the provider cannot fork natively", () =>
     Effect.gen(function* () {
       const policy = yield* CommandPolicy.CommandPolicyV2;
 
       const result = yield* policy.decideForkExecution({
         commandId,
         threadId,
-        providerInstanceId: ProviderInstanceId.make("cursor"),
-        capabilities: CursorProviderCapabilitiesV2,
+        providerInstanceId: ProviderInstanceId.make("acpRegistry"),
+        capabilities: AcpProviderCapabilitiesV2,
         sameProvider: true,
         hasStrongNativeSource: true,
         sourceRunStatus: "completed",

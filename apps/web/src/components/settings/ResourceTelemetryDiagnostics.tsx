@@ -46,6 +46,7 @@ import { ensureLocalApi } from "../../localApi";
 import { serverEnvironment } from "../../state/server";
 import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { useRelativeTimeState } from "../../hooks/useRelativeTimeState";
 import { Button } from "../ui/button";
 import { ScrollArea } from "../ui/scroll-area";
@@ -293,10 +294,79 @@ function MetricPair({ label, value }: { label: string; value: string }) {
   );
 }
 
-function HealthSource({ label, health }: { label: string; health: ResourceTelemetrySourceHealth }) {
-  const expectedInBrowser =
+function isDesktopOnlySource(health: ResourceTelemetrySourceHealth): boolean {
+  return (
     health.status === "unavailable" &&
-    Option.exists(health.lastError, (error) => error.includes("'web' mode"));
+    Option.exists(health.lastError, (error) => error.includes("'web' mode"))
+  );
+}
+
+const SOURCE_STATUS_LABELS: Record<ResourceTelemetrySourceStatus, string> = {
+  starting: "Starting",
+  healthy: "Healthy",
+  degraded: "Degraded",
+  unavailable: "Unavailable",
+  stopped: "Stopped",
+};
+
+function sourceStatusLabel(health: ResourceTelemetrySourceHealth): string {
+  return isDesktopOnlySource(health) ? "Desktop only" : SOURCE_STATUS_LABELS[health.status];
+}
+
+function PhoneMetricRow({
+  label,
+  value,
+  tone = "default",
+}: {
+  label: string;
+  value: ReactNode;
+  tone?: "default" | "warning" | "danger";
+}) {
+  return (
+    <div className="flex min-h-11 items-center justify-between gap-4 px-4 text-sm">
+      <span className="min-w-0 truncate text-foreground">{label}</span>
+      <span
+        className={cn(
+          "shrink-0 text-muted-foreground",
+          tone === "warning" && "text-warning-foreground",
+          tone === "danger" && "text-destructive",
+        )}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function PhoneMetricSection({
+  title,
+  headerAction,
+  footer,
+  children,
+}: {
+  title: string;
+  headerAction?: ReactNode;
+  footer?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div>
+      <SettingsSection title={title} headerAction={headerAction}>
+        {children}
+      </SettingsSection>
+      {footer ? <p className="px-4 pt-2 text-xs text-muted-foreground">{footer}</p> : null}
+    </div>
+  );
+}
+
+function PhoneRelativeTime({ value }: { value: DateTime.Utc | null }) {
+  const relative = useRelativeTimeState(value ? DateTime.formatIso(value) : null);
+  if (relative.status !== "relative") return "Waiting";
+  return relative.suffix ? `${relative.value} ${relative.suffix}` : relative.value;
+}
+
+function HealthSource({ label, health }: { label: string; health: ResourceTelemetrySourceHealth }) {
+  const expectedInBrowser = isDesktopOnlySource(health);
   return (
     <div className="flex items-start justify-between gap-4 border-t border-border/50 py-3 first:border-t-0">
       <div className="min-w-0">
@@ -819,6 +889,7 @@ function ResourceTelemetryDiagnosticsBody({
   environmentId: EnvironmentId | null;
 }) {
   const registry = useContext(RegistryContext);
+  const phone = useMediaQuery("max-md");
   const [windowMs, setWindowMs] = useState(15 * 60_000);
   const selectedWindow =
     HISTORY_WINDOWS.find((option) => option.windowMs === windowMs) ?? HISTORY_WINDOWS[1];
@@ -965,6 +1036,177 @@ function ResourceTelemetryDiagnosticsBody({
       snapshot.power.idle !== "unknown" ||
       snapshot.power.locked !== "unknown" ||
       snapshot.power.thermalState !== "unknown");
+  const refreshAction = (
+    <Button
+      size="icon-micro"
+      variant="ghost"
+      disabled={telemetry.isPending}
+      onClick={telemetry.refresh}
+      aria-label="Refresh resource telemetry"
+    >
+      <RefreshIcon size="xs" refreshing={telemetry.isPending} />
+    </Button>
+  );
+  const retryAction = collectorNeedsRetry ? (
+    <Button size="xs" variant="outline" disabled={isRetrying} onClick={retryCollector}>
+      <RefreshIcon size="xs" refreshing={isRetrying} />
+      Retry monitor
+    </Button>
+  ) : null;
+  const writeTone =
+    allT3 && allT3.ioWriteBytesPerSecond >= 10 * 1_024 * 1_024
+      ? "danger"
+      : allT3 && allT3.ioWriteBytesPerSecond >= 1_024 * 1_024
+        ? "warning"
+        : "default";
+
+  if (phone) {
+    return (
+      <>
+        <PhoneMetricSection
+          title="Resource monitor"
+          headerAction={refreshAction}
+          footer={
+            telemetry.error ? (
+              <span className="text-destructive">{telemetry.error}</span>
+            ) : (
+              `Live native counters for the server, providers, terminals, desktop processes, and the monitor itself.${
+                snapshot && snapshot.sampleIntervalMs > 0
+                  ? ` Sampling every ${formatSampleInterval(snapshot.sampleIntervalMs)}.`
+                  : ""
+              }`
+            )
+          }
+        >
+          {snapshot ? (
+            <PhoneMetricRow label="Monitor" value={sourceStatusLabel(snapshot.health.native)} />
+          ) : null}
+          <PhoneMetricRow
+            label="Updated"
+            value={<PhoneRelativeTime value={snapshot?.readAt ?? null} />}
+          />
+          <PhoneMetricRow
+            label="CPU"
+            value={allT3 ? `${allT3.currentCpuPercent.toFixed(1)}%` : "..."}
+          />
+          <PhoneMetricRow
+            label="Memory"
+            value={allT3 ? formatBytes(allT3.currentRssBytes) : "..."}
+          />
+          <PhoneMetricRow label="Processes" value={allT3 ? String(allT3.processCount) : "..."} />
+          <PhoneMetricRow
+            label="Reads"
+            value={allT3 ? formatRate(allT3.ioReadBytesPerSecond) : "..."}
+          />
+          <PhoneMetricRow
+            label="Writes"
+            value={allT3 ? formatRate(allT3.ioWriteBytesPerSecond) : "..."}
+            tone={writeTone}
+          />
+          <PhoneMetricRow
+            label="CPU speed limit"
+            value={
+              snapshot ? (speedLimit === null ? "Unknown" : `${speedLimit.toFixed(0)}%`) : "..."
+            }
+            tone={speedLimit !== null && speedLimit < 80 ? "warning" : "default"}
+          />
+        </PhoneMetricSection>
+
+        {snapshot ? (
+          <PhoneMetricSection title="Process groups" footer="CPU and resident memory per group.">
+            {(
+              [
+                ["Backend + agents", snapshot.groups.backend],
+                ["Desktop", snapshot.groups.electron],
+                ["Monitor overhead", snapshot.groups.monitor],
+              ] as const
+            ).map(([label, aggregate]) => (
+              <PhoneMetricRow
+                key={label}
+                label={label}
+                value={`${aggregate.currentCpuPercent.toFixed(1)}% · ${formatBytes(aggregate.currentRssBytes)}`}
+              />
+            ))}
+          </PhoneMetricSection>
+        ) : null}
+
+        <PhoneMetricSection
+          title="Host & collection"
+          headerAction={retryAction}
+          footer={
+            hasHostPowerSignal
+              ? undefined
+              : "Power, idle, lock, and thermal state come from the desktop app."
+          }
+        >
+          {hasHostPowerSignal && snapshot ? (
+            <>
+              <PhoneMetricRow
+                label="Power source"
+                value={booleanStateLabel(snapshot.power.onBattery, {
+                  true: "Battery",
+                  false: "External power",
+                })}
+              />
+              <PhoneMetricRow
+                label="Low power mode"
+                value={booleanStateLabel(snapshot.power.lowPowerMode, {
+                  true: "On",
+                  false: "Off",
+                })}
+              />
+              <PhoneMetricRow
+                label="Thermal state"
+                value={snapshot.power.thermalState}
+                tone={
+                  snapshot.power.thermalState === "serious" ||
+                  snapshot.power.thermalState === "critical"
+                    ? "danger"
+                    : "default"
+                }
+              />
+            </>
+          ) : null}
+          {snapshot ? (
+            <>
+              <PhoneMetricRow
+                label="Process monitor"
+                value={sourceStatusLabel(snapshot.health.native)}
+              />
+              <PhoneMetricRow
+                label="Desktop process"
+                value={sourceStatusLabel(snapshot.health.desktop)}
+              />
+              <PhoneMetricRow
+                label="Collection time"
+                value={formatDurationMicros(snapshot.health.collectionDurationMicros)}
+              />
+              <PhoneMetricRow
+                label="Inaccessible"
+                value={String(snapshot.health.inaccessibleProcessCount)}
+                tone={snapshot.health.inaccessibleProcessCount > 0 ? "warning" : "default"}
+              />
+              <PhoneMetricRow label="Restarts" value={String(snapshot.health.restartCount)} />
+            </>
+          ) : (
+            <PhoneMetricRow label="Collector" value="Waiting" />
+          )}
+        </PhoneMetricSection>
+
+        {snapshot && snapshot.processes.length > 0 ? (
+          <PhoneMetricSection title="Processes" footer="CPU and resident memory per process.">
+            {snapshot.processes.map((process) => (
+              <PhoneMetricRow
+                key={processIdentityKey(process)}
+                label={formatProcessName(process)}
+                value={`${process.cpuPercent.toFixed(1)}% · ${formatBytes(process.residentBytes)}`}
+              />
+            ))}
+          </PhoneMetricSection>
+        ) : null}
+      </>
+    );
+  }
 
   return (
     <>
@@ -978,19 +1220,7 @@ function ResourceTelemetryDiagnosticsBody({
             ) : null}
             <LastSampleLabel sampledAt={snapshot?.readAt ?? null} />
             <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    size="icon-micro"
-                    variant="ghost"
-                    disabled={telemetry.isPending}
-                    onClick={telemetry.refresh}
-                    aria-label="Refresh resource telemetry"
-                  >
-                    <RefreshIcon size="xs" refreshing={telemetry.isPending} />
-                  </Button>
-                }
-              />
+              <TooltipTrigger render={refreshAction} />
               <TooltipPopup side="top">Refresh telemetry snapshot</TooltipPopup>
             </Tooltip>
           </div>
@@ -1046,13 +1276,7 @@ function ResourceTelemetryDiagnosticsBody({
               label="Write throughput"
               value={allT3 ? formatRate(allT3.ioWriteBytesPerSecond) : "..."}
               detail={allT3 ? `${formatBytes(allT3.ioWriteBytes)} observed` : undefined}
-              tone={
-                allT3 && allT3.ioWriteBytesPerSecond >= 10 * 1_024 * 1_024
-                  ? "danger"
-                  : allT3 && allT3.ioWriteBytesPerSecond >= 1_024 * 1_024
-                    ? "warning"
-                    : "default"
-              }
+              tone={writeTone}
             />
             <IconStat
               icon={<GaugeIcon className="size-3.5" />}
@@ -1095,14 +1319,7 @@ function ResourceTelemetryDiagnosticsBody({
       <SettingsSection
         title="Host & collection"
         icon={<GaugeIcon className="size-4 text-muted-foreground" />}
-        headerAction={
-          collectorNeedsRetry ? (
-            <Button size="xs" variant="outline" disabled={isRetrying} onClick={retryCollector}>
-              <RefreshIcon size="xs" refreshing={isRetrying} />
-              Retry monitor
-            </Button>
-          ) : null
-        }
+        headerAction={retryAction}
       >
         <div className="grid overflow-hidden rounded-[inherit] md:grid-cols-2 md:divide-x md:divide-border/60">
           <div className="px-4 py-4 sm:px-5">

@@ -17,11 +17,13 @@ import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import { createModelSelection } from "@t3tools/shared/model";
 import { expect } from "vite-plus/test";
+import { CallPolicy } from "../policy/CallPolicy.ts";
 
 import { CodexSettings, ProviderInstanceId } from "@t3tools/contracts";
 
@@ -242,6 +244,90 @@ function withFakeCodexEnv<A, E, R>(
 }
 
 it.layer(layerCodexTextGenerationTest)("CodexTextGeneration", (it) => {
+  it.effect("decodes transformed structured schemas from their encoded representation", () =>
+    withFakeCodexEnv({ output: '{"count":"2"}' }, (generation) =>
+      Effect.gen(function* () {
+        const result = yield* generation.generateStructured({
+          cwd: process.cwd(),
+          prompt: "Count nodes",
+          operation: "extraction",
+          outputSchema: Schema.Struct({ count: Schema.NumberFromString }),
+          modelSelection: DEFAULT_TEST_MODEL_SELECTION,
+        });
+        expect(result).toEqual({ count: 2 });
+      }),
+    ),
+  );
+
+  it.effect("decodes nullable placeholders for optional keys", () =>
+    withFakeCodexEnv({ output: '{"name":"mass","aliases":null}' }, (generation) =>
+      Effect.gen(function* () {
+        const result = yield* generation.generateStructured({
+          cwd: process.cwd(),
+          prompt: "Extract",
+          operation: "extraction",
+          outputSchema: Schema.Struct({
+            name: Schema.String,
+            aliases: Schema.optionalKey(Schema.Array(Schema.String)),
+          }),
+          modelSelection: DEFAULT_TEST_MODEL_SELECTION,
+        });
+        expect(result).toEqual({ name: "mass" });
+      }),
+    ),
+  );
+
+  it.effect("refuses structured generation if configured MCP servers cannot be disabled", () =>
+    withFakeCodexEnv({ output: '{"count":2}', mcpServers: 2 }, (generation) =>
+      Effect.gen(function* () {
+        const error = yield* generation
+          .generateStructured({
+            cwd: process.cwd(),
+            prompt: "Count nodes",
+            operation: "extraction",
+            outputSchema: Schema.Struct({ count: Schema.Int }),
+            modelSelection: DEFAULT_TEST_MODEL_SELECTION,
+          })
+          .pipe(Effect.flip);
+        expect(error.detail).toContain("Could not disable configured MCP servers");
+      }),
+    ),
+  );
+
+  it.effect("generates schema-decoded structured output in a read-only sandbox", () =>
+    withFakeCodexEnv(
+      { output: '{"count":2}', requireArg: "-s read-only", stdinMustContain: '"count"' },
+      (generation) =>
+        Effect.gen(function* () {
+          const result = yield* generation.generateStructured({
+            cwd: process.cwd(),
+            prompt: "Count nodes",
+            operation: "extraction",
+            outputSchema: Schema.Struct({ count: Schema.Int }),
+            modelSelection: DEFAULT_TEST_MODEL_SELECTION,
+          });
+          expect(result).toEqual({ count: 2 });
+        }),
+    ),
+  );
+  it.effect("rejects structured replies that violate the output schema", () =>
+    withFakeCodexEnv({ output: '{"count":"two"}' }, (generation) =>
+      Effect.gen(function* () {
+        const error = yield* generation
+          .generateStructured({
+            cwd: process.cwd(),
+            prompt: "Count nodes",
+            operation: "extraction",
+            outputSchema: Schema.Struct({ count: Schema.Int }),
+            modelSelection: DEFAULT_TEST_MODEL_SELECTION,
+          })
+          .pipe(Effect.flip);
+        expect(error.operation).toBe("extraction");
+        expect(error.detail).toContain("invalid structured output");
+      }),
+    ),
+  );
+
   it.effect.each(["exec", "mcp list"] as const)(
     "kills a stalled %s CLI when its request is interrupted",
     (command) =>
@@ -625,7 +711,10 @@ const PREFLIGHT_PRIMARY_STATES = [
   "model cannot generate text",
 ] as const;
 
-it.effect.each(PREFLIGHT_PRIMARY_STATES)("text generation preflight: %s", (primaryState) =>
+it.effect.each([
+  ...PREFLIGHT_PRIMARY_STATES.map((primaryState) => ({ primaryState, refusing: false })),
+  { primaryState: "exhausted" as const, refusing: true },
+])("text generation preflight: $primaryState refusing=$refusing", ({ primaryState, refusing }) =>
   Effect.gen(function* () {
     const primary = ProviderInstanceId.make("codex");
     const fallback = ProviderInstanceId.make("claude_work");
@@ -701,6 +790,7 @@ it.effect.each(PREFLIGHT_PRIMARY_STATES)("text generation preflight: %s", (prima
         snapshot: { getSnapshot: Effect.succeed(snapshot) } as ProviderInstance["snapshot"],
         orchestrationAdapter: {} as ProviderInstance["orchestrationAdapter"],
         textGeneration: TextGeneration.TextGeneration.of({
+          generateStructured: () => Effect.die("unused"),
           generateCommitMessage: () => Effect.die("unused"),
           generatePrContent: () => Effect.die("unused"),
           generateBranchName: () => Effect.die("unused"),
@@ -746,15 +836,30 @@ it.effect.each(PREFLIGHT_PRIMARY_STATES)("text generation preflight: %s", (prima
         ),
       ),
     );
-    expect(
-      yield* service.generateThreadTitle({
+    const refusal = "Zero data retention is on, so chat-model (claudeAgent) was not called.";
+    const generated = yield* service
+      .generateThreadTitle({
         cwd: "/tmp",
         message: "hello",
         linkedContext: "",
         modelSelection: selection,
         projectId,
-      }),
-    ).toEqual({ title: "Generated title" });
+      })
+      .pipe(
+        Effect.provideService(CallPolicy, {
+          ...CallPolicy.defaultValue(),
+          model: () => Effect.succeed(refusing ? Option.some(refusal) : Option.none()),
+        }),
+        Effect.result,
+      );
+    if (refusing) {
+      expect(generated._tag === "Failure" ? generated.failure.detail : undefined).toBe(refusal);
+      expect(calls).toEqual([]);
+      return;
+    }
+    expect(generated._tag === "Success" ? generated.success : undefined).toEqual({
+      title: "Generated title",
+    });
     expect(calls).toEqual([
       primaryState === "ready" ||
       primaryState === "pending" ||
@@ -796,6 +901,7 @@ it.effect(
         } as ProviderInstance["snapshot"],
         orchestrationAdapter: {} as ProviderInstance["orchestrationAdapter"],
         textGeneration: TextGeneration.TextGeneration.of({
+          generateStructured: () => Effect.die("unused"),
           generateCommitMessage: () => Effect.die("unused"),
           generatePrContent: () => Effect.die("unused"),
           generateBranchName: () => Effect.die("unused"),

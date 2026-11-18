@@ -16,7 +16,6 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import packageJson from "../../package.json" with { type: "json" };
 import * as ServerConfig from "../config.ts";
-import * as DesktopAppUpdate from "../desktopUpdate/DesktopAppUpdate.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as ServiceLauncherClient from "./serviceLauncherClient.ts";
@@ -24,7 +23,7 @@ import { SERVICE_LAUNCHER_PROTOCOL } from "./serviceProtocol.ts";
 import * as ServerSelfUpdate from "./selfUpdate.ts";
 
 interface HarnessOptions {
-  readonly mode?: "web" | "desktop";
+  readonly mode?: "web";
   readonly managed?: boolean;
   readonly launcherProtocol?: 3 | typeof SERVICE_LAUNCHER_PROTOCOL;
   readonly preflight?: "ready" | "blocked";
@@ -33,7 +32,6 @@ interface HarnessOptions {
   readonly beforeDownload?: Effect.Effect<void>;
   readonly httpClient?: HttpClient.HttpClient;
   readonly requestUpdate?: ServiceLauncherClient.ServiceLauncherClient["Service"]["requestUpdate"];
-  readonly desktopAppUpdate?: DesktopAppUpdate.DesktopAppUpdate["Service"];
   readonly policy?: ManagedPolicyDocument;
 }
 
@@ -154,13 +152,6 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
     Effect.provideService(ProcessRunner.ProcessRunner, runner),
     Effect.provideService(ServiceLauncherClient.ServiceLauncherClient, launcher),
     Effect.provideService(
-      DesktopAppUpdate.DesktopAppUpdate,
-      options.desktopAppUpdate ?? {
-        available: false,
-        run: () => Effect.die("unexpected desktop app update run"),
-      },
-    ),
-    Effect.provideService(
       HttpClient.HttpClient,
       options.httpClient ?? releaseHttpClient(order, urls, options.beforeDownload),
     ),
@@ -223,35 +214,21 @@ it.layer(NodeServices.layer)("server self update", (it) => {
   // regression: #34502 a remote update never replaces the launcher, so it can be older than the server
   it.effect("names its launcher's protocol to the staged preflight, not its own", () =>
     Effect.gen(function* () {
-      const { selfUpdate, preflightProtocols, baseDir } = yield* makeHarness({
-        launcherProtocol: 3,
-      });
+      const { selfUpdate, preflightProtocols } = yield* makeHarness({ launcherProtocol: 3 });
       yield* TestClock.setTime(5_000);
       expect((yield* selfUpdate.update({ targetVersion: "1.1.0" })).updateId).toBe("launcher-id");
       expect(preflightProtocols).toEqual(["3"]);
-      // That launcher holds no lock between its servers; SSH launches wait on this marker instead.
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      expect(
-        JSON.parse(
-          yield* fs.readFileString(path.join(baseDir, "runtime", "desktop-update-in-progress")),
-        ),
-      ).toEqual({ startedAt: 5_000, expiresAt: 65_000 });
     }),
   );
 
   // regression: #5181 make remote updates rollback-safe
-  it.effect("rejects invalid versions and desktop-managed servers before staging", () =>
+  it.effect("rejects invalid versions before staging", () =>
     Effect.gen(function* () {
       const web = yield* makeHarness();
       expect(
         (yield* web.selfUpdate.update({ targetVersion: "latest" }).pipe(Effect.flip)).reason,
       ).toBe("'latest' is not an exact t3 version.");
-      const desktop = yield* makeHarness({ mode: "desktop" });
-      expect(
-        (yield* desktop.selfUpdate.update({ targetVersion: "1.1.0" }).pipe(Effect.flip)).reason,
-      ).toContain("desktop app");
-      expect([...web.order, ...desktop.order]).toEqual([]);
+      expect(web.order).toEqual([]);
     }),
   );
 
@@ -263,21 +240,10 @@ it.layer(NodeServices.layer)("server self update", (it) => {
         limits: { updates: { mode: "off" } },
       };
       const service = yield* makeHarness({ policy });
-      const desktop = yield* makeHarness({
-        mode: "desktop",
-        policy,
-        desktopAppUpdate: {
-          available: true,
-          run: () => Effect.die("unexpected desktop app update run"),
-          commit: () => Effect.never,
-        },
-      });
-      for (const harness of [service, desktop]) {
-        expect(
-          (yield* harness.selfUpdate.update({ targetVersion: "1.1.0" }).pipe(Effect.flip)).reason,
-        ).toBe("Example Corp manages T3 Code updates.");
-      }
-      expect([...service.order, ...desktop.order]).toEqual([]);
+      expect(
+        (yield* service.selfUpdate.update({ targetVersion: "1.1.0" }).pipe(Effect.flip)).reason,
+      ).toBe("Example Corp manages rejects updates.");
+      expect(service.order).toEqual([]);
     }),
   );
 
@@ -299,7 +265,7 @@ it.layer(NodeServices.layer)("server self update", (it) => {
       expect(
         (yield* selfUpdate.update({ targetVersion: "1.2.0-nightly.20261028.1" }).pipe(Effect.flip))
           .reason,
-      ).toBe("Example Corp manages T3 Code updates. Only stable releases can be installed.");
+      ).toBe("Example Corp manages rejects updates. Only stable releases can be installed.");
       expect(order).toEqual([]);
       // The mirror lists only 1.1.0's archive.
       expect((yield* selfUpdate.update({ targetVersion: "1.2.0" }).pipe(Effect.flip)).reason).toBe(
@@ -310,30 +276,6 @@ it.layer(NodeServices.layer)("server self update", (it) => {
       expect(urls.length).toBeGreaterThan(0);
       for (const url of urls)
         expect(url).toMatch(/^https:\/\/updates\.example\.com\/t3code\/v1\.[12]\.0\//);
-    }),
-  );
-
-  it.effect("delegates desktop-managed updates to the desktop app when available", () =>
-    Effect.gen(function* () {
-      const stages: string[] = [];
-      const { selfUpdate, order } = yield* makeHarness({
-        mode: "desktop",
-        desktopAppUpdate: {
-          available: true,
-          run: (reportProgress) =>
-            reportProgress("downloading").pipe(
-              Effect.andThen(reportProgress("installing")),
-              Effect.as({ targetVersion: "1.2.0", method: "desktop-app" as const }),
-            ),
-          commit: () => Effect.never,
-        },
-      });
-      const result = yield* selfUpdate.update({ targetVersion: "1.1.0" }, (stage) =>
-        Effect.sync(() => void stages.push(stage)),
-      );
-      expect(result).toEqual({ targetVersion: "1.2.0", method: "desktop-app" });
-      expect(stages).toEqual(["downloading", "installing"]);
-      expect(order).toEqual([]);
     }),
   );
 

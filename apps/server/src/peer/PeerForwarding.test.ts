@@ -1,9 +1,11 @@
+import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import * as DocumentText from "../provider/DocumentText.ts";
 import { NodeHttpServer } from "@effect/platform-node";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   EnvironmentId,
+  OrchestratorMcpFailure,
   type OrchestrationV2Run,
   type OrchestrationV2ThreadShell,
   type SourceControlCloneRepositoryInput,
@@ -247,7 +249,14 @@ const serveBox = (seen: Ref.Ref<Seen>, linkSession: Ref.Ref<string>) =>
       Layer.provide(Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({})),
       Layer.provide(Layer.mock(ScheduledTaskService.ScheduledTaskService)({})),
       Layer.provide(Layer.mock(ProjectCloneTracker.ProjectCloneTracker)({})),
-      Layer.provide(Layer.mock(SecretRequests.SecretRequests)({})),
+      Layer.provide(
+        Layer.mergeAll(
+          Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({
+            getInstance: () => Effect.undefined,
+          }),
+          Layer.mock(SecretRequests.SecretRequests)({}),
+        ),
+      ),
       Layer.provide(ServerSettings.layerTest()),
       Layer.provide(Layer.mock(PeerForwarding.PeerForwarding)({})),
       Layer.provide(Layer.mock(RemoteDelegation.RemoteDelegation)({})),
@@ -273,106 +282,111 @@ const mcpClient = McpSchema.McpServerClient.of({
  * Environment A: its own orchestrator toolkit with forwarding, and a thread
  * caller whose modes the test picks. Its local threads never matter here.
  */
-const makeLaptop = Effect.gen(function* () {
-  const linking = yield* layerLinkingEnvironment(laptop).pipe(Layer.build);
-  const layerHere = Layer.mergeAll(
-    McpHttpServer.layerOrchestratorToolkit,
-    McpHttpServer.layerProjectRegistration,
-    McpHttpServer.layerThreadToolkit,
-  ).pipe(
-    Layer.provide(DocumentText.layer.pipe(Layer.provideMerge(NodeServices.layer))),
-    Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
-    Layer.provide(Layer.mock(ThreadSearch.ThreadSearch)({})),
-    Layer.provide(Layer.mock(ThreadLaunch.ThreadLaunchService)({})),
-    Layer.provide(
-      Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/projects" }),
-    ),
-    Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
-    Layer.provide(Layer.mock(SourceControlRepositoryService.SourceControlRepositoryService)({})),
-    Layer.provide(
-      ServerConfig.layerTest(process.cwd(), { prefix: "t3-peer-forwarding-laptop-" }).pipe(
-        Layer.provide(NodeServices.layer),
+const laptopWith = (
+  callGuard: Layer.Layer<PeerForwarding.ForwardedCallGuard> | Layer.Layer<never> = Layer.empty,
+) =>
+  Effect.gen(function* () {
+    const linking = yield* layerLinkingEnvironment(laptop).pipe(Layer.build);
+    const layerHere = Layer.mergeAll(
+      McpHttpServer.layerOrchestratorToolkit,
+      McpHttpServer.layerProjectRegistration,
+      McpHttpServer.layerThreadToolkit,
+    ).pipe(
+      Layer.provide(DocumentText.layer.pipe(Layer.provideMerge(NodeServices.layer))),
+      Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
+      Layer.provide(Layer.mock(ThreadSearch.ThreadSearch)({})),
+      Layer.provide(Layer.mock(ThreadLaunch.ThreadLaunchService)({})),
+      Layer.provide(
+        Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/projects" }),
       ),
-    ),
-    Layer.provide(NodeServices.layer),
-    Layer.provide(PeerForwarding.layer),
-    Layer.provide(Layer.succeedContext(linking)),
-    Layer.provide(NodeCrypto.layer),
-    Layer.provideMerge(
-      Layer.mock(ThreadManagement.ThreadManagementService)({
-        getThreadShell: (threadId) =>
-          Effect.succeed(
-            threadId === ThreadId.make("thread:laptop-from-desk")
-              ? {
-                  ...liveThreadShell(threadId, { runtimeMode: "full-access" }),
-                  // Work another environment's link started on this laptop.
-                  linkOrigin: { sessionId: "session:desk", label: "T3 Code · Desk" },
-                }
-              : liveThreadShell(
-                  threadId,
-                  threadId === ThreadId.make("thread:laptop-plan")
-                    ? { runtimeMode: "full-access", interactionMode: "plan" }
-                    : { runtimeMode: "full-access" },
-                ),
-          ),
-        getProjectThreadRecords: ({ threadId }) =>
-          Effect.succeed({
-            thread: liveThreadShell(threadId, { runtimeMode: "full-access" }),
-          } as never),
-      }),
-    ),
-    Layer.provide(
-      Layer.mergeAll(
-        Layer.mock(ProviderRegistry.ProviderRegistry)({}),
-        Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({}),
-        Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
-        Layer.mock(ProjectService.ProjectService)({}),
-        Layer.mock(ProjectCloneTracker.ProjectCloneTracker)({}),
-        Layer.mock(SecretRequests.SecretRequests)({}),
-        ServerSettings.layerTest(),
-        // No thread here delegated to the box, so a send there is no follow-up.
-        Layer.mock(RemoteDelegation.RemoteDelegation)({
-          followUp: (_scope, _environmentId, _request, sent) => Effect.succeed(sent),
-        }),
-        Layer.mock(PeerLinkRequests.PeerLinkRequests)({}),
-      ),
-    ),
-    Layer.fresh,
-  );
-  const here = yield* Layer.build(layerHere);
-  const server = Context.get(here, McpServer.McpServer);
-  const scopeOf = (
-    caller: string,
-    capabilities: ReadonlySet<McpInvocationContext.McpCapability> = new Set(["orchestration"]),
-  ): McpInvocationContext.McpInvocationScope => ({
-    environmentId: laptop.environmentId,
-    requestNamespace: `provider-session:${caller}`,
-    thread: {
-      threadId: ThreadId.make(caller),
-      providerSessionId: `provider-session:${caller}`,
-      providerInstanceId: ProviderInstanceId.make("codex"),
-    },
-    client: undefined,
-    capabilities,
-    issuedAt: 1,
-  });
-  const call = (
-    caller: string,
-    name: string,
-    args: Record<string, unknown>,
-    capabilities?: ReadonlySet<McpInvocationContext.McpCapability>,
-  ) =>
-    server
-      .callTool({ name, arguments: args })
-      .pipe(
-        Effect.provideService(
-          McpInvocationContext.McpInvocationContext,
-          scopeOf(caller, capabilities),
+      Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
+      Layer.provide(Layer.mock(SourceControlRepositoryService.SourceControlRepositoryService)({})),
+      Layer.provide(
+        ServerConfig.layerTest(process.cwd(), { prefix: "t3-peer-forwarding-laptop-" }).pipe(
+          Layer.provide(NodeServices.layer),
         ),
-        Effect.provideService(McpSchema.McpServerClient, mcpClient),
-      );
-  return { links: Context.get(linking, PeerLinks.PeerLinks), call };
-});
+      ),
+      Layer.provide(NodeServices.layer),
+      Layer.provide(PeerForwarding.layer.pipe(Layer.provide(callGuard))),
+      Layer.provide(Layer.succeedContext(linking)),
+      Layer.provide(NodeCrypto.layer),
+      Layer.provideMerge(
+        Layer.mock(ThreadManagement.ThreadManagementService)({
+          getThreadShell: (threadId) =>
+            Effect.succeed(
+              threadId === ThreadId.make("thread:laptop-from-desk")
+                ? {
+                    ...liveThreadShell(threadId, { runtimeMode: "full-access" }),
+                    linkOrigin: { sessionId: "session:desk", label: "T3 Code · Desk" },
+                  }
+                : liveThreadShell(
+                    threadId,
+                    threadId === ThreadId.make("thread:laptop-plan")
+                      ? { runtimeMode: "full-access", interactionMode: "plan" }
+                      : { runtimeMode: "full-access" },
+                  ),
+            ),
+          getProjectThreadRecords: ({ threadId }) =>
+            Effect.succeed({
+              thread: liveThreadShell(threadId, { runtimeMode: "full-access" }),
+            } as never),
+        }),
+      ),
+      Layer.provide(
+        Layer.mergeAll(
+          Layer.mock(ProviderRegistry.ProviderRegistry)({}),
+          Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({}),
+          Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
+          Layer.mock(ProjectService.ProjectService)({}),
+          Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({
+            getInstance: () => Effect.undefined,
+          }),
+          Layer.mock(ProjectCloneTracker.ProjectCloneTracker)({}),
+          Layer.mock(SecretRequests.SecretRequests)({}),
+          ServerSettings.layerTest(),
+          Layer.mock(RemoteDelegation.RemoteDelegation)({
+            followUp: (_scope, _environmentId, _request, sent) => Effect.succeed(sent),
+          }),
+          Layer.mock(PeerLinkRequests.PeerLinkRequests)({}),
+        ),
+      ),
+      Layer.fresh,
+    );
+    const here = yield* Layer.build(layerHere);
+    const server = Context.get(here, McpServer.McpServer);
+    const scopeOf = (
+      caller: string,
+      capabilities: ReadonlySet<McpInvocationContext.McpCapability> = new Set(["orchestration"]),
+    ): McpInvocationContext.McpInvocationScope => ({
+      environmentId: laptop.environmentId,
+      requestNamespace: `provider-session:${caller}`,
+      thread: {
+        threadId: ThreadId.make(caller),
+        providerSessionId: `provider-session:${caller}`,
+        providerInstanceId: ProviderInstanceId.make("codex"),
+      },
+      client: undefined,
+      capabilities,
+      issuedAt: 1,
+    });
+    const call = (
+      caller: string,
+      name: string,
+      args: Record<string, unknown>,
+      capabilities?: ReadonlySet<McpInvocationContext.McpCapability>,
+    ) =>
+      server
+        .callTool({ name, arguments: args })
+        .pipe(
+          Effect.provideService(
+            McpInvocationContext.McpInvocationContext,
+            scopeOf(caller, capabilities),
+          ),
+          Effect.provideService(McpSchema.McpServerClient, mcpClient),
+        );
+    return { links: Context.get(linking, PeerLinks.PeerLinks), call };
+  });
+const makeLaptop = laptopWith();
 
 const failureOf = (result: McpSchema.CallToolResult) => {
   const text = result.content[0];
@@ -713,6 +727,64 @@ it.effect("refuses what a linked environment cannot take before anything leaves"
         expect(failureOf(relayed), name).toMatchObject({ code: "capability_denied" });
       }
       expect(yield* Ref.get(b.bearers)).toEqual([]);
+    }),
+  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+);
+
+it.effect("holds any call this environment's guard refuses before it leaves", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const seen = yield* Ref.make<Seen>(nothingSeen);
+      const linkSession = yield* Ref.make("");
+      const b = yield* serveBox(seen, linkSession);
+      const checked: Array<string> = [];
+      const a = yield* laptopWith(
+        Layer.succeed(PeerForwarding.ForwardedCallGuard, {
+          check: (scope, toolName) =>
+            Effect.sync(() => checked.push(`${scope.thread?.threadId} ${toolName}`)).pipe(
+              Effect.andThen(
+                scope.thread?.threadId === ThreadId.make("thread:laptop-bot")
+                  ? Effect.fail(
+                      new OrchestratorMcpFailure({ code: "capability_denied", message: "No." }),
+                    )
+                  : Effect.void,
+              ),
+            ),
+        }),
+      );
+      yield* linkTo(a.links, b, "auto");
+      yield* Ref.set(linkSession, (yield* b.linkedSessions)[0]!.sessionId);
+      yield* Ref.set(b.bearers, []);
+
+      for (const [name, args] of [
+        ["t3_thread_list", { environmentId: box.environmentId, projectId: boxProject }],
+        [
+          "t3_thread_send",
+          { environmentId: box.environmentId, threadId: boxThread, message: "Carry on there." },
+        ],
+        ["t3_thread_read", { environmentId: box.environmentId, threadId: boxThread }],
+        ["t3_thread_wait", { environmentId: box.environmentId, threadId: boxThread }],
+      ] as const) {
+        const refused = yield* a.call("thread:laptop-bot", name, args);
+        expect(failureOf(refused), name).toMatchObject({
+          code: "capability_denied",
+          message: "No.",
+        });
+      }
+      expect(yield* Ref.get(b.bearers)).toEqual([]);
+
+      const read = yield* a.call("thread:laptop-full", "t3_thread_list", {
+        environmentId: box.environmentId,
+        projectId: boxProject,
+      });
+      expect(read.isError).toBe(false);
+      expect(checked).toEqual([
+        "thread:laptop-bot t3_thread_list",
+        "thread:laptop-bot t3_thread_send",
+        "thread:laptop-bot t3_thread_read",
+        "thread:laptop-bot t3_thread_wait",
+        "thread:laptop-full t3_thread_list",
+      ]);
     }),
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );

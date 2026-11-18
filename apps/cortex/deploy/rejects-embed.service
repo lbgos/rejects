@@ -1,0 +1,28 @@
+[Unit]
+Description=Embeddings for rejects bot memory (Cortex's multilingual-e5-small, loopback only)
+After=network.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+WorkingDirectory=/opt/rejects/apps/cortex
+# The model is copied here once from Cortex's cache; the unit cannot reach the network to fetch it.
+CacheDirectory=rejects-embed
+Environment=EMBED_HOST=127.0.0.1 EMBED_PORT=3982 EMBED_MODEL_CACHE=/var/cache/rejects-embed/models
+ExecStart=/opt/node/bin/node /opt/rejects/apps/cortex/src/embed-serve.ts
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+IPAddressDeny=any
+IPAddressAllow=localhost
+MemoryMax=700M
+MemorySwapMax=0
+CPUQuota=100%
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

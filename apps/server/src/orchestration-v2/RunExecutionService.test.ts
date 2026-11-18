@@ -3009,6 +3009,29 @@ it.effect("refreshes pull requests after a provider stream exits with an error",
   }),
 );
 
+it.effect("says a compaction whose stream failed left the conversation unchanged", () =>
+  Effect.gen(function* () {
+    const { written } = yield* captureRootRunTermination({
+      key: "compaction:stream-error",
+      messageText: "/compact",
+      shouldFinalizeRun: () => Effect.succeed(true),
+      events: () =>
+        Stream.fail(
+          new ProviderAdapter.ProviderAdapterEventStreamError({
+            driver,
+            providerSessionId: ProviderSessionId.make("session:compaction"),
+            cause: "Provider session released: idle_timeout.",
+          }),
+        ),
+    });
+    const error = written.find((item) => item.type === "error");
+    assert.match(
+      error?.failure.message ?? "",
+      /^Compaction did not finish; the conversation is unchanged\. The provider event stream closed unexpectedly/,
+    );
+  }),
+);
+
 it.effect("records a provider's input rejection at turn start in the terminal error", () =>
   Effect.gen(function* () {
     const rejection = "goal objective must be at most 4000 characters";
@@ -3042,6 +3065,7 @@ it.effect("tells the user why /compact failed on a provider without compaction",
   Effect.gen(function* () {
     const { written } = yield* captureRootRunTermination({
       key: "start-failure:compact-unsupported",
+      compacts: false,
       shouldFinalizeRun: () => Effect.succeed(true),
       events: () => Stream.never,
       afterStart: (closed) => Deferred.succeed(closed, undefined),
@@ -3531,6 +3555,7 @@ function captureRootRunTermination(input: {
   readonly startTurn?: ProviderAdapter.ProviderAdapterV2SessionRuntime["startTurn"];
   readonly interruptTurn?: ProviderAdapter.ProviderAdapterV2SessionRuntime["interruptTurn"];
   readonly messageText?: string;
+  readonly compacts?: boolean;
   readonly initialProviderTurnId?: ProviderTurnId | null;
   readonly onStartFailure?: (
     error: RunExecutionService.RunExecutionServiceV2Error,
@@ -3677,6 +3702,9 @@ function captureRootRunTermination(input: {
             ),
           }),
           startTurn: input.startTurn ?? (() => Effect.void),
+          ...(input.compacts === false
+            ? {}
+            : { compactThread: input.startTurn ?? (() => Effect.void) }),
           interruptTurn: input.interruptTurn ?? (() => Effect.void),
           hasPendingBackgroundWorkForThread: input.hasPendingBackgroundWorkForThread,
         } as unknown as ProviderAdapter.ProviderAdapterV2SessionRuntime,

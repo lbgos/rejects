@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
+import { CLI_COMMAND_NAME } from "@t3tools/shared/cliRelease";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as Sink from "effect/Sink";
@@ -83,7 +84,7 @@ describe("diagnoseLaunchFailure", () => {
       expect(error).toBeInstanceOf(PreviewBrowserHost.PreviewBrowserRootError);
       expect(error?.message).toContain("T3 server is running as root");
       expect(error?.message).toContain("T3 server's environment and restart the server");
-      expect(error?.message).toContain("T3CODE_SERVER_BROWSER_SANDBOX=0 t3 serve");
+      expect(error?.message).toContain(`T3CODE_SERVER_BROWSER_SANDBOX=0 ${CLI_COMMAND_NAME} serve`);
       expect(error?.message).toContain("Environment=T3CODE_SERVER_BROWSER_SANDBOX=0");
       expect(error?.message).toContain("this disables Chrome's sandbox");
       expect(commands).toEqual([]);

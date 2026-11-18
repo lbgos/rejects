@@ -6,7 +6,10 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import { Command, Flag, GlobalFlag, Prompt } from "effect/cli";
 
+import { FetchHttpClient } from "effect/http";
+import { collectReadiness, formatReadiness, outsideSandboxState } from "../bots/readiness.ts";
 import * as BootService from "../cloud/bootService.ts";
+import * as ProcessRunner from "../processRunner.ts";
 import * as DatabaseMaintenance from "../persistence/DatabaseMaintenance.ts";
 import * as ServerOwnership from "../serverOwnership.ts";
 import { isProcessAlive, readPersistedServerRuntimeState } from "../serverRuntimeState.ts";
@@ -96,7 +99,7 @@ export const runDoctor = Effect.fn("runDoctor")(function* (
           {
             id: "legacy" as const,
             title: "Delete the database from before 0.1.0",
-            description: `Frees ${formatBytes(status.legacyDatabaseBytes)}. Your threads and settings are already in the current database.\n  Warning: after this, a T3 Code version before 0.1.0 starts with no threads or settings, so you can no longer roll back.`,
+            description: `Frees ${formatBytes(status.legacyDatabaseBytes)}. Your threads and settings are already in the current database.\n  Warning: after this, a rejects version before 0.1.0 starts with no threads or settings, so you can no longer roll back.`,
             recommended: false,
           },
         ]),
@@ -187,12 +190,17 @@ export const doctorCommand = Command.make("doctor", {
   ),
 }).pipe(
   Command.withDescription(
-    "Inspect this T3 Code data directory and repair it. Pauses and restarts the background service as needed.",
+    "Show what works on this machine for bots, then inspect this rejects data directory and repair it. Pauses and restarts the background service as needed.",
   ),
   Command.withHandler((flags) =>
     Effect.gen(function* () {
       const logLevel = yield* GlobalFlag.LogLevel;
       const config = yield* resolveCliAuthConfig(flags, logLevel);
+      const readiness = yield* outsideSandboxState(config).pipe(
+        Effect.flatMap((sandbox) => collectReadiness(config, sandbox)),
+        Effect.provide(Layer.merge(ProcessRunner.layer, FetchHttpClient.layer)),
+      );
+      yield* Console.log(["What works here:", ...formatReadiness(readiness), ""].join("\n"));
       yield* runDoctor(config, { fix: flags.fix, dryRun: flags.dryRun }).pipe(
         Effect.provide(Layer.merge(DatabaseMaintenance.layer, CliService.layer(config))),
       );

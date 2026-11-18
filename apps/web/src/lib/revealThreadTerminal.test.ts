@@ -2,7 +2,7 @@ import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { beforeEach, expect, it } from "vite-plus/test";
 
-import { selectThreadRightPanelState, useRightPanelStore } from "../rightPanelStore";
+import { useRightPanelStore } from "../rightPanelStore";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { revealThreadTerminal } from "./revealThreadTerminal";
 
@@ -15,38 +15,6 @@ beforeEach(() => {
     suppressedTerminalIdsByThreadKey: {},
   });
   useRightPanelStore.setState({ byThreadKey: {} });
-});
-
-it("reopens the existing panel and selects a running terminal in its split", () => {
-  const panels = useRightPanelStore.getState();
-  panels.openTerminal(threadRef, "terminal-1");
-  const surfaceId = selectThreadRightPanelState(
-    useRightPanelStore.getState().byThreadKey,
-    threadRef,
-  ).activeSurfaceId!;
-  panels.splitTerminal(threadRef, surfaceId, "setup-install");
-  panels.activateTerminal(threadRef, surfaceId, "terminal-1");
-  panels.close(threadRef);
-
-  revealThreadTerminal(threadRef, "setup-install");
-  expect(
-    selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, threadRef),
-  ).toMatchObject({
-    isOpen: true,
-    activeSurfaceId: surfaceId,
-    surfaces: [
-      {
-        terminalIds: ["terminal-1", "setup-install"],
-        activeTerminalId: "setup-install",
-      },
-    ],
-  });
-  expect(
-    selectThreadTerminalUiState(
-      useTerminalUiStateStore.getState().terminalUiStateByThreadKey,
-      threadRef,
-    ).terminalIds,
-  ).toEqual([]);
 });
 
 it("reveals terminals in their own environment without changing another environment's drawer", () => {

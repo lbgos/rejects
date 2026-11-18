@@ -45,7 +45,7 @@ apps reinstall on the new track. This app reinstalls last. Your threads,
 settings, and data stay.
 
 A background service cannot move to an older release remotely. When Stable is
-older than its Nightly, run `t3 update --channel stable --allow-downgrade` on
+older than its Nightly, run `rejects update --channel stable --allow-downgrade` on
 that machine.
 
 A switch is blocked for a machine whose database already has changes the
@@ -103,28 +103,28 @@ The offered action depends on how the server runs:
 | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Update server**          | Keep the client open while it installs and reconnects. Supported background services update remotely. For a desktop-hosted server, this also closes and relaunches the desktop app on the host. |
 | **Update the desktop app** | Update the desktop app on the machine running the server, then reopen it if needed.                                                                                                             |
-| **Copy update command**    | Run the command on the named host to update the detected global npm install or installed `t3` command, then restart the server with your usual options.                                         |
-| **Copy relaunch command**  | Stop the command-line server on its host and relaunch with the copied command, keeping your usual subcommand and options. This does not update an installed `t3` command.                       |
+| **Copy update command**    | Run the command on the named host to update the detected global npm install or installed `rejects` command, then restart the server with your usual options.                                    |
+| **Copy relaunch command**  | Stop the command-line server on its host and relaunch with the copied command, keeping your usual subcommand and options. This does not update an installed `rejects` command.                  |
 
 On the host, run:
 
 ```sh
-t3 update <client-version>
+rejects update <client-version>
 ```
 
 Replace `<client-version>` with the version shown in the notice. The command
 asks before restarting the background service; if you decline, run
-`t3 service restart` when you are ready. For a server you started by hand,
+`rejects service restart` when you are ready. For a server you started by hand,
 stop it and start it again afterwards with your usual options such as `--host`
 or `--tailscale-serve`.
 
 If you decline the restart for a background service installed by an older
 release, the service can stay down after a crash or reboot until you run
-`t3 service restart`.
+`rejects service restart`.
 
-If you run the server with `npx` rather than an installed `t3`, there is
+If you run the server with `npx` rather than an installed `rejects`, there is
 nothing to update on the host: stop the server and relaunch it as
-`npx t3@<client-version>` with the same subcommand and options.
+`npx @lbgos/rejects@<client-version>` with the same subcommand and options.
 
 ## If an update fails
 

@@ -191,7 +191,7 @@ it("uses a provider's saved key without writing it, and turns dictation off", as
         .getByRole("dialog")
         .getByRole("button", { name: "Use Grok Voice Transcribe" })
         .click();
-      await expect.element(destination).toHaveTextContent("Grok Voice Transcribe via Laptop");
+      await expect.element(destination).toHaveTextContent("GVGrok Voice Transcribe via Laptop");
       await destination.click();
       await page.getByRole("option", { name: "Off", exact: true }).click();
       await expect.element(destination).toHaveTextContent("Off");

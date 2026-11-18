@@ -12,6 +12,7 @@ import * as GlobalFlag from "effect/cli/GlobalFlag";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
+import * as BotBridge from "../bots/BotBridge.ts";
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as PeerLinks from "../peer/PeerLinks.ts";
@@ -19,6 +20,7 @@ import * as ServerSettings from "../serverSettings.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import { authLocationFlags, type CliAuthLocationFlags, resolveCliAuthConfig } from "./config.ts";
+import { CLI_COMMAND_NAME } from "@t3tools/shared/cliRelease";
 
 /**
  * Links live in this environment's database and secret store, so these
@@ -26,7 +28,9 @@ import { authLocationFlags, type CliAuthLocationFlags, resolveCliAuthConfig } fr
  */
 const runWithPeerLinks = Effect.fn("environment.runWithPeerLinks")(function* <A, E>(
   flags: CliAuthLocationFlags,
-  run: (links: PeerLinks.PeerLinks["Service"]) => Effect.Effect<A, E>,
+  run: (
+    links: PeerLinks.PeerLinks["Service"],
+  ) => Effect.Effect<A, E, PeerLinks.PeerLinks | ServerSecretStore.ServerSecretStore>,
   options?: { readonly quietLogs?: boolean },
 ) {
   const logLevel = yield* GlobalFlag.LogLevel;
@@ -35,7 +39,7 @@ const runWithPeerLinks = Effect.fn("environment.runWithPeerLinks")(function* <A,
     Effect.flatMap(run),
     Effect.provide(
       PeerLinks.layer.pipe(
-        Layer.provide(
+        Layer.provideMerge(
           Layer.mergeAll(
             ServerSecretStore.layer,
             SqlitePersistence.layerCliConfig,
@@ -94,7 +98,9 @@ const environmentLinkCommand = Command.make("link", {
     Flag.atLeast(0),
   ),
   pairingCode: Flag.String("pairing-code").pipe(
-    Flag.withDescription("A pairing code from the other environment (`t3 pair` there)."),
+    Flag.withDescription(
+      `A pairing code from the other environment (\`${CLI_COMMAND_NAME} pair\` there).`,
+    ),
   ),
   access: Flag.Literals("access", AuthMcpClientAccess.literals).pipe(
     Flag.withDescription(
@@ -104,7 +110,7 @@ const environmentLinkCommand = Command.make("link", {
   ),
 }).pipe(
   Command.withDescription(
-    "Link another T3 Code environment, so agents here can work there. It shows up there under Authorized clients in Settings → Sharing & access, where it can be revoked.",
+    "Link another rejects environment, so agents here can work there. It shows up there under Authorized clients in Settings → Sharing & access, where it can be revoked.",
   ),
   Command.withHandler((flags) =>
     runWithPeerLinks(flags, (links) =>
@@ -141,7 +147,9 @@ const environmentListCommand = Command.make("list", { ...authLocationFlags, json
 const environmentUnlinkCommand = Command.make("unlink", {
   ...authLocationFlags,
   environmentId: Argument.String("environment-id").pipe(
-    Argument.withDescription("The linked environment's id, from `t3 environment list`."),
+    Argument.withDescription(
+      `The linked environment's id, from \`${CLI_COMMAND_NAME} environment list\`.`,
+    ),
   ),
 }).pipe(
   Command.withDescription(
@@ -161,11 +169,43 @@ const environmentUnlinkCommand = Command.make("unlink", {
   ),
 );
 
+const environmentBridgeWritesCommand = Command.make("bridge-writes", {
+  ...authLocationFlags,
+  environmentId: Argument.String("environment-id").pipe(
+    Argument.withDescription(
+      `The linked environment's id, from \`${CLI_COMMAND_NAME} environment list\`.`,
+    ),
+  ),
+  pairingCode: Flag.String("pairing-code").pipe(
+    Flag.withDescription(
+      "A pairing code from that environment with orchestration:read and orchestration:operate.",
+    ),
+  ),
+}).pipe(
+  Command.withDescription(
+    "Sign the bot bridge in to a linked environment for runs the user approves. Bots never hold this session; it runs there at approval-required.",
+  ),
+  Command.withHandler((flags) =>
+    runWithPeerLinks(flags, () =>
+      Effect.gen(function* () {
+        const expiresAt = yield* BotBridge.authorizeWrites({
+          environmentId: EnvironmentId.make(flags.environmentId),
+          pairingCode: flags.pairingCode,
+        });
+        yield* Console.log(
+          `Approved bot runs on ${flags.environmentId} can start until ${DateTime.formatIso(expiresAt)}.\n`,
+        );
+      }),
+    ),
+  ),
+);
+
 export const environmentCommand = Command.make("environment").pipe(
-  Command.withDescription("Link other T3 Code environments, so agents here can work there."),
+  Command.withDescription("Link other rejects environments, so agents here can work there."),
   Command.withSubcommands([
     environmentLinkCommand,
     environmentListCommand,
     environmentUnlinkCommand,
+    environmentBridgeWritesCommand,
   ]),
 );

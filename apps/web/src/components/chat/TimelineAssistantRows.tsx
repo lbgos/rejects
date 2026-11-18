@@ -1,9 +1,24 @@
+import { BotGestures } from "../../bots/BotGestures";
+import { BotLinkPreviews } from "../../bots/BotLinkPreviews";
+import { BotThreadContext } from "../../bots/context";
 import { shouldPreserveAssistantLineBreaks } from "@t3tools/shared/markdownPipeline";
-import { type RunId, type TurnItemId } from "@t3tools/contracts";
+import { type AssetResource, type RunId, type TurnItemId } from "@t3tools/contracts";
 import { canForkProjectedAssistantItem } from "@t3tools/client-runtime/state/thread-workflows";
 import { agentWorkingDirectories } from "@t3tools/client-runtime/workspace-basename-lookup";
-import { memo, use, useState } from "react";
-import { type ChatMessage, type TurnDiffSummary } from "../../types";
+import { memo, use, useContext, useState } from "react";
+import { useAssetUrls } from "../../assets/assetUrls";
+import {
+  createMessageAttachmentPreviewProjector,
+  selectMessageImageResources,
+} from "../../session-logic";
+import {
+  type ChatMessage,
+  isFileAttachment,
+  isImageAttachment,
+  type TurnDiffSummary,
+} from "../../types";
+import { buildExpandedImagePreview } from "./ExpandedImagePreview";
+import { GuestMessageAttachments } from "./GuestMessageAttachments";
 import ChatMarkdown from "../ChatMarkdown";
 import { GitForkIcon, ReplyIcon } from "lucide-react";
 import { captureAssistantMessageOpening } from "~/lib/assistantTextSelection";
@@ -35,6 +50,7 @@ import { MESSAGE_HEADING_LEVEL, MessageAuthorHeading } from "./TimelineRowParts"
 
 export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
+  const bot = useContext(BotThreadContext);
   // The timeline holds a streaming message's row while only its text grows.
   const liveText = useAssistantMessageText(
     row.message.streaming ? ctx.threadRef : null,
@@ -44,62 +60,133 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
   const messageText =
     text || (row.message.streaming || row.suppressEmptyResponse ? "" : "(empty response)");
 
-  return (
+  const content = (
     <>
-      <div className="relative min-w-0 px-1 py-0.5">
-        <MessageAuthorHeading>T3 Code</MessageAuthorHeading>
-        <div data-thread-find-text="true">
-          <AssistantCitationSource
-            messageId={row.message.id}
-            {...(ctx.threadRef ? { threadRef: ctx.threadRef } : {})}
-            itemKey={row.id}
-            request={ctx.citationRequest}
-            listRef={ctx.listRef}
-          >
-            <ChatMarkdown
-              text={messageText}
-              renderInsights
-              cwd={ctx.markdownCwd}
-              agentDirectories={() =>
-                ctx.threadRef && row.projectedItem
-                  ? agentWorkingDirectories(readThreadTurnItems(ctx.threadRef), row.projectedItem)
-                  : []
-              }
-              threadRef={ctx.threadRef ?? undefined}
-              isStreaming={Boolean(row.message.streaming)}
-              lineBreaks={shouldPreserveAssistantLineBreaks(messageText)}
-              skills={ctx.skills}
-              headingLevelOffset={MESSAGE_HEADING_LEVEL}
-              onUseArtifactTemplate={ctx.onUseArtifactTemplate}
-              onRunShellCommand={ctx.onRunShellCommand}
-              onImageExpand={ctx.onImageExpand}
-            />
-          </AssistantCitationSource>
-        </div>
-        {ctx.onOpenTurnDiff ? (
-          <AssistantChangedFilesSection
-            turnSummary={row.assistantTurnDiffSummary}
-            routeThreadKey={ctx.routeThreadKey}
-            resolvedTheme={ctx.resolvedTheme}
-            onOpenTurnDiff={ctx.onOpenTurnDiff}
+      <MessageAuthorHeading>rejects</MessageAuthorHeading>
+      <div data-thread-find-text="true">
+        <AssistantCitationSource
+          messageId={row.message.id}
+          {...(ctx.threadRef ? { threadRef: ctx.threadRef } : {})}
+          itemKey={row.id}
+          request={ctx.citationRequest}
+          listRef={ctx.listRef}
+        >
+          <ChatMarkdown
+            text={messageText}
+            renderInsights
+            cwd={ctx.markdownCwd}
+            agentDirectories={() =>
+              ctx.threadRef && row.projectedItem
+                ? agentWorkingDirectories(readThreadTurnItems(ctx.threadRef), row.projectedItem)
+                : []
+            }
+            threadRef={ctx.threadRef ?? undefined}
+            isStreaming={Boolean(row.message.streaming)}
+            lineBreaks={bot || shouldPreserveAssistantLineBreaks(messageText)}
+            skills={ctx.skills}
+            headingLevelOffset={MESSAGE_HEADING_LEVEL}
+            onUseArtifactTemplate={ctx.onUseArtifactTemplate}
+            onRunShellCommand={ctx.onRunShellCommand}
+            onImageExpand={ctx.onImageExpand}
           />
-        ) : null}
-        {!row.showAssistantMeta && row.projectedItem?.item.status === "interrupted" ? (
-          <div className="mt-1.5 flex">
-            <AssistantStatusBadge status="interrupted" />
-          </div>
-        ) : null}
-        {row.showAssistantMeta ? (
-          <AssistantMessageMeta
-            className="mt-1.5"
-            projectedItem={row.projectedItem}
-            message={row.message}
-            showCopyButton={row.showAssistantCopyButton}
-            copyStreaming={row.assistantCopyStreaming}
-          />
-        ) : null}
+        </AssistantCitationSource>
       </div>
+      {row.message.attachments?.length ? <AssistantAttachments message={row.message} /> : null}
+      {ctx.onOpenTurnDiff ? (
+        <AssistantChangedFilesSection
+          turnSummary={row.assistantTurnDiffSummary}
+          routeThreadKey={ctx.routeThreadKey}
+          resolvedTheme={ctx.resolvedTheme}
+          onOpenTurnDiff={ctx.onOpenTurnDiff}
+        />
+      ) : null}
     </>
+  );
+  // Bot chats have no per-message row: copy, reply and the time live in the bubble's menu. A
+  // phone shows the reply in a bubble; wider screens keep T3's unboxed prose.
+  if (bot) {
+    return (
+      <>
+        <BotGestures
+          from="bot"
+          messageId={row.message.id}
+          text={row.message.text}
+          at={row.message.updatedAt}
+        >
+          <div
+            data-bot-bubble
+            className="relative min-w-0 max-md:w-fit max-md:max-w-full max-md:rounded-3xl max-md:bg-bot-bubble max-md:px-3.75 max-md:py-2.25 max-md:text-bot-message"
+          >
+            {content}
+          </div>
+        </BotGestures>
+        {row.message.streaming ? null : (
+          <BotLinkPreviews environmentId={ctx.activeThreadEnvironmentId} text={row.message.text} />
+        )}
+      </>
+    );
+  }
+
+  return (
+    <div className="relative min-w-0 px-1 py-0.5">
+      {content}
+      {!row.showAssistantMeta && row.projectedItem?.item.status === "interrupted" ? (
+        <div className="mt-1.5 flex">
+          <AssistantStatusBadge status="interrupted" />
+        </div>
+      ) : null}
+      {row.showAssistantMeta ? (
+        <AssistantMessageMeta
+          className="mt-1.5"
+          projectedItem={row.projectedItem}
+          message={row.message}
+          showCopyButton={row.showAssistantCopyButton}
+          copyStreaming={row.assistantCopyStreaming}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function AssistantAttachments({ message }: { message: ChatMessage }) {
+  const ctx = use(TimelineRowCtx);
+  const resources = selectMessageImageResources(message.attachments);
+  const urls = useAssetUrls(ctx.activeThreadEnvironmentId, resources);
+  const [project] = useState(createMessageAttachmentPreviewProjector);
+  const urlById = new Map(
+    resources.flatMap((resource, index) => {
+      const url = urls[index];
+      return url ? [[resource.attachmentId, url] as const] : [];
+    }),
+  );
+  const attachments =
+    project(message, (attachment) => urlById.get(attachment.id)).attachments ?? [];
+  const images = attachments.filter(isImageAttachment);
+  const shown = attachments.filter((a) => isImageAttachment(a) || isFileAttachment(a));
+  const downloadResources = shown.map((attachment): AssetResource => ({
+    _tag: "attachment",
+    attachmentId: attachment.id,
+    fileName: attachment.name,
+    mimeType: attachment.mimeType,
+    disposition: "attachment",
+  }));
+  const downloadUrls = useAssetUrls(ctx.activeThreadEnvironmentId, downloadResources);
+  return (
+    <div className="pt-2">
+      <GuestMessageAttachments
+        align="start"
+        attachments={shown}
+        downloadHref={(attachment) =>
+          downloadUrls[shown.findIndex((a) => a.id === attachment.id)] ?? undefined
+        }
+        imageUrl={(attachment) => images.find((image) => image.id === attachment.id)?.previewUrl}
+        onOpenImage={(attachment) => {
+          const preview = buildExpandedImagePreview(images, attachment.id);
+          if (preview) ctx.onImageExpand(preview);
+        }}
+        onOpenFile={ctx.onFileOpen}
+      />
+    </div>
   );
 }
 
@@ -113,7 +200,7 @@ export function SentMessageTimelineRow({
 
   return (
     <div className="min-w-0 px-1 py-0.5">
-      <MessageAuthorHeading>T3 Code</MessageAuthorHeading>
+      <MessageAuthorHeading>rejects</MessageAuthorHeading>
       <ChatMarkdown
         text={row.text}
         cwd={ctx.markdownCwd}

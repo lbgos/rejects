@@ -187,6 +187,14 @@ vi.mock("react", () => ({
 vi.mock("../components/Sidebar.logic", () => ({
   orderItemsByPreferredIds: ({ items }: { items: unknown[] }) => items,
 }));
+vi.mock("../bots/state", () => {
+  const botProjectKeys = new Set<string>();
+  return {
+    useBotProjectKeys: () => botProjectKeys,
+    isBotProject: () => false,
+    withoutBotProjects: (_keys: ReadonlySet<string>, projects: readonly unknown[]) => projects,
+  };
+});
 vi.mock("../composerDraftStore", () => {
   const useComposerDraftStore = Object.assign(() => null, {
     getState: () => testState.draftStore,

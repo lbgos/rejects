@@ -48,6 +48,7 @@ import type { Root } from "mdast";
 import { ViewedImagesTimelineRow } from "./TimelineWorkEntryRow";
 import { remarkThoughtPreview, THOUGHT_PREVIEW_MAX_LENGTH } from "./TimelineWorkEntryRow.logic";
 import { TimelineRowCtx } from "./timelineRowContext";
+import { BotChromeContext, type BotChrome } from "../../bots/context";
 import { parseMarkdownWithMath } from "@t3tools/shared/markdownMath";
 import { collectThreadFindRanges } from "./threadFindHighlights";
 import { toastManager } from "../ui/toast";
@@ -454,6 +455,37 @@ describe("MessagesTimeline work rows", () => {
       }
     },
   );
+
+  it("shows a working bot's typing bubble with its timer", async () => {
+    const chrome: BotChrome = {
+      title: "Echo",
+      header: null,
+      banner: null,
+      emptyState: null,
+      timelineEnd: null,
+      modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.5" },
+      selectModel: () => {},
+      sendDisabledReason: null,
+      historyFrom: undefined,
+      reactions: undefined,
+      react: () => {},
+    };
+    await using screen = await renderElement(
+      <BotChromeContext value={chrome}>
+        <MessagesTimeline
+          {...baseProps()}
+          timelineEntries={[message("Hello there")]}
+          isWorking
+          activeTurnStartedAt={CREATED_AT}
+        />
+      </BotChromeContext>,
+    );
+    await vi.waitFor(() =>
+      expect(screen.container.querySelector("[data-bot-typing]")?.textContent).toMatch(
+        /Working for \d/,
+      ),
+    );
+  });
 });
 
 describe("MessagesTimeline messages", () => {

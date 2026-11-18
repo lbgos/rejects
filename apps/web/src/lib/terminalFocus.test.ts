@@ -2,13 +2,10 @@ import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { selectThreadRightPanelState, useRightPanelStore } from "../rightPanelStore";
 import { useTerminalUiStateStore } from "../terminalUiStateStore";
 import {
   consumePendingTerminalFocus,
   focusActiveDrawerTerminal,
-  focusActivePanelTerminal,
-  focusPanelTerminalAfterClose,
   focusTerminal,
   focusTerminalOnNavigation,
   registerTerminalFocusTarget,
@@ -256,80 +253,5 @@ describe("focusTerminal", () => {
     expect(drawer).toHaveBeenCalledTimes(1);
     leave();
     unregisterDrawer();
-  });
-
-  it("focuses the panel terminal a closed surface falls back to", () => {
-    const ref = threadRef("panel-fallback");
-    const panel = useRightPanelStore.getState();
-    panel.openTerminal(ref, "a");
-    panel.open(ref, "diff");
-    const { activeSurfaceId: diffSurfaceId } = selectThreadRightPanelState(
-      useRightPanelStore.getState().byThreadKey,
-      ref,
-    );
-    const focus = vi.fn(() => true);
-    const unregister = registerTerminalFocusTarget({ threadRef: ref, terminalId: "a", focus });
-    expect(diffSurfaceId).not.toBeNull();
-
-    useRightPanelStore.getState().closeSurface(ref, diffSurfaceId!);
-    focusActivePanelTerminal(ref);
-
-    expect(focus).toHaveBeenCalledTimes(1);
-    unregister();
-  });
-
-  it("closing a surface's last terminal focuses the terminal surface it falls back to", () => {
-    const ref = threadRef("panel-terminal-fallback");
-    const panel = useRightPanelStore.getState();
-    panel.openTerminal(ref, "b");
-    panel.openTerminal(ref, "a");
-    const surfaceA = selectThreadRightPanelState(
-      useRightPanelStore.getState().byThreadKey,
-      ref,
-    ).activeSurfaceId!;
-    const focusB = vi.fn(() => true);
-    const unregister = registerTerminalFocusTarget({
-      threadRef: ref,
-      terminalId: "b",
-      focus: focusB,
-    });
-
-    panel.closeTerminal(ref, surfaceA, "a");
-    focusActivePanelTerminal(ref);
-
-    expect(focusB).toHaveBeenCalledTimes(1);
-    unregister();
-  });
-
-  it("refocuses the panel terminal only when closing changed the active surface", () => {
-    const ref = threadRef("panel-after-close");
-    const panel = useRightPanelStore.getState();
-    panel.openTerminal(ref, "a");
-    const terminalSurfaceId = selectThreadRightPanelState(
-      useRightPanelStore.getState().byThreadKey,
-      ref,
-    ).activeSurfaceId!;
-    panel.open(ref, "diff");
-    const diffSurfaceId = selectThreadRightPanelState(
-      useRightPanelStore.getState().byThreadKey,
-      ref,
-    ).activeSurfaceId!;
-    const focus = vi.fn(() => true);
-    const unregister = registerTerminalFocusTarget({ threadRef: ref, terminalId: "a", focus });
-
-    panel.activateSurface(ref, terminalSurfaceId);
-    panel.closeSurface(ref, diffSurfaceId);
-    focusPanelTerminalAfterClose(ref, terminalSurfaceId);
-    expect(focus).not.toHaveBeenCalled();
-
-    panel.open(ref, "diff");
-    const reopenedDiffId = selectThreadRightPanelState(
-      useRightPanelStore.getState().byThreadKey,
-      ref,
-    ).activeSurfaceId!;
-    panel.closeSurface(ref, reopenedDiffId);
-    focusPanelTerminalAfterClose(ref, reopenedDiffId);
-    expect(focus).toHaveBeenCalledTimes(1);
-    unregister();
   });
 });

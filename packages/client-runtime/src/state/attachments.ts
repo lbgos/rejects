@@ -1,5 +1,5 @@
 import {
-  PROVIDER_SEND_TURN_MAX_FILE_BYTES,
+  CHAT_FILE_ATTACHMENT_MAX_BYTES,
   WS_METHODS,
   type AttachmentCreateUploadUrlInput,
   type AttachmentCreateUploadUrlResult,
@@ -37,7 +37,7 @@ export function createAttachmentEnvironmentAtoms<R, E>(
  * lookup. A structural `_tag` check rather than a schema check: the squashed cause of a failed
  * RPC is not guaranteed to be a decoded error class instance, only a tagged value.
  */
-export function isAssetAttachmentNotFoundFailure(error: unknown): boolean {
+function isAssetAttachmentNotFoundFailure(error: unknown): boolean {
   return (
     typeof error === "object" &&
     error !== null &&
@@ -190,7 +190,7 @@ export async function runAttachmentUploadCycle<E, RE>(input: {
  * files the send would then refuse.
  */
 export function clampFileAttachmentUploadBytes(advertisedMaxUploadBytes: number): number {
-  return Math.min(advertisedMaxUploadBytes, PROVIDER_SEND_TURN_MAX_FILE_BYTES);
+  return Math.min(advertisedMaxUploadBytes, CHAT_FILE_ATTACHMENT_MAX_BYTES);
 }
 
 export function formatAttachmentSize(sizeBytes: number): string {

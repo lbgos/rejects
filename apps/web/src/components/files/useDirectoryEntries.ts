@@ -1,4 +1,4 @@
-import type { EnvironmentId, ProjectEntry } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectEntry, ThreadId } from "@t3tools/contracts";
 import { useAtomMount, useAtomSubscribe } from "@effect/atom-react";
 import { executeAtomQuery } from "@t3tools/client-runtime/state/runtime";
 import * as Cause from "effect/Cause";
@@ -8,7 +8,12 @@ import { environmentCatalog } from "~/connection/catalog";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { projectEnvironment } from "~/state/projects";
 
-export function useDirectoryEntries(environmentId: EnvironmentId, cwd: string) {
+/** `threadId` names the bot chat that linked a host folder, so it lists the folder the bot wrote. */
+export function useDirectoryEntries(
+  environmentId: EnvironmentId,
+  cwd: string,
+  threadId?: ThreadId,
+) {
   const [directories, setDirectories] = useState(new Map<string, readonly ProjectEntry[]>());
   const [errors, setErrors] = useState(new Map<string, string>());
   const [pending, setPending] = useState(1);
@@ -29,7 +34,10 @@ export function useDirectoryEntries(environmentId: EnvironmentId, cwd: string) {
   const startRequest = (directoryPath: string, refresh: boolean): Promise<void> => {
     loaded.current.add(directoryPath);
     requested.current.add(directoryPath);
-    const atom = projectEnvironment.listEntries({ environmentId, input: { cwd, directoryPath } });
+    const atom = projectEnvironment.listEntries({
+      environmentId,
+      input: { cwd, directoryPath, ...(threadId === undefined ? {} : { threadId }) },
+    });
     const detached = detachedRequests.current.get(directoryPath);
     const request = (async () => {
       // A shared query still waiting would join the removed folder's read.

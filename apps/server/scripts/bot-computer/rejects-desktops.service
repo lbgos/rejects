@@ -1,0 +1,21 @@
+[Unit]
+Description=rejects bot desktops
+After=rejects-browser.service
+Requires=rejects-browser.service
+
+[Service]
+User=bots
+Environment=REJECTS_CDP_URL=http://127.0.0.1:9223
+ExecStart=/usr/bin/python3 /home/bots/rejects-computer/desktop.py
+Restart=on-failure
+MemoryMax=1200M
+CPUQuota=150%
+TasksMax=256
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/bots/.cache /tmp
+PrivateDevices=yes
+
+[Install]
+WantedBy=multi-user.target

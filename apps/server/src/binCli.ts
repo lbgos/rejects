@@ -40,6 +40,8 @@ import { themeCommand } from "./cli/theme.ts";
 import { traceCommand } from "./cli/trace.ts";
 import { triageCommand } from "./cli/triage.ts";
 import { connectCommand, statusCommand, upCommand } from "./cli/up.ts";
+import * as ServerExtension from "./serverExtension.ts";
+import { CLI_COMMAND_NAME } from "@t3tools/shared/cliRelease";
 
 const layerCliRuntime = Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, NetService.layer);
 
@@ -60,7 +62,7 @@ const connectUnavailableCommand = Command.make("connect", {
   Command.withHandler(() =>
     Effect.fail(
       new CliError.ShowHelp({
-        commandPath: ["t3", "connect"],
+        commandPath: [CLI_COMMAND_NAME, "connect"],
         errors: [new ConnectPublicConfigMissingError({ cause: connectPublicConfigMissingMessage })],
       }),
     ),
@@ -68,16 +70,16 @@ const connectUnavailableCommand = Command.make("connect", {
 );
 
 export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
-  Command.make("t3", { ...sharedServerCommandFlags }).pipe(
+  Command.make(CLI_COMMAND_NAME, { ...sharedServerCommandFlags }).pipe(
     Command.withDescription(
-      "Run T3 Code in this terminal and open it in your browser. To use it from your other devices, run `t3 up`.",
+      `Run rejects in this terminal and open it in your browser. To use it from your other devices, run \`${CLI_COMMAND_NAME} up\`.`,
     ),
     Command.withHandler(runDefaultServerCommand),
     Command.withSubcommands([
       Command.make("help").pipe(
         Command.withDescription("Show command help."),
         Command.withHandler(() =>
-          Effect.fail(new CliError.ShowHelp({ commandPath: ["t3"], errors: [] })),
+          Effect.fail(new CliError.ShowHelp({ commandPath: [CLI_COMMAND_NAME], errors: [] })),
         ),
       ),
       acpMcpBridgeCommand,
@@ -119,7 +121,7 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
 
 export const cli = makeCli();
 
-export function runCli() {
+export function runCli(extension: ServerExtension.ServerExtension = {}) {
   extendConnectionAttemptTimeout();
   keepOutboundFetchOnHttp1();
   offerCliInstall({
@@ -140,6 +142,7 @@ export function runCli() {
     ),
     Effect.scoped,
     Effect.provide(layerCliRuntime),
+    Effect.provideService(ServerExtension.ServerExtension, extension),
     NodeRuntime.runMain,
   );
 }

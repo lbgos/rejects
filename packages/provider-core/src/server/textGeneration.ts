@@ -7,6 +7,7 @@ import type {
   TextGenerationError,
 } from "@t3tools/contracts";
 import type * as Effect from "effect/Effect";
+import type * as Schema from "effect/Schema";
 
 import type { TextGenerationPolicy } from "./textGenerationPolicy.ts";
 import type { ThreadTitleForkSource } from "./textGenerationPrompts.ts";
@@ -104,6 +105,22 @@ export type ReviewGuideGenerationResult = Omit<
   "headSha" | "generatedAt" | "modelSelection"
 >;
 
+/** The provider's own count for one call; cache reads are part of `input`, as the app counts usage. */
+export interface TextGenerationUsage {
+  readonly input: number;
+  readonly cached: number;
+  readonly output: number;
+}
+
+export interface StructuredGenerationInput<S extends Schema.Top> {
+  readonly modelSelection: ModelSelection;
+  readonly prompt: string;
+  readonly outputSchema: S;
+  readonly cwd: string;
+  readonly operation: string;
+  readonly onUsage?: ((usage: TextGenerationUsage) => void) | undefined;
+}
+
 export interface TranscriptionPostProcessingInput {
   cwd: string;
   prompt: string;
@@ -115,6 +132,9 @@ export interface TranscriptionPostProcessingResult {
 }
 
 export interface ProviderTextGeneration {
+  readonly generateStructured: <S extends Schema.Top>(
+    input: StructuredGenerationInput<S>,
+  ) => Effect.Effect<S["Type"], TextGenerationError, S["DecodingServices"]>;
   readonly generateTranscriptionPostProcessing: (
     input: TranscriptionPostProcessingInput,
   ) => Effect.Effect<TranscriptionPostProcessingResult, TextGenerationError>;

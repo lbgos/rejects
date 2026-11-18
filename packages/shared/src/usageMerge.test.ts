@@ -82,24 +82,24 @@ function environment(id: string, usageSummary: UsageSummary): EnvironmentUsage {
 }
 
 describe("mergeUsage", () => {
-  it("counts a Cursor account once across servers while retaining each server's other providers", () => {
+  it("counts an account once across servers while retaining each server's other providers", () => {
     const account = {
-      provider: "cursor" as const,
-      hostId: "cursor.com",
-      homePath: "cursor-account:account-hash",
+      provider: "muse" as const,
+      hostId: "muse.ai",
+      homePath: "muse-account:account-hash",
       volumeId: "account-hash",
     };
     const merged = mergeUsage(
       [
         environment(
           "mac",
-          summary([bucket({ provider: "cursor", sourcePath: account.homePath })], [account]),
+          summary([bucket({ provider: "muse", sourcePath: account.homePath })], [account]),
         ),
         environment(
           "linux",
           summary(
             [
-              bucket({ provider: "cursor", sourcePath: account.homePath }),
+              bucket({ provider: "muse", sourcePath: account.homePath }),
               bucket({ provider: "opencode", sourcePath: "/opencode" }),
             ],
             [account, { provider: "opencode", hostId: "linux", homePath: "/opencode" }],
@@ -111,7 +111,7 @@ describe("mergeUsage", () => {
     expect(
       merged.providers.map((provider) => [provider.provider, provider.costUsd]).sort(),
     ).toEqual([
-      ["cursor", 10],
+      ["muse", 10],
       ["opencode", 10],
     ]);
     expect(merged.duplicateSources).toHaveLength(1);

@@ -6,9 +6,11 @@ import * as NodePath from "@effect/platform-node/NodePath";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it, describe, expect } from "@effect/vitest";
+import { ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 
 import * as ServerConfig from "../config.ts";
@@ -19,6 +21,7 @@ import * as KnownWorkspaces from "./KnownWorkspaces.ts";
 import * as WorkspaceEntries from "./WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
+import { AgentSandbox } from "@t3tools/shared/AgentScope";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
 import { vi } from "vite-plus/test";
@@ -338,6 +341,54 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
           byteLength: 8,
           truncated: false,
         });
+      }),
+    );
+
+    it.effect("reads the host file behind a path a sandboxed bot linked", () =>
+      Effect.gen(function* () {
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        const botHome = yield* makeTempDir;
+        yield* writeTextFile(botHome, "shared/research/prices.md", "# Prices\n");
+        const sandboxHome = "/sandbox-home/";
+        const files = yield* WorkspaceFileSystem.make.pipe(
+          Effect.provide(layerKnownWorkspacesTest),
+          Effect.provideService(AgentSandbox, {
+            ...AgentSandbox.defaultValue(),
+            filePath: ({ threadId, path: named }) =>
+              Effect.succeed(
+                threadId === "bot" && named.startsWith(sandboxHome)
+                  ? Option.some(path.join(botHome, named.slice(sandboxHome.length)))
+                  : Option.none(),
+              ),
+          }),
+        );
+        const threadId = ThreadId.make("bot");
+        for (const relativePath of [
+          "/sandbox-home/shared/research/prices.md",
+          "~/shared/research/prices.md",
+        ]) {
+          const result = yield* files
+            .readFile({ cwd, relativePath, threadId })
+            .pipe(Effect.provideService(HostProcess.HomeDirectory, "/sandbox-home"));
+          expect(result).toEqual({
+            relativePath,
+            contents: "# Prices\n",
+            byteLength: 9,
+            truncated: false,
+          });
+        }
+        const elsewhere = yield* files
+          .readFile({ cwd, relativePath: "/sandbox-home/shared/research/prices.md" })
+          .pipe(Effect.flip);
+        expect(elsewhere).toBeInstanceOf(WorkspaceFileSystem.WorkspaceFileSystemOperationError);
+        const metadata = (threadId?: ThreadId) =>
+          files.getMetadata({
+            paths: ["/sandbox-home/shared/research/prices.md"],
+            ...(threadId ? { threadId } : {}),
+          });
+        expect((yield* metadata(threadId)).entries).toEqual([{ kind: "file", byteLength: 9 }]);
+        expect((yield* metadata()).entries).toEqual([null]);
       }),
     );
 

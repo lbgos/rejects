@@ -195,11 +195,11 @@ export function ArchivedThreadsPanel() {
         >
           <SettingsRow
             title={
-              <span className="inline-flex items-center gap-2">
+              <span className="inline-flex items-center gap-2 max-md:text-muted-foreground">
                 {isLoadingArchive ? (
                   <Spinner size="sm" tone="muted" />
                 ) : (
-                  <ArchiveIcon className="size-3.5 text-muted-foreground" />
+                  <ArchiveIcon className="size-3.5 text-muted-foreground max-md:hidden" />
                 )}
                 {isLoadingArchive
                   ? "Loading archived threads"

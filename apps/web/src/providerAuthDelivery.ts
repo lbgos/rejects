@@ -5,6 +5,7 @@ import { toastManager } from "./components/ui/toast";
 import { appAtomRegistry } from "./rpc/atomRegistry";
 import { environmentPresentations } from "./state/presentation";
 import { serverEnvironment } from "./state/server";
+import { holdWorkerReload } from "./workerReload";
 
 type ProviderAuthDelivery = NonNullable<ReturnType<typeof readCodexAuthDelivery>>;
 
@@ -22,16 +23,19 @@ export function startProviderAuthDelivery(): void {
     delivery?.returnUrl ?? `${window.location.pathname}${window.location.search}`,
   );
   if (!delivery) return;
+  // Once stripped from the address, the one-time code lives only in this page until it is spent.
+  const release = holdWorkerReload();
+  const complete = () => void completeProviderAuth(delivery).finally(release);
 
   const presentationAtom = environmentPresentations.presentationAtom(delivery.environmentId);
   if (appAtomRegistry.get(presentationAtom)?.connection.phase === "connected") {
-    void completeProviderAuth(delivery);
+    complete();
     return;
   }
   const unsubscribe = appAtomRegistry.subscribe(presentationAtom, (presentation) => {
     if (presentation?.connection.phase !== "connected") return;
     unsubscribe();
-    void completeProviderAuth(delivery);
+    complete();
   });
 }
 

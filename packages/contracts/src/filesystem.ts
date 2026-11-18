@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { NonNegativeInt, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 
 const FILESYSTEM_PATH_MAX_LENGTH = 512;
 
@@ -10,6 +10,8 @@ export const FilesystemGetMetadataInput = Schema.Struct({
   paths: Schema.Array(
     TrimmedNonEmptyString.check(Schema.isMaxLength(FILESYSTEM_PATH_MAX_LENGTH)),
   ).check(Schema.isMinLength(1), Schema.isMaxLength(FILESYSTEM_METADATA_BATCH_LIMIT)),
+  // A sandboxed bot's chat: its paths map to the files it wrote.
+  threadId: Schema.optional(ThreadId),
 });
 export type FilesystemGetMetadataInput = typeof FilesystemGetMetadataInput.Type;
 

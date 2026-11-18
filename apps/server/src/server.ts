@@ -1,3 +1,4 @@
+import * as BotHttp from "./bots/http.ts";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 import type { RelayManagedEndpointRuntimeConfig } from "@t3tools/contracts/relay";
 import * as Random from "effect/Random";
@@ -109,6 +110,8 @@ import * as ServerOwnership from "./serverOwnership.ts";
 import * as AgentAwarenessRelay from "./relay/AgentAwarenessRelay.ts";
 import { hasCloudPublicConfig } from "./cloud/publicConfig.ts";
 import * as ServerSettings from "./serverSettings.ts";
+import * as ServerExtension from "./serverExtension.ts";
+import * as CallPolicy from "./policy/CallPolicy.ts";
 import * as ManagedLimits from "./policy/managedLimits.ts";
 import * as ManagedPolicy from "./policy/ManagedPolicy.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
@@ -188,7 +191,6 @@ import {
 import * as CloudCliTokenManager from "./cloud/CliTokenManager.ts";
 import * as CloudCliState from "./cloud/CliState.ts";
 import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
-import * as DesktopAppUpdate from "./desktopUpdate/DesktopAppUpdate.ts";
 import * as ServiceLauncherClient from "./cloud/serviceLauncherClient.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as HostResources from "./resourceTelemetry/HostResources.ts";
@@ -203,8 +205,6 @@ import * as ProcessGroupMetrics from "./resourceTelemetry/ProcessGroupMetrics.ts
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as AntigravityUsage from "./provider/Drivers/AntigravityUsage.ts";
 import { MuseUsageHome } from "@t3tools/provider-muse/server";
-import * as CursorAccountReader from "@t3tools/provider-cursor/server/CursorAccountReader";
-import * as CursorUsageAccounts from "@t3tools/provider-cursor/server/CursorUsageAccounts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as CodexUsageHistory from "./usage/CodexUsageHistory.ts";
 import * as RuntimeLayer from "./orchestration-v2/runtimeLayer.ts";
@@ -230,6 +230,41 @@ import {
   readTailscaleStatus,
 } from "@t3tools/tailscale";
 import * as ServerActivation from "./serverActivation.ts";
+import * as WebPush from "./push/WebPush.ts";
+import * as BotNotifications from "./bots/BotNotifications.ts";
+import * as BotReactor from "./bots/BotReactor.ts";
+import * as BotSegments from "./bots/BotSegments.ts";
+import * as BotDreams from "./bots/BotDreams.ts";
+import * as BotFeedback from "./bots/BotFeedback.ts";
+import * as StuckControls from "./bots/StuckControls.ts";
+import * as BotFiles from "./bots/BotFiles.ts";
+import * as BotAdmin from "./bots/BotAdmin.ts";
+import * as BotSetup from "./bots/BotSetup.ts";
+import * as Telegram from "./telegram/Telegram.ts";
+import * as TelegramHttp from "./telegram/http.ts";
+import * as SpeechToText from "./voice/SpeechToText.ts";
+import * as VoiceHttp from "./voice/http.ts";
+import * as FleetHandoff from "./auth/fleetHandoff.ts";
+import * as BotMemoryStore from "./bots/BotMemoryStore.ts";
+import * as BotStore from "./bots/BotStore.ts";
+import * as MemoryEmbedder from "./bots/MemoryEmbedder.ts";
+import * as BotBridge from "./bots/BotBridge.ts";
+import * as MusicLibrary from "./music/MusicLibrary.ts";
+import * as LabShell from "./lab/LabShell.ts";
+import * as LabHttp from "./lab/http.ts";
+import * as ConnectionStore from "./connections/ConnectionStore.ts";
+import * as Accounts from "./connections/Accounts.ts";
+import * as MailAccounts from "./connections/MailAccounts.ts";
+import * as BotRecordings from "./bots/BotRecordings.ts";
+import * as BotSecrets from "./secrets/BotSecrets.ts";
+import * as Connections from "./connections/Connections.ts";
+import * as ConnectionsHttp from "./connections/http.ts";
+import * as VaultClient from "./connections/VaultClient.ts";
+import * as BotLinkGuard from "./bots/BotLinkGuard.ts";
+import * as BotService from "./bots/BotService.ts";
+import * as BotComputer from "./bots/BotComputer.ts";
+import * as BotSandbox from "./bots/BotSandbox.ts";
+import * as BotModelProxy from "./bots/BotModelProxy.ts";
 
 // Escaped MCP handoff provenance can exceed find-my-way's 100-character segment default.
 const HTTP_ROUTER_CONFIG = {
@@ -290,11 +325,6 @@ const layerHostPowerMonitor = HostPowerMonitor.layer.pipe(
   Layer.provide(layerDesktopTelemetryReceiver),
 );
 
-// A fresh receiver layer would open a second reader on the desktop telemetry fd.
-const layerDesktopAppUpdate = DesktopAppUpdate.layer.pipe(
-  Layer.provide(layerDesktopTelemetryReceiver),
-);
-
 const layerBackground = BackgroundPolicy.layer.pipe(
   Layer.provide(layerHostPowerMonitor),
   Layer.provideMerge(layerServerSettings),
@@ -302,12 +332,9 @@ const layerBackground = BackgroundPolicy.layer.pipe(
 
 const layerUsage = UsageService.layer.pipe(
   Layer.provide(
-    Layer.mergeAll(
-      AntigravityUsage.layer,
-      MuseUsageHome.layer,
-      CodexUsageHistory.layer,
-      CursorUsageAccounts.layer.pipe(Layer.provide(CursorAccountReader.layer)),
-    ).pipe(Layer.provide(ProviderHostLive.layer.pipe(Layer.provide(ServerSecretStore.layer)))),
+    Layer.mergeAll(AntigravityUsage.layer, MuseUsageHome.layer, CodexUsageHistory.layer).pipe(
+      Layer.provide(ProviderHostLive.layer.pipe(Layer.provide(ServerSecretStore.layer))),
+    ),
   ),
   Layer.provide(layerServerSettings),
 );
@@ -589,7 +616,15 @@ const layerScheduledTaskWebhookOrigin = Layer.effect(
   }),
 );
 
+const layerBotMemory = BotMemoryStore.layer.pipe(
+  Layer.provideMerge(BotStore.layer),
+  Layer.provide(MemoryEmbedder.layer),
+);
+
 const layerOrchestrationV2Runtime = RuntimeLayer.layerProduction.pipe(
+  Layer.provideMerge(BotSegments.turnsLayer.pipe(Layer.provide(ProjectionStoreV2.layer))),
+  Layer.provideMerge(layerBotMemory),
+  Layer.provideMerge(ConnectionStore.layer),
   Layer.provide(UsageLimitSources.layerResetFallback),
   Layer.provide(layerScheduledTaskWebhookOrigin),
   Layer.provide(ProviderUsageAnalytics.layer),
@@ -713,6 +748,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
 ).pipe(
   Layer.provideMerge(layerOrchestrationApplication),
+  Layer.provideMerge(RuntimeLayer.layerEventSink),
   Layer.provideMerge(RuntimeLayer.layerEventInfrastructure),
   Layer.provideMerge(Layer.merge(ProjectStore.layer, ThreadSearch.layer)),
   Layer.provideMerge(SecretCheck.layer),
@@ -790,7 +826,16 @@ const layerRuntimeCoreDependencies = layerRuntimeCoreDependenciesBase.pipe(
   ),
 );
 
-const layerRuntimeDependencies = layerRuntimeCoreDependencies.pipe(
+const layerRuntimeDependencies = Layer.merge(BotReactor.layer, BotSegments.layer).pipe(
+  Layer.provideMerge(BotService.layer),
+  Layer.provideMerge(BotComputer.layer.pipe(Layer.provideMerge(BotSandbox.layer))),
+  Layer.provideMerge(BotNotifications.layer),
+  Layer.provideMerge(WebPush.layer.pipe(Layer.provide(ServerSecretStore.layer))),
+  Layer.provideMerge(layerBotMemory),
+  Layer.provideMerge(layerRuntimeCoreDependencies),
+  // Misc.
+  // Usage reads provider history through the ProviderHost, which needs the
+  // background policy below it.
   Layer.provideMerge(layerUsage),
   Layer.provideMerge(layerBackground),
   Layer.provideMerge(layerResourceDiagnostics),
@@ -813,7 +858,19 @@ const layerCommandReadiness = HttpRouter.middleware(
   { global: true },
 );
 
-const layerMakeRoutes = Layer.mergeAll(
+const layerExtensionRoutes = Layer.unwrap(
+  Effect.gen(function* () {
+    return (yield* ServerExtension.ServerExtension).routes ?? Layer.empty;
+  }),
+);
+
+const layerCallPolicy = Layer.unwrap(
+  Effect.gen(function* () {
+    return (yield* ServerExtension.ServerExtension).policy ?? CallPolicy.layerDefault;
+  }),
+);
+
+const layerMakeRoutesBase = Layer.mergeAll(
   Layer.mergeAll(
     HttpApiBuilder.layer(EnvironmentHttpApi).pipe(
       Layer.provide(AuthHttp.layer),
@@ -830,6 +887,13 @@ const layerMakeRoutes = Layer.mergeAll(
     ServerHttp.layerOtlpTracesProxyRoute,
     ServerHttp.layerAssetRoute,
     ServerHttp.layerAttachmentUploadRoute,
+    BotHttp.layer,
+    BotModelProxy.routeLayer,
+    TelegramHttp.layer,
+    VoiceHttp.layer,
+    FleetHandoff.routeLayer,
+    ConnectionsHttp.layer,
+    LabHttp.layer,
     GuestHttp.layer,
     DeviceHubProxy.layer,
     ServerBrowserStream.routeLayer,
@@ -845,7 +909,56 @@ const layerMakeRoutes = Layer.mergeAll(
   Layer.effectDiscard(
     RemoteDelegation.RemoteDelegation.pipe(Effect.flatMap((remote) => remote.start())),
   ),
+  Layer.effectDiscard(BotBridge.BotBridge.pipe(Effect.flatMap((bridge) => bridge.start()))),
+  Layer.effectDiscard(MusicLibrary.MusicLibrary.pipe(Effect.flatMap((music) => music.start()))),
+  Layer.effectDiscard(LabShell.LabShell.pipe(Effect.flatMap((lab) => lab.start()))),
+  Layer.effectDiscard(
+    Connections.Connections.pipe(Effect.flatMap((connections) => connections.start())),
+  ),
+  Layer.effectDiscard(BotDreams.BotDreams.pipe(Effect.flatMap((dreams) => dreams.start()))),
+  Layer.effectDiscard(BotSetup.BotSetup.pipe(Effect.flatMap((setup) => setup.start()))),
+  layerExtensionRoutes,
+  Layer.effectDiscard(Telegram.Telegram.pipe(Effect.flatMap((telegram) => telegram.start()))),
 ).pipe(
+  Layer.provide(Layer.merge(BotSetup.layer, BotAdmin.layer)),
+  Layer.provideMerge(BotFiles.layer),
+  Layer.provideMerge(BotFeedback.layer),
+  Layer.provideMerge(StuckControls.layer),
+  Layer.provideMerge(
+    Telegram.layer.pipe(
+      Layer.provideMerge(SpeechToText.layer),
+      Layer.provide(FetchHttpClient.layer),
+    ),
+  ),
+);
+
+const layerMakeRoutesWithBots = layerMakeRoutesBase.pipe(
+  Layer.provide(
+    Layer.mergeAll(Connections.layer, Accounts.layer, MailAccounts.layer).pipe(
+      Layer.provide(VaultClient.layer),
+      Layer.provideMerge(
+        BotSecrets.layer.pipe(
+          Layer.provide(Layer.merge(ServerSecretStore.layer, VaultClient.layer)),
+        ),
+      ),
+      Layer.provideMerge(ConnectionStore.layer),
+    ),
+  ),
+  Layer.provide(BotBridge.layer),
+  Layer.provide(
+    Layer.merge(MusicLibrary.layer.pipe(Layer.provide(FetchHttpClient.layer)), LabShell.layer),
+  ),
+  Layer.provide(Layer.merge(BotService.layer, BotDreams.layer)),
+  Layer.provideMerge(
+    Layer.merge(BotComputer.layer.pipe(Layer.provideMerge(BotSandbox.layer)), BotRecordings.layer),
+  ),
+  Layer.provide(BotNotifications.layer),
+  Layer.provideMerge(WebPush.layer.pipe(Layer.provide(ServerSecretStore.layer))),
+  Layer.provideMerge(layerBotMemory),
+);
+
+// Two pipes: Effect's pipe takes at most 20 functions.
+const layerMakeRoutes = layerMakeRoutesWithBots.pipe(
   Layer.provide(
     PullRequestReviewGuideService.layer.pipe(Layer.provide(PullRequestReviewGuides.layer)),
   ),
@@ -865,6 +978,7 @@ const layerMakeRoutes = Layer.mergeAll(
   // Links to other environments, shared by Settings (WebSocket) and agents (/mcp).
   Layer.provide(
     PeerForwarding.layer.pipe(
+      Layer.provide(BotLinkGuard.layer),
       Layer.provideMerge(PeerMcpClient.layer),
       Layer.provideMerge(PeerLinks.layer),
     ),
@@ -878,7 +992,7 @@ const layerMakeRoutes = Layer.mergeAll(
   Layer.provide(CloudSpeech.layer.pipe(Layer.provide(SecretResolver.layer))),
   Layer.provide(layerServerSettings),
   Layer.provide(PreviewAutomationBroker.layer),
-  Layer.provide(ServerSelfUpdate.layer.pipe(Layer.provide(layerDesktopAppUpdate))),
+  Layer.provide(ServerSelfUpdate.layer),
   Layer.provide(layerCommandReadiness),
   Layer.provide(ServerHttp.layerBrowserApiCors),
   Layer.provide(ServerHttp.layerHttpCompression),
@@ -1317,6 +1431,8 @@ const layerMakeServer = Layer.unwrap(
       routerConfig: HTTP_ROUTER_CONFIG,
     }).pipe(
       withUntracedRequests,
+      // The same layer as the bot sandbox's, so the route checks the tokens the sandbox grants.
+      Layer.provide(BotModelProxy.layer),
       Layer.tap(() => Deferred.succeed(routesReady, undefined).pipe(Effect.orDie)),
     );
     const layerServerApplication = Layer.mergeAll(
@@ -1345,7 +1461,14 @@ const layerMakeServer = Layer.unwrap(
       Layer.provide(layerApplicationObservability),
       Layer.provideMerge(FetchHttpClient.layer),
       Layer.provide(VcsProcess.layer),
-      Layer.provideMerge(AgentScopeLive.layer),
+      Layer.provideMerge(
+        BotSandbox.agentScopeLayer.pipe(
+          Layer.provide(BotSandbox.layer),
+          Layer.provide(BotStore.layer),
+          Layer.provide(AgentScopeLive.layer),
+        ),
+      ),
+      Layer.provideMerge(layerCallPolicy.pipe(Layer.provide(layerServerSettings))),
       Layer.provideMerge(layerPlatformServices),
       Layer.provide(Layer.succeed(HostProcess.InvokedAs, invokedAs)),
     );

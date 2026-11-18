@@ -270,7 +270,7 @@ function isMiseExecutablePath(commandPath: string): boolean {
 }
 
 /** The Nix store is read-only, so no updater can replace a CLI that lives there. */
-export function isNixStoreCommandPath(commandPath: string): boolean {
+function isNixStoreCommandPath(commandPath: string): boolean {
   return normalizeCommandPath(commandPath).startsWith("/nix/store/");
 }
 
@@ -1017,7 +1017,7 @@ export const resolvePackageManagedProviderMaintenance = Effect.fn(
  * that reports it as its own. Version checks defer `brew info` until needed.
  * Null when no `brew` is found or it owns another prefix.
  */
-export const resolveHomebrewProviderMaintenance = Effect.fn("resolveHomebrewProviderMaintenance")(
+const resolveHomebrewProviderMaintenance = Effect.fn("resolveHomebrewProviderMaintenance")(
   function* (
     input: { readonly provider: ProviderDriverKind; readonly packageName: string | null },
     homebrew: HomebrewOwnership,

@@ -597,7 +597,7 @@ describe("providerMaintenanceRunner", () => {
         // The registry reports no new version, so a command that exits 0 ends as "unchanged".
         assert.strictEqual(
           result.providers[0]?.updateState?.message,
-          "Update command completed, but T3 Code still detects an outdated provider version.",
+          "Update command completed, but rejects still detects an outdated provider version.",
         );
       }).pipe(
         Effect.provide(
@@ -1029,6 +1029,7 @@ describe("providerMaintenanceRunner", () => {
         snapshot: { getSnapshot: Effect.succeed(baseProvider) } as ProviderInstance["snapshot"],
         orchestrationAdapter: {} as ProviderInstance["orchestrationAdapter"],
         textGeneration: TextGeneration.TextGeneration.of({
+          generateStructured: () => Effect.die("unused"),
           generateCommitMessage: () => Effect.die("unused"),
           generatePrContent: () => Effect.die("unused"),
           generateBranchName: () => Effect.die("unused"),

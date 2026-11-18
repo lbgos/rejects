@@ -6,6 +6,7 @@ import {
   type SnapShotAccessibility,
   type SnapShotAccessibilityNode,
 } from "@t3tools/contracts";
+import { AgentAttachmentPaths } from "@t3tools/shared/AgentScope";
 import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 
@@ -168,6 +169,7 @@ export const providerMessageTextWithAttachmentPaths = Effect.fn(
     | undefined;
 }) {
   let text = input.text;
+  const shortPaths = yield* AgentAttachmentPaths;
   // The text-input budget must never hide the existence of an attachment.
   for (const attachment of input.attachments) {
     const path = input.resolveAttachmentPath(attachment);
@@ -175,10 +177,15 @@ export const providerMessageTextWithAttachmentPaths = Effect.fn(
       path === null || !input.resolveExtractedTextPath
         ? undefined
         : yield* input.resolveExtractedTextPath(path);
+    // A sandbox that holds the file at a shorter path names only that one.
+    const shortPath = shortPaths.get(attachment.id);
+    const shown = shortPath ?? path;
+    const shownExtracted =
+      shortPath !== undefined && extracted !== undefined ? `${shortPath}.txt` : extracted;
     const context =
-      path === null
+      shown === null
         ? `[Attached ${attachment.type} "${attachment.name}" is unavailable: could not resolve a saved path for attachment '${attachment.id}'.]`
-        : `[Attached ${attachment.type} "${attachment.name}" is saved at: ${path}${extracted ? ` (text extracted to: ${extracted})` : ""}]`;
+        : `[Attached ${attachment.type} "${attachment.name}" is saved at: ${shown}${shownExtracted ? ` (text extracted to: ${shownExtracted})` : ""}]`;
     text = text ? `${text}\n\n${context}` : context;
   }
 

@@ -1,0 +1,7 @@
+{
+  "bot": "Homelab",
+  "readKey": "/var/lib/rejects/.ssh/id_ed25519_lab_ro",
+  "changeKey": "/var/lib/rejects/.ssh/id_ed25519_lab_root",
+  "knownHosts": "/var/lib/rejects/.ssh/lab_known_hosts",
+  "hosts": { "media1": "192.0.2.20", "nas1": "192.0.2.21" }
+}

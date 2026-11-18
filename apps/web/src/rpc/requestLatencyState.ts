@@ -1,6 +1,7 @@
 import { WS_METHODS } from "@t3tools/contracts";
 import { Atom } from "effect/reactivity";
 
+import { countEffect } from "../observability/stuckControl";
 import { appAtomRegistry } from "./atomRegistry";
 
 const SLOW_RPC_ACK_THRESHOLD_MS = 15_000;
@@ -69,6 +70,8 @@ function rpcAckThresholdMs(method: string): number {
 }
 
 export function trackRpcRequestSent(requestId: string, method: string, tag = method): void {
+  if (untrackedRpcAckMethods.has(method)) return;
+  countEffect();
   if (!shouldTrackRpcAck(method)) {
     return;
   }

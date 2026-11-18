@@ -18,7 +18,7 @@ export interface BrowserViewportLayout {
 }
 
 export const BROWSER_DEVICE_TOOLBAR_HEIGHT = 38;
-export const BROWSER_VIEWPORT_RESIZE_RAIL_SIZE = 10;
+const BROWSER_VIEWPORT_RESIZE_RAIL_SIZE = 10;
 
 export type BrowserViewportResizeDirection =
   | "north"
@@ -29,11 +29,6 @@ export type BrowserViewportResizeDirection =
   | "southwest"
   | "west"
   | "northwest";
-
-export const browserViewportSettingKey = (setting: PreviewViewportSetting): string =>
-  setting._tag === "fill"
-    ? "fill"
-    : `${setting._tag}:${setting.width}:${setting.height}:${setting._tag === "preset" ? setting.presetId : ""}`;
 
 const normalizeZoomFactor = (zoomFactor: number): number =>
   Number.isFinite(zoomFactor) && zoomFactor > 0 ? zoomFactor : 1;
@@ -71,7 +66,7 @@ export function resolveFittedBrowserViewport(
   return { _tag: "freeform", width: 1280, height: 800 };
 }
 
-export function resolveBrowserDeviceViewportArea(container: {
+function resolveBrowserDeviceViewportArea(container: {
   readonly width: number;
   readonly height: number;
 }): PreviewViewportSize {
@@ -81,66 +76,6 @@ export function resolveBrowserDeviceViewportArea(container: {
       1,
       container.height - BROWSER_DEVICE_TOOLBAR_HEIGHT - BROWSER_VIEWPORT_RESIZE_RAIL_SIZE,
     ),
-  };
-}
-
-export function resolveBrowserViewportLayout(
-  container: { readonly width: number; readonly height: number },
-  setting: PreviewViewportSetting,
-  zoomFactor = 1,
-): BrowserViewportLayout {
-  const containerWidth = Math.max(1, Math.round(container.width));
-  const containerHeight = Math.max(1, Math.round(container.height));
-  if (setting._tag === "fill") {
-    return {
-      canvasWidth: containerWidth,
-      canvasHeight: containerHeight,
-      viewportX: 0,
-      viewportY: 0,
-      viewportWidth: containerWidth,
-      viewportHeight: containerHeight,
-      viewportScale: 1,
-      fillsPanel: true,
-    };
-  }
-  const normalizedZoomFactor = normalizeZoomFactor(zoomFactor);
-  const renderedWidth = setting.width * normalizedZoomFactor;
-  const renderedHeight = setting.height * normalizedZoomFactor;
-  const viewportScale = Math.min(
-    1,
-    containerWidth / renderedWidth,
-    containerHeight / renderedHeight,
-  );
-  const viewportWidth = renderedWidth * viewportScale;
-  const viewportHeight = renderedHeight * viewportScale;
-  return {
-    canvasWidth: containerWidth,
-    canvasHeight: containerHeight,
-    viewportX: Math.max(0, Math.round((containerWidth - viewportWidth) / 2)),
-    viewportY: Math.max(0, Math.round((containerHeight - viewportHeight) / 2)),
-    viewportWidth,
-    viewportHeight,
-    viewportScale,
-    fillsPanel: false,
-  };
-}
-
-export function resolveBrowserDeviceViewportLayout(
-  container: { readonly width: number; readonly height: number },
-  setting: Exclude<PreviewViewportSetting, { readonly _tag: "fill" }>,
-  zoomFactor = 1,
-): BrowserViewportLayout {
-  const layout = resolveBrowserViewportLayout(
-    resolveBrowserDeviceViewportArea(container),
-    setting,
-    zoomFactor,
-  );
-  return {
-    ...layout,
-    canvasWidth: Math.max(1, Math.round(container.width)),
-    canvasHeight: Math.max(1, Math.round(container.height)),
-    viewportX: layout.viewportX + BROWSER_VIEWPORT_RESIZE_RAIL_SIZE,
-    viewportY: layout.viewportY + BROWSER_DEVICE_TOOLBAR_HEIGHT,
   };
 }
 

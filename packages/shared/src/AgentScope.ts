@@ -1,5 +1,7 @@
+import type { ChatAttachment } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 
 export interface AgentScopeShape {
   readonly wrap: (input: {
@@ -56,6 +58,55 @@ export const AgentScope = Context.Reference<AgentScopeShape>("@t3tools/shared/Ag
 export const AgentScopeThreadId = Context.Reference<string | undefined>(
   "@t3tools/shared/AgentScope/ThreadId",
   { defaultValue: () => undefined },
+);
+
+export interface AgentSandboxShape {
+  /**
+   * The sandbox a thread's agent runs in, none on the host. Processes and sessions are never
+   * shared across sandboxes.
+   */
+  readonly identity: (threadId: string) => Effect.Effect<Option.Option<string>>;
+  readonly refusal: (threadId: string, driver: string) => Effect.Effect<Option.Option<string>>;
+  readonly launch: (input: {
+    readonly threadId: string | undefined;
+    readonly command: string;
+    readonly args: ReadonlyArray<string>;
+    readonly env: NodeJS.ProcessEnv | undefined;
+  }) => Effect.Effect<{ readonly command: string; readonly args: ReadonlyArray<string> }>;
+  readonly hostPath: (input: {
+    readonly threadId: string;
+    readonly path: string;
+    readonly env: NodeJS.ProcessEnv;
+  }) => Effect.Effect<Option.Option<string>>;
+  /** The existing host file behind a path the thread's sandboxed agent names, such as a link. */
+  readonly filePath: (input: {
+    readonly threadId: string;
+    readonly path: string;
+  }) => Effect.Effect<Option.Option<string>>;
+  readonly stageAttachments: (
+    threadId: string,
+    attachments: ReadonlyArray<ChatAttachment>,
+  ) => Effect.Effect<ReadonlyMap<string, string>>;
+}
+
+export const AgentSandbox = Context.Reference<AgentSandboxShape>(
+  "@t3tools/shared/AgentScope/Sandbox",
+  {
+    defaultValue: () => ({
+      identity: () => Effect.succeedNone,
+      refusal: () => Effect.succeedNone,
+      launch: ({ command, args }) => Effect.succeed({ command, args }),
+      hostPath: () => Effect.succeedNone,
+      filePath: () => Effect.succeedNone,
+      stageAttachments: () => Effect.succeed(new Map()),
+    }),
+  },
+);
+
+/** `ProviderSessionManager` provides it around a turn start or steer; the shared attachment prompt reads it. */
+export const AgentAttachmentPaths = Context.Reference<ReadonlyMap<string, string>>(
+  "@t3tools/shared/AgentScope/AttachmentPaths",
+  { defaultValue: () => new Map() },
 );
 
 export const AGENT_OOM_SCORE_ADJ = 800;

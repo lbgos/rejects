@@ -3807,6 +3807,23 @@ const OrchestrationV2InternalCommand = Schema.Union([
       }),
     ),
   }),
+  Schema.Struct({
+    type: Schema.Literal("message.record"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    messageId: MessageId,
+    text: TrimmedNonEmptyString,
+    attachments: Schema.optional(Schema.Array(ChatAttachment)),
+  }),
+  /**
+   * The thread's next run starts a new native provider conversation. The transcript stays;
+   * whoever resets supplies the context the new conversation needs.
+   */
+  Schema.Struct({
+    type: Schema.Literal("thread.context.reset"),
+    commandId: CommandId,
+    threadId: ThreadId,
+  }),
 ]);
 export type OrchestrationV2InternalCommand = typeof OrchestrationV2InternalCommand.Type;
 

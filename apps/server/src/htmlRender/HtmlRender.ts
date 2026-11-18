@@ -146,12 +146,17 @@ export interface HtmlPreview {
 export class HtmlRender extends Context.Service<
   HtmlRender,
   {
-    readonly prepare: (html: string) => Effect.Effect<string, HtmlRenderPrepareError>;
+    readonly prepare: (
+      html: string,
+      offline?: boolean,
+    ) => Effect.Effect<string, HtmlRenderPrepareError>;
     readonly publish: (
       input: HtmlRenderSource & {
         readonly threadId: ThreadId;
         readonly title: string;
         readonly height: number;
+        /** The page may load nothing from outside itself (a bot's pages). */
+        readonly offline?: boolean | undefined;
       },
     ) => Effect.Effect<
       HtmlRenderReference,
@@ -164,6 +169,8 @@ export class HtmlRender extends Context.Service<
       input: HtmlRenderSource & {
         readonly width?: number | undefined;
         readonly appearance?: ThemeAppearance | undefined;
+        readonly offline?: boolean | undefined;
+        readonly scale?: number | undefined;
       },
     ) => Effect.Effect<
       HtmlPreview,
@@ -486,12 +493,14 @@ const make = Effect.gen(function* () {
     "path" in input ? readPageFile(input.path) : Effect.succeed(input.html);
 
   // The bootstrap goes in first so its head scan never runs over inlined image data.
-  const inline = (html: string) =>
-    inlineLocalImages(injectHtmlRenderBootstrap(html)).pipe(Effect.provideContext(services));
+  const inline = (html: string, offline: boolean) =>
+    inlineLocalImages(injectHtmlRenderBootstrap(html, offline)).pipe(
+      Effect.provideContext(services),
+    );
 
-  const prepare = Effect.fn("HtmlRender.prepare")(function* (html: string) {
+  const prepare = Effect.fn("HtmlRender.prepare")(function* (html: string, offline = false) {
     yield* rejectViewportHeight(html);
-    const inlined = yield* inline(html);
+    const inlined = yield* inline(html, offline);
     if (inlined.missing.length > 0) {
       return yield* new HtmlRenderImagesNotFoundError({ paths: inlined.missing });
     }
@@ -503,10 +512,11 @@ const make = Effect.gen(function* () {
       readonly threadId: ThreadId;
       readonly title: string;
       readonly height: number;
+      readonly offline?: boolean | undefined;
     },
   ) {
     const source = yield* readSource(input);
-    const html = yield* prepare(source);
+    const html = yield* prepare(source, input.offline);
     // The `-html` id suffix makes the asset route serve it as a sandboxed text/html document.
     const attachmentId = createAttachmentId(input.threadId, "html");
     const filePath =
@@ -563,6 +573,8 @@ const make = Effect.gen(function* () {
     input: HtmlRenderSource & {
       readonly width?: number | undefined;
       readonly appearance?: ThemeAppearance | undefined;
+      readonly offline?: boolean | undefined;
+      readonly scale?: number | undefined;
     },
   ) {
     const width = Math.min(
@@ -572,7 +584,7 @@ const make = Effect.gen(function* () {
     const appearance = input.appearance ?? "dark";
     const source = yield* readSource(input);
     yield* rejectViewportHeight(source);
-    const inlined = yield* inline(source);
+    const inlined = yield* inline(source, input.offline === true);
     const executable = yield* previewBrowser.executable;
     const theme = htmlRenderTheme(
       appearance === "light" ? T3_CODE_LIGHT_THEME_COLORS : T3_CODE_DARK_THEME_COLORS,
@@ -587,6 +599,7 @@ const make = Effect.gen(function* () {
         width,
         urlFragment: htmlRenderThemeFragment(theme),
         appearance,
+        scale: Math.min(3, Math.max(1, input.scale ?? 1)),
       }).pipe(Effect.provideContext(services)),
     );
     return {

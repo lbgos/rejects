@@ -58,6 +58,7 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 
+import * as BotStore from "../bots/BotStore.ts";
 import * as CommandReceiptStore from "./CommandReceiptStore.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
@@ -606,6 +607,7 @@ const isForceStopThreadError = Schema.is(OrchestrationV2ForceStopThreadError);
 const make = Effect.gen(function* () {
   const threadDispatch = yield* ThreadCommandExecutor.ThreadCommandExecutor;
   const orchestrator = yield* Orchestrator.OrchestratorV2;
+  const bots = yield* Effect.serviceOption(BotStore.BotStore);
   const sessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
   const layerScope = yield* Effect.scope;
   const agentScope = yield* AgentScope;
@@ -807,10 +809,26 @@ const make = Effect.gen(function* () {
     }
   };
 
+  // A bot keeps its name as the thread title: no seed, so no title generation.
+  const withoutBotTitleSeed = Effect.fn("ThreadManagementService.withoutBotTitleSeed")(function* (
+    command: Parameters<ThreadManagementServiceShape["dispatch"]>[0],
+  ) {
+    if (command.type !== "message.dispatch" || command.titleSeed === undefined) return command;
+    if (Option.isNone(bots) || (yield* bots.value.owner(command.threadId)) === undefined) {
+      return command;
+    }
+    const { titleSeed: _titleSeed, ...rest } = command;
+    return rest;
+  });
+
   const dispatch: ThreadManagementServiceShape["dispatch"] = (command) =>
-    ensureCommandTranscripts(command).pipe(
-      Effect.andThen(assertDispatchTargetEnabled(command)),
-      Effect.andThen(orchestrator.dispatch(command)),
+    withoutBotTitleSeed(command).pipe(
+      Effect.flatMap((dispatched) =>
+        ensureCommandTranscripts(dispatched).pipe(
+          Effect.andThen(assertDispatchTargetEnabled(dispatched)),
+          Effect.andThen(orchestrator.dispatch(dispatched)),
+        ),
+      ),
     );
 
   const getProjectThreadRecords: ThreadManagementServiceShape["getProjectThreadRecords"] = (

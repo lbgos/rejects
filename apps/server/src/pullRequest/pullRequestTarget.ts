@@ -1,5 +1,4 @@
 import type { OrchestrationProjectShell, SourceControlProviderKind } from "@t3tools/contracts";
-import { canonicalizeGitCafePullRequestUrl } from "@t3tools/source-control-definitions/registry";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
@@ -86,7 +85,7 @@ export const resolveTarget = Effect.fn("PullRequestsToolkit.resolveTarget")(func
     }
     return {
       ...normalizeThreadPullRequestKey(parsed),
-      url: canonicalizeGitCafePullRequestUrl(input.url),
+      url: input.url,
     } satisfies ResolvedTarget;
   }
   if (input.repository === undefined || input.number === undefined) {
@@ -118,6 +117,6 @@ export const resolveTarget = Effect.fn("PullRequestsToolkit.resolveTarget")(func
   }
   return {
     ...normalizeThreadPullRequestKey({ host, repository, number: input.number, url }),
-    url: canonicalizeGitCafePullRequestUrl(url),
+    url,
   } satisfies ResolvedTarget;
 });

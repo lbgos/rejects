@@ -107,6 +107,15 @@ export class PeerLinks extends Context.Service<
     readonly resolve: (
       environmentId: EnvironmentId,
     ) => Effect.Effect<ResolvedPeerLink, PeerLinkError>;
+    readonly issueSession: (input: {
+      readonly environmentId: EnvironmentId;
+      readonly pairingCode: string;
+      readonly access: AuthMcpClientAccess;
+      readonly clientName: string;
+    }) => Effect.Effect<
+      { readonly token: string; readonly expiresAt: DateTime.Utc },
+      PeerLinkError
+    >;
     /** Records the outcome of a call, so listing shows whether the peer answered last time. */
     readonly recordOutcome: (
       environmentId: EnvironmentId,
@@ -205,7 +214,7 @@ const probeFailure = (
   }
   return new PeerLinkError({
     reason: "not_a_t3_environment",
-    message: `${origin} answered, but not as a T3 Code environment this version understands.`,
+    message: `${origin} answered, but not as a rejects environment this version understands.`,
   });
 };
 
@@ -306,7 +315,11 @@ const make = Effect.gen(function* () {
 
   /** Signs in to the peer's `/mcp` with a pairing code: register, decide, exchange. */
   const signIn = Effect.fn("PeerLinks.signIn")(
-    function* (origin: string, input: PeerLinkCreateInput, clientName: string) {
+    function* (
+      origin: string,
+      input: Pick<PeerLinkCreateInput, "pairingCode" | "access">,
+      clientName: string,
+    ) {
       const client = yield* clientFor(origin);
       // Only the peer's own refusals are rejections. A dropped connection or
       // an answer this version cannot read is classified below.
@@ -522,7 +535,7 @@ const make = Effect.gen(function* () {
     if (!linkLimitsHold(peer)) {
       return yield* new PeerLinkError({
         reason: "incompatible",
-        message: `${peer.label} runs a T3 Code version that cannot keep a linked agent's limits. Update it, then link again.`,
+        message: `${peer.label} runs a rejects version that cannot keep a linked agent's limits. Update it, then link again.`,
       });
     }
     const issued = yield* signIn(primary, input, `T3 Code · ${self.label}`);
@@ -682,7 +695,7 @@ const make = Effect.gen(function* () {
       if (!fenced) {
         return yield* new PeerLinkError({
           reason: "incompatible",
-          message: `${link.label} runs a T3 Code version that cannot keep a linked agent's limits. Update it, then link again.`,
+          message: `${link.label} runs a rejects version that cannot keep a linked agent's limits. Update it, then link again.`,
         });
       }
       return {
@@ -711,9 +724,38 @@ const make = Effect.gen(function* () {
       Effect.ignoreCause({ log: true }),
     );
 
+  const issueSession: PeerLinks["Service"]["issueSession"] = Effect.fn("PeerLinks.issueSession")(
+    function* (input) {
+      if (!(yield* enabled)) {
+        return yield* new PeerLinkError({ reason: "disabled", message: LINKED_ENVIRONMENTS_OFF });
+      }
+      const row = yield* readRow(input.environmentId);
+      if (Option.isNone(row)) {
+        return yield* new PeerLinkError({
+          reason: "unknown_link",
+          message: `This environment is not linked to ${input.environmentId}. Link it first.`,
+        });
+      }
+      const linked = yield* toLink(row.value);
+      const { primary, peer } = yield* answeringAs(linked.urls, input.environmentId, linked.label);
+      if (!linkLimitsHold(peer)) {
+        return yield* new PeerLinkError({
+          reason: "incompatible",
+          message: `${peer.label} runs a rejects version that cannot keep a linked agent's limits. Update it, then link again.`,
+        });
+      }
+      const issued = yield* signIn(primary, input, input.clientName);
+      return {
+        token: issued.access_token,
+        expiresAt: DateTime.add(yield* DateTime.now, { seconds: issued.expires_in }),
+      };
+    },
+  );
+
   return PeerLinks.of({
     enabled,
     link,
+    issueSession,
     list,
     get,
     unlink,

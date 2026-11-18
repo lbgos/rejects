@@ -30,7 +30,6 @@ const BASE_SERVER_PORT = 13773;
 const BASE_WEB_PORT = 5733;
 const MAX_HASH_OFFSET = 3000;
 const MAX_PORT = 65535;
-const DESKTOP_DEV_LOOPBACK_HOST = "127.0.0.1";
 // Browsers block these ports before networking even when curl accepts them.
 // https://fetch.spec.whatwg.org/#port-blocking
 const FETCH_BAD_PORTS = new Set([
@@ -68,7 +67,7 @@ function sharedBackendTargetHost(host: string | undefined): string {
 }
 
 export const DEFAULT_T3_HOME = Effect.map(Effect.service(Path.Path), (path) =>
-  path.join(NodeOS.homedir(), ".t3"),
+  path.join(NodeOS.homedir(), ".rejects"),
 );
 
 const MODE_ARGS = {
@@ -82,7 +81,6 @@ const MODE_ARGS = {
   ],
   "dev:server": ["run", "--filter=t3", "dev"],
   "dev:web": ["run", "--filter=@t3tools/web", "dev"],
-  "dev:desktop": ["run", "--filter=@t3tools/desktop", "--filter=@t3tools/web", "dev"],
 } as const satisfies Record<string, ReadonlyArray<string>>;
 
 // `--built`: the web package rebuilds into apps/web/dist and the backend serves
@@ -153,7 +151,7 @@ export class DevRunnerProcessError extends Schema.TaggedError<DevRunnerProcessEr
   "DevRunnerProcessError",
   {
     operation: Schema.Literals(["spawn", "wait-for-exit"]),
-    mode: Schema.Literals(["dev", "dev:server", "dev:web", "dev:desktop"]),
+    mode: Schema.Literals(["dev", "dev:server", "dev:web"]),
     executable: Schema.Literal("vp"),
     argumentCount: Schema.Number,
     shell: Schema.Boolean,
@@ -168,7 +166,7 @@ export class DevRunnerProcessError extends Schema.TaggedError<DevRunnerProcessEr
 export class DevRunnerProcessExitError extends Schema.TaggedError<DevRunnerProcessExitError>()(
   "DevRunnerProcessExitError",
   {
-    mode: Schema.Literals(["dev", "dev:server", "dev:web", "dev:desktop"]),
+    mode: Schema.Literals(["dev", "dev:server", "dev:web"]),
     executable: Schema.Literal("vp"),
     argumentCount: Schema.Number,
     shell: Schema.Boolean,
@@ -195,7 +193,7 @@ export class DevRunnerHostNotProxiableError extends Schema.TaggedError<DevRunner
 export class DevRunnerBuiltNeedsShareError extends Schema.TaggedError<DevRunnerBuiltNeedsShareError>()(
   "DevRunnerBuiltNeedsShareError",
   {
-    mode: Schema.Literals(["dev", "dev:server", "dev:web", "dev:desktop"]),
+    mode: Schema.Literals(["dev", "dev:server", "dev:web"]),
   },
 ) {
   override get message(): string {
@@ -319,14 +317,11 @@ export const createDevRunnerEnv = Effect.fn("dev-runner.createDevRunnerEnv")(fun
   const webPort = BASE_WEB_PORT + webOffset;
   const configuredBaseDir = t3Home?.trim() || undefined;
   const resolvedBaseDir = yield* resolveBaseDir(configuredBaseDir);
-  const isDesktopMode = mode === "dev:desktop";
 
   const output: NodeJS.ProcessEnv = {
     ...baseEnv,
     PORT: String(webPort),
-    VITE_DEV_SERVER_URL:
-      devUrl?.toString() ??
-      `http://${isDesktopMode ? DESKTOP_DEV_LOOPBACK_HOST : "localhost"}:${webPort}`,
+    VITE_DEV_SERVER_URL: devUrl?.toString() ?? `http://localhost:${webPort}`,
   };
 
   if (configuredBaseDir !== undefined) {
@@ -344,50 +339,23 @@ export const createDevRunnerEnv = Effect.fn("dev-runner.createDevRunnerEnv")(fun
   // install of the developer's real accounts. Set it explicitly to opt in.
   output.T3CODE_TELEMETRY_ENABLED = baseEnv.T3CODE_TELEMETRY_ENABLED ?? "false";
 
-  if (!isDesktopMode) {
-    output.T3CODE_PORT = String(serverPort);
-    // An inherited HOST pins Vite's HMR socket via explicitHost in apps/web/vite.config.ts.
-    // Only desktop mode should set it.
-    delete output.HOST;
-    if (mode === "dev" || mode === "dev:web") {
-      // Browser dev is single-origin: everything (including /ws) is proxied
-      // through Vite, so the client must resolve its backend from
-      // window.location.origin rather than a baked-in localhost URL.
-      delete output.VITE_HTTP_URL;
-      delete output.VITE_WS_URL;
-      // Deleting is not enough on its own: vite.config.ts calls loadRepoEnv,
-      // which merges `.env`/`.env.local` *under* this env, so a developer
-      // with either URL in their `.env` would get it back and silently lose
-      // single-origin mode.
-      output.T3CODE_SINGLE_ORIGIN_DEV = "1";
-    } else {
-      output.VITE_HTTP_URL = `http://localhost:${serverPort}`;
-      output.VITE_WS_URL = `ws://localhost:${serverPort}`;
-      delete output.T3CODE_SINGLE_ORIGIN_DEV;
-    }
+  output.T3CODE_PORT = String(serverPort);
+  // Browser dev is single-origin: everything (including /ws) is proxied through Vite.
+  delete output.HOST;
+  if (mode === "dev" || mode === "dev:web") {
+    delete output.VITE_HTTP_URL;
+    delete output.VITE_WS_URL;
+    output.T3CODE_SINGLE_ORIGIN_DEV = "1";
   } else {
-    output.T3CODE_PORT = String(serverPort);
-    output.VITE_HTTP_URL = `http://${DESKTOP_DEV_LOOPBACK_HOST}:${serverPort}`;
-    output.VITE_WS_URL = `ws://${DESKTOP_DEV_LOOPBACK_HOST}:${serverPort}`;
-    // Desktop pins the renderer to loopback on purpose; an ambient marker
-    // must not make Vite drop those URLs.
+    output.VITE_HTTP_URL = `http://localhost:${serverPort}`;
+    output.VITE_WS_URL = `ws://localhost:${serverPort}`;
     delete output.T3CODE_SINGLE_ORIGIN_DEV;
-    delete output.T3CODE_MODE;
-    delete output.T3CODE_NO_BROWSER;
-    delete output.T3CODE_DEV_AUTH_TOKEN;
   }
-
   // Agent shells inherit the parent T3 server's bind settings; only --host widens the dev server.
   delete output.T3CODE_LAN;
-  if (!isDesktopMode && host !== undefined) {
-    output.T3CODE_HOST = host;
-  } else {
-    delete output.T3CODE_HOST;
-  }
-
-  if (!isDesktopMode) {
-    output.T3CODE_NO_BROWSER = browser === true ? "0" : "1";
-  }
+  if (host !== undefined) output.T3CODE_HOST = host;
+  else delete output.T3CODE_HOST;
+  output.T3CODE_NO_BROWSER = browser === true ? "0" : "1";
 
   if (autoBootstrapProjectFromCwd !== undefined) {
     output.T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD = autoBootstrapProjectFromCwd ? "1" : "0";
@@ -408,11 +376,6 @@ export const createDevRunnerEnv = Effect.fn("dev-runner.createDevRunnerEnv")(fun
 
   if (mode === "dev:server" || mode === "dev:web") {
     output.T3CODE_MODE = "web";
-    delete output.T3CODE_DESKTOP_WS_URL;
-  }
-
-  if (isDesktopMode) {
-    output.HOST = DESKTOP_DEV_LOOPBACK_HOST;
     delete output.T3CODE_DESKTOP_WS_URL;
   }
 
@@ -782,10 +745,6 @@ export const runDevRunnerWithInput = Effect.fn("dev-runner.runDevRunnerWithInput
   if (input.share) {
     if (input.mode === "dev:server") {
       yield* Effect.logInfo("[dev-runner] --share has no effect for dev:server (no web server).");
-    } else if (input.mode === "dev:desktop") {
-      yield* Effect.logWarning(
-        "[dev-runner] --share is not supported for dev:desktop (the renderer is pinned to loopback). Use `dev`, which runs the whole browser stack.",
-      );
     } else {
       // acquireRelease, not share-then-addFinalizer: the mapping outlives this
       // process (and reboots), so the cleanup has to be registered atomically
@@ -833,7 +792,7 @@ export const runDevRunnerWithInput = Effect.fn("dev-runner.runDevRunnerWithInput
       if (shared) {
         // The app is reached from the tailnet origin. Vite already allows
         // *.ts.net hosts; the backend needs the origin for credentialed
-        // requests that bypass the proxy (desktop renderer, direct calls).
+        // requests that bypass the proxy direct calls.
         env.T3CODE_DEV_ALLOWED_ORIGINS = [
           env.T3CODE_DEV_ALLOWED_ORIGINS,
           new URL(shared.url).origin,

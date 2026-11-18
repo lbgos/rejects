@@ -1,0 +1,11 @@
+# gitleaks settings for the Leaks job in .github/workflows/checks.yml: the default rules, minus
+# test inputs that hold synthetic secrets by design.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Synthetic secrets in tests and captured challenge pages"
+paths = [
+  '''^apps/server/src/push/redact\.test\.ts$''',
+  '''^apps/server/src/bots/challengeFixtures/[^/]+\.html$''',
+]

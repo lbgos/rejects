@@ -1,0 +1,542 @@
+import * as NodeDnsPromises from "node:dns/promises";
+import { OrchestratorMcpFailure, type ThreadId } from "@t3tools/contracts";
+import * as Context from "effect/Context";
+import * as Duration from "effect/Duration";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
+import * as Predicate from "effect/Predicate";
+import * as Random from "effect/Random";
+import * as Schema from "effect/Schema";
+import { HttpClient, HttpClientRequest } from "effect/http";
+import * as Config from "../config.ts";
+import type { AccountAction } from "../vault/Vault.ts";
+import {
+  type Challenge,
+  CHALLENGE_POLL_MS,
+  CHALLENGE_POLLS,
+  classifyChallenge,
+} from "./challenge.ts";
+import { slugFor } from "./computer.ts";
+import { htmlTitle, htmlToText, TRAWL_HTML_CHARS, TRAWL_TIMEOUT } from "./trawl.ts";
+
+/**
+ * The url and access key live in `<stateDir>/camofox.json`, read by this server only; neither reaches a bot or its processes.
+ * Each bot is its own Camoufox user with one tab, so cookies and pages never mix.
+ */
+const Settings = Schema.Struct({
+  url: Schema.String,
+  accessKey: Schema.String,
+  trawlUrl: Schema.optional(Schema.String),
+});
+const Scraped = Schema.Struct({
+  url: Schema.String,
+  html: Schema.String,
+  statusCode: Schema.Number,
+});
+
+const WEB_ACTIONS = ["open", "snapshot", "click", "type", "press", "scroll", "back"] as const;
+export const WebBrowseInput = Schema.Struct({
+  action: Schema.Literals(WEB_ACTIONS),
+  url: Schema.optional(Schema.String),
+  ref: Schema.optional(Schema.String),
+  text: Schema.optional(Schema.String),
+  submit: Schema.optional(Schema.Boolean),
+  offset: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+  account: Schema.optional(
+    Schema.String.annotate({
+      description:
+        'A site the user gave you, such as "olx.ua": the action runs in their signed-in browser there.',
+    }),
+  ),
+  secretRef: Schema.optional(
+    Schema.String.annotate({
+      description:
+        "With account and type: the name of a login or code you saved with ask_secret; the vault types it instead of text, and you never see it.",
+    }),
+  ),
+});
+type WebBrowseInput = typeof WebBrowseInput.Type;
+export const WebPage = Schema.Struct({
+  url: Schema.String,
+  snapshot: Schema.String,
+  nextOffset: Schema.optional(Schema.Int),
+  blocked: Schema.optional(Schema.String),
+  note: Schema.optional(Schema.String),
+});
+type WebPage = typeof WebPage.Type;
+
+export const WEB_SNAPSHOT_CHARS = 12_000;
+const TAB = "bot";
+
+const Tabs = Schema.Struct({
+  tabs: Schema.Array(
+    Schema.Struct({
+      tabId: Schema.String,
+      url: Schema.optional(Schema.String),
+      listItemId: Schema.optional(Schema.String),
+    }),
+  ),
+});
+const Created = Schema.Struct({ tabId: Schema.String });
+const Navigated = Schema.Struct({ googleBlocked: Schema.optional(Schema.Boolean) });
+const Snapshot = Schema.Struct({ url: Schema.String, snapshot: Schema.String });
+const Box = Schema.Struct({ x: Schema.Number, y: Schema.Number, height: Schema.Number });
+const Probed = Schema.Struct({
+  result: Schema.Struct({
+    title: Schema.String,
+    boxes: Schema.Array(Box),
+    loading: Schema.Boolean,
+    awsWaf: Schema.Boolean,
+  }),
+});
+/** In production Camoufox hides every 500's message; a stale ref still names the ref. */
+const Refusal = Schema.Struct({ error: Schema.String, ref: Schema.optional(Schema.String) });
+const decodeScraped = Schema.decodeUnknownEffect(Scraped);
+const isRefusal = Schema.is(Refusal);
+const isMcpFailure = Schema.is(OrchestratorMcpFailure);
+
+const failure = (message: string) =>
+  new OrchestratorMcpFailure({ code: "orchestration_error", message });
+
+/** Camoufox's whole answer to a navigation that threw, a missing host included. */
+const NAVIGATION_THREW = "The browser refused: Internal server error";
+/**
+ * Camoufox answers a click or type that timed out (it destroys the tab) or failed on the page
+ * with its hidden internal error or "tab destroyed". Bots took that for a browser crash.
+ */
+const ELEMENT_ACTION_FAILED = new Set([
+  NAVIGATION_THREW,
+  "The browser refused: Tab was destroyed. Open a new tab.",
+]);
+/** DNS answers for a name that does not exist, not for a resolver that is down. */
+const NO_SUCH_NAME = new Set(["ENOTFOUND", "ENODATA"]);
+
+/**
+ * The host of `url` when DNS says it does not exist. Bots guess shop domains, and Camoufox
+ * reports the miss as a bare internal error, so they retried the same address many times.
+ */
+export const missingHost = (
+  url: string,
+  lookup: (host: string) => Promise<unknown> = (host) => NodeDnsPromises.lookup(host),
+) => {
+  const host = /^https?:\/\/(?:[^@/?#]*@)?([^:/?#]+)/iu.exec(url)?.[1];
+  return Effect.tryPromise({
+    try: async () => {
+      if (host) await lookup(host);
+    },
+    catch: (error) => (Predicate.hasProperty(error, "code") ? String(error.code) : ""),
+  }).pipe(
+    Effect.match({
+      onSuccess: () => undefined,
+      onFailure: (code) => (NO_SUCH_NAME.has(code) ? host : undefined),
+    }),
+  );
+};
+
+const isGoogleResults = (url: string | undefined) => {
+  const page = url === undefined ? null : URL.parse(url);
+  return page !== null && page.hostname.includes("google.") && page.pathname === "/search";
+};
+
+/**
+ * Camofox finds a result ref by its heading text, which never matches the result's link, so clicking one hangs for 30 s and closes the tab; opening the address works.
+ * Refs are numbered per snapshot, so only the snapshot the bot was shown names its refs.
+ */
+const googleLinks = (snapshot: string, pageUrl: string) => {
+  const lines = snapshot.split("\n");
+  return new Map(
+    lines.flatMap((line, at) => {
+      const ref = /^\s*- link .* \[(e\d+)\]:$/u.exec(line)?.[1];
+      const href = /^\s*- \/url: (\S+)$/u.exec(lines[at + 1] ?? "")?.[1];
+      const url = href === undefined ? null : URL.parse(href, pageUrl);
+      return ref !== undefined && url !== null && /^https?:$/u.test(url.protocol)
+        ? [[ref, url.href] as const]
+        : [];
+    }),
+  );
+};
+
+const staleRef = (ref: string) =>
+  `The browser refused: the page changed and ${ref.slice(0, 20)} is gone. Take a snapshot for current refs, or open the URL again.`;
+
+/**
+ * AWS WAF's check pages show no text and define `gokuProps` in an inline script. Camoufox
+ * evaluates in an isolated world, where `window` is not the page's but the script text is readable.
+ */
+const AWS_WAF_PROBE = `[...document.scripts].some((script) => /\\bgokuProps\\b/.test(script.textContent ?? ""))`;
+
+/**
+ * The checkbox lives in a cross-origin iframe inside a closed shadow root; its host sits next to the hidden token input.
+ * `loading`: the script is on the page but no widget has rendered yet.
+ */
+const PAGE_PROBE = `({
+  title: document.title,
+  awsWaf: ${AWS_WAF_PROBE},
+  boxes: [...document.querySelectorAll('input[name="cf-turnstile-response"]')]
+    .filter((input) => input.value === "" && input.parentElement)
+    .map((input) => ([...input.parentElement.children].find((el) => el !== input) ?? input.parentElement).getBoundingClientRect())
+    .filter((box) => box.width >= 100 && box.height >= 40 && box.top >= 0 && box.bottom <= innerHeight)
+    .map((box) => ({ x: box.x, y: box.y, height: box.height })),
+  loading: !document.querySelector('input[name="cf-turnstile-response"]') &&
+    !!document.querySelector('script[src*="challenges.cloudflare.com/turnstile"]'),
+})`;
+const CHECKBOX_CLICKS = 2;
+const CHECKBOX_SHOWN_POLLS = 3;
+
+export const webInputProblem = (input: WebBrowseInput): string | undefined => {
+  switch (input.action) {
+    case "open":
+      return input.url && /^https?:\/\//iu.test(input.url)
+        ? undefined
+        : "open needs an http(s) url.";
+    case "click":
+      return input.ref ? undefined : "click needs a ref from the latest snapshot.";
+    case "type":
+      if (input.secretRef !== undefined && input.account === undefined)
+        return "secretRef works only with account: the site's sign-in runs in its account browser.";
+      return input.ref && (input.text !== undefined) !== (input.secretRef !== undefined)
+        ? undefined
+        : "type needs a ref and either text or secretRef.";
+    case "press":
+      return input.text ? undefined : "press needs the key name in text.";
+    case "scroll":
+      return input.text === undefined || input.text === "up" || input.text === "down"
+        ? undefined
+        : 'scroll takes text "up" or "down".';
+    default:
+      return undefined;
+  }
+};
+
+export const accountAction = (input: WebBrowseInput): AccountAction => {
+  switch (input.action) {
+    case "open":
+      return { action: "open", url: input.url ?? "" };
+    case "snapshot":
+      return { action: "snapshot", offset: input.offset };
+    case "click":
+      return { action: "click", ref: input.ref ?? "" };
+    case "type":
+      return {
+        action: "type",
+        ref: input.ref ?? "",
+        text: input.text ?? "",
+        submit: input.submit ?? false,
+      };
+    case "press":
+      return { action: "press", key: input.text ?? "" };
+    case "scroll":
+      return { action: "scroll", direction: input.text === "up" ? "up" : "down" };
+    case "back":
+      return { action: "back" };
+  }
+};
+
+const elementActionFailed =
+  (what: string) =>
+  <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    effect.pipe(
+      Effect.catchIf(
+        (error) => isMcpFailure(error) && ELEMENT_ACTION_FAILED.has(error.message),
+        () =>
+          failure(
+            `The ${what} did not finish: it timed out or the page refused it. The browser itself is running. Take a snapshot to see the page as it is, or open the link's address directly.`,
+          ),
+      ),
+    );
+
+export class WebBrowser extends Context.Service<
+  WebBrowser,
+  {
+    readonly search: (
+      botThreadId: ThreadId,
+      query: string,
+    ) => Effect.Effect<WebPage, OrchestratorMcpFailure>;
+    readonly browse: (
+      botThreadId: ThreadId,
+      input: WebBrowseInput,
+    ) => Effect.Effect<
+      { readonly page: WebPage; readonly challenge?: Challenge | undefined },
+      OrchestratorMcpFailure
+    >;
+  }
+>()("t3/bots/WebBrowser") {}
+
+const make = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const config = yield* Config.ServerConfig;
+  const http = yield* HttpClient.HttpClient;
+
+  const readSettings = fs.readFileString(path.join(config.stateDir, "camofox.json")).pipe(
+    Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(Settings))),
+    Effect.mapError(() => failure("Web tools are not set up on this server (camofox.json).")),
+  );
+
+  const call = Effect.fn("WebBrowser.call")(function* <A>(
+    schema: Schema.Codec<A>,
+    method: "GET" | "POST",
+    route: string,
+    body?: Readonly<Record<string, unknown>>,
+  ) {
+    const settings = yield* readSettings;
+    const url = new URL(route, settings.url).toString();
+    const request =
+      method === "GET"
+        ? HttpClientRequest.get(url).pipe(HttpClientRequest.bearerToken(settings.accessKey))
+        : yield* HttpClientRequest.post(url).pipe(
+            HttpClientRequest.bearerToken(settings.accessKey),
+            HttpClientRequest.bodyJson(body ?? {}),
+          );
+    const response = yield* http.execute(request).pipe(Effect.timeout("90 seconds"));
+    const json = yield* response.json;
+    if (response.status !== 200)
+      return yield* failure(
+        !isRefusal(json)
+          ? "The browser is unavailable."
+          : json.ref !== undefined
+            ? staleRef(json.ref)
+            : `The browser refused: ${json.error.slice(0, 300)}`,
+      );
+    return yield* Schema.decodeUnknownEffect(schema)(json);
+  });
+
+  const userFor = (botThreadId: ThreadId) => `t3-bot-${slugFor(botThreadId)}`;
+
+  const shownLinks = new Map<string, ReadonlyMap<string, string>>();
+
+  /** The bot's tab, adopted from Camoufox when it is still open, so restarts keep the page. */
+  const tabFor = Effect.fn("WebBrowser.tabFor")(function* (userId: string) {
+    const { tabs } = yield* call(Tabs, "GET", `/tabs?userId=${encodeURIComponent(userId)}`);
+    const open = tabs.find((tab) => tab.listItemId === TAB);
+    if (open) return open;
+    return yield* call(Created, "POST", "/tabs", { userId, sessionKey: TAB });
+  });
+
+  const page = Effect.fn("WebBrowser.page")(function* (userId: string, tabId: string, offset = 0) {
+    const snapshot = yield* call(
+      Snapshot,
+      "GET",
+      `/tabs/${encodeURIComponent(tabId)}/snapshot?userId=${encodeURIComponent(userId)}`,
+    );
+    const end = offset + WEB_SNAPSHOT_CHARS;
+    if (isGoogleResults(snapshot.url))
+      shownLinks.set(tabId, googleLinks(snapshot.snapshot, snapshot.url));
+    else shownLinks.delete(tabId);
+    return {
+      url: snapshot.url,
+      snapshot: snapshot.snapshot.slice(offset, end),
+      ...(end < snapshot.snapshot.length ? { nextOffset: end } : {}),
+    } satisfies WebPage;
+  });
+
+  const act = Effect.fn("WebBrowser.act")(function* (
+    userId: string,
+    { tabId, url }: { readonly tabId: string; readonly url?: string | undefined },
+    input: WebBrowseInput,
+  ) {
+    const tab = `/tabs/${encodeURIComponent(tabId)}`;
+    if (input.action === "click" && input.ref && isGoogleResults(url)) {
+      const links = shownLinks.get(tabId);
+      if (links === undefined) return yield* failure(staleRef(input.ref));
+      const address = links.get(input.ref);
+      if (address)
+        return yield* call(Navigated, "POST", `${tab}/navigate`, { userId, url: address });
+    }
+    switch (input.action) {
+      case "open":
+        return yield* call(Navigated, "POST", `${tab}/navigate`, { userId, url: input.url }).pipe(
+          Effect.catchIf(
+            (error) => isMcpFailure(error) && error.message === NAVIGATION_THREW,
+            (error) =>
+              missingHost(input.url ?? "").pipe(
+                Effect.flatMap((host) =>
+                  host
+                    ? failure(
+                        `${host} does not exist (no DNS record), so the page cannot open. Find the right address, for example with web_search for the site's name; do not open this one again.`,
+                      )
+                    : Effect.fail(error),
+                ),
+              ),
+          ),
+        );
+      case "click":
+        return yield* call(Schema.Unknown, "POST", `${tab}/click`, {
+          userId,
+          ref: input.ref,
+        }).pipe(elementActionFailed("click"));
+      case "type":
+        return yield* call(Schema.Unknown, "POST", `${tab}/type`, {
+          userId,
+          ref: input.ref,
+          text: input.text,
+          submit: input.submit ?? false,
+        }).pipe(elementActionFailed("typing"));
+      case "press":
+        return yield* call(Schema.Unknown, "POST", `${tab}/press`, { userId, key: input.text });
+      case "scroll":
+        return yield* call(Schema.Unknown, "POST", `${tab}/scroll`, {
+          userId,
+          direction: input.text ?? "down",
+        });
+      case "back":
+        return yield* call(Schema.Unknown, "POST", `${tab}/back`, { userId });
+      case "snapshot":
+        return undefined;
+    }
+  });
+
+  const probe = Effect.fn("WebBrowser.probe")(
+    function* (userId: string, tabId: string) {
+      const { result } = yield* call(
+        Probed,
+        "POST",
+        `/tabs/${encodeURIComponent(tabId)}/evaluate`,
+        {
+          userId,
+          expression: PAGE_PROBE,
+          timeoutMs: 5000,
+        },
+      );
+      return {
+        title: result.title,
+        box: result.boxes[0],
+        loading: result.loading,
+        awsWaf: result.awsWaf,
+      };
+    },
+    Effect.orElseSucceed(() => ({ title: "", box: undefined, loading: false, awsWaf: false })),
+  );
+
+  /**
+   * Clicks the checkbox like a person: a short pause, then a point inside it (16-26 px from the
+   * widget's left edge, within 4 px of its middle). Camoufox moves the cursor there on a human path.
+   */
+  const clickCheckbox = Effect.fn("WebBrowser.clickCheckbox")(
+    function* (userId: string, tabId: string, box: typeof Box.Type) {
+      yield* Effect.sleep(Duration.millis(yield* Random.nextIntBetween(300, 900)));
+      const x = box.x + (yield* Random.nextIntBetween(16, 26));
+      const y = box.y + box.height / 2 + (yield* Random.nextIntBetween(-4, 4));
+      yield* call(Schema.Unknown, "POST", `/tabs/${encodeURIComponent(tabId)}/click`, {
+        userId,
+        coordinates: { x, y },
+      });
+    },
+    Effect.orElseSucceed(() => undefined),
+  );
+
+  const viaTrawl = Effect.fn("WebBrowser.viaTrawl")(
+    function* (url: string) {
+      const { trawlUrl } = yield* readSettings;
+      if (trawlUrl === undefined) return undefined;
+      const request = yield* HttpClientRequest.post(new URL("/scrape", trawlUrl).toString()).pipe(
+        HttpClientRequest.bodyJson({ url, solveEmbeddedCaptchas: true }),
+      );
+      const response = yield* http.execute(request).pipe(Effect.timeout(TRAWL_TIMEOUT));
+      if (response.status !== 200) return undefined;
+      const scraped = yield* decodeScraped(yield* response.json);
+      const html = scraped.html.slice(0, TRAWL_HTML_CHARS);
+      const text = htmlToText(html);
+      if (scraped.statusCode >= 400 || text === "") return undefined;
+      const title = htmlTitle(html);
+      if (classifyChallenge({ url: scraped.url, title, text, html })) return undefined;
+      const body = (title ? `${title}\n\n${text}` : text).slice(0, WEB_SNAPSHOT_CHARS);
+      return {
+        url: scraped.url,
+        snapshot: body,
+        note: "The browser was stopped by a check on this page; the solver read it instead. This is the page's text only: no refs, and the browser tab still shows the check.",
+      } satisfies WebPage;
+    },
+    Effect.orElseSucceed(() => undefined),
+  );
+
+  const mapFailure = Effect.mapError((error: unknown) =>
+    isMcpFailure(error) ? error : failure("The browser is unavailable."),
+  );
+
+  return WebBrowser.of({
+    search: Effect.fn("WebBrowser.search")(function* (botThreadId, query) {
+      const userId = userFor(botThreadId);
+      const { tabId } = yield* tabFor(userId);
+      const google = yield* call(Navigated, "POST", `/tabs/${encodeURIComponent(tabId)}/navigate`, {
+        userId,
+        macro: "@google_search",
+        query,
+      });
+      if (google.googleBlocked)
+        yield* call(Navigated, "POST", `/tabs/${encodeURIComponent(tabId)}/navigate`, {
+          userId,
+          url: `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
+        });
+      return yield* page(userId, tabId);
+    }, mapFailure),
+    browse: Effect.fn("WebBrowser.browse")(function* (botThreadId, input) {
+      const problem = webInputProblem(input);
+      if (problem) return yield* failure(problem);
+      const userId = userFor(botThreadId);
+      const tab = yield* tabFor(userId);
+      const { tabId } = tab;
+      // Camoufox gives no navigation events, so the page (text and title) is checked after any
+      // action that may load a page, also one that keeps the address, such as a posted form.
+      const mayLoad =
+        input.action === "open" ||
+        input.action === "back" ||
+        input.action === "click" ||
+        input.action === "press" ||
+        (input.action === "type" && input.submit === true);
+      yield* act(userId, tab, input);
+      let current = yield* page(
+        userId,
+        tabId,
+        input.action === "snapshot" ? (input.offset ?? 0) : 0,
+      );
+      if (!mayLoad) return { page: current };
+      const look = (shown: WebPage) =>
+        probe(userId, tabId).pipe(
+          Effect.map(({ title, box, loading, awsWaf }) => ({
+            challenge: classifyChallenge({
+              url: shown.url,
+              title,
+              text: shown.snapshot,
+              awsWaf,
+            }),
+            box,
+            loading,
+          })),
+        );
+      let { challenge, box, loading } = yield* look(current);
+      // A Turnstile checkbox, on a check page or in a form, gets up to two human clicks. A widget
+      // on an ordinary page is waited for only until those clicks are spent, and one still
+      // rendering only for the first polls.
+      let clicks = 0;
+      let shown = 0;
+      for (
+        let poll = 0;
+        (challenge || box || (loading && poll < CHECKBOX_SHOWN_POLLS)) && poll < CHALLENGE_POLLS;
+        poll++
+      ) {
+        shown = box ? shown + 1 : 0;
+        if (box && shown >= CHECKBOX_SHOWN_POLLS) {
+          if (clicks === CHECKBOX_CLICKS && !challenge) break;
+          if (clicks < CHECKBOX_CLICKS) {
+            yield* clickCheckbox(userId, tabId, box);
+            clicks++;
+            shown = 0;
+          }
+        }
+        yield* Effect.sleep(Duration.millis(CHALLENGE_POLL_MS));
+        current = yield* page(userId, tabId);
+        ({ challenge, box, loading } = yield* look(current));
+      }
+      if (challenge && input.action === "open" && input.url) {
+        const solved = yield* viaTrawl(input.url);
+        if (solved) return { page: solved };
+      }
+      return { page: current, challenge };
+    }, mapFailure),
+  });
+});
+
+export const layer = Layer.effect(WebBrowser, make);

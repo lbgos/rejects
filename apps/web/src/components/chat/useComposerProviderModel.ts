@@ -36,6 +36,7 @@ export function useComposerProviderModel(
     readonly threadModelSelection: ModelSelection | null | undefined;
     readonly projectModelSelection: ModelSelection | null | undefined;
     readonly promptInjectionState: ReturnType<typeof getComposerPromptInjectionState>;
+    readonly threadSelectionOnly?: boolean;
     readonly threadStarted: boolean;
   },
 ) {
@@ -50,6 +51,7 @@ export function useComposerProviderModel(
     candidateInstanceIds,
     lockedProvider,
     lockedInstanceId,
+    threadSelectionOnly = false,
     threadStarted,
   } = input;
   const draftModelState = useComposerDraftModelState(threadRef);
@@ -58,23 +60,34 @@ export function useComposerProviderModel(
     settings,
     activeProjectId,
   );
-  const selection = resolveComposerProviderSelection({
-    entries: providerInstanceEntries,
-    candidateInstanceIds: [
-      draftModelSelectionApplies(draftModelState, threadStarted)
-        ? draftModelState.activeProvider
-        : null,
-      ...candidateInstanceIds,
-    ],
-    lockedProvider,
-    lockedInstanceId,
-  });
+  const selection = resolveComposerProviderSelection(
+    threadSelectionOnly
+      ? {
+          entries: providerInstanceEntries.filter(
+            (entry) => entry.instanceId === threadModelSelection?.instanceId,
+          ),
+          candidateInstanceIds: [threadModelSelection?.instanceId],
+          lockedProvider: null,
+          lockedInstanceId: null,
+        }
+      : {
+          entries: providerInstanceEntries,
+          candidateInstanceIds: [
+            draftModelSelectionApplies(draftModelState, threadStarted)
+              ? draftModelState.activeProvider
+              : null,
+            ...candidateInstanceIds,
+          ],
+          lockedProvider,
+          lockedInstanceId,
+        },
+  );
   const selectedInstanceId =
     selection.selectedProviderEntry?.instanceId ?? NO_PROVIDER_MODEL_SELECTION.instanceId;
   const selectedProvider: ProviderDriverKind =
     selection.selectedProviderEntry?.driverKind ?? selection.requestedDriverKind;
   const modelState = deriveEffectiveComposerModelState({
-    draft: draftModelState,
+    draft: threadSelectionOnly ? null : draftModelState,
     threadStarted,
     providers: providerStatuses,
     selectedProvider,

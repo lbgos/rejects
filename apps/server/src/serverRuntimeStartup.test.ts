@@ -14,6 +14,7 @@ import * as OtelEnvironment from "@t3tools/shared/otelEnvironment";
 import { HttpServer } from "effect/http";
 import * as NetAddress from "effect/net/NetAddress";
 import * as Deferred from "effect/Deferred";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Exit from "effect/Exit";
@@ -363,5 +364,22 @@ it.effect("automatic pull only updates enabled, behind, clean default-branch che
       { ...overrides({ "/opted-out": false }), defaultAutoPull: true },
     ).pipe(Effect.provideService(GitVcsDriver.GitVcsDriver, git));
     assert.deepStrictEqual(pulled, ["/inherited"]);
+  }),
+);
+
+it.effect("issues no pairing credential at startup when T3CODE_NO_STARTUP_PAIRING is set", () =>
+  Effect.gen(function* () {
+    const issued = yield* Ref.make(0);
+    const issue = Ref.update(issued, (n) => n + 1).pipe(
+      Effect.as({ connectionString: "c", token: "t", pairingUrl: "http://127.0.0.1:1/pair" }),
+    );
+    const withEnv = (env: Record<string, string>) =>
+      Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env })));
+    yield* ServerRuntimeStartup.announceHeadlessStartup(issue).pipe(
+      withEnv({ T3CODE_NO_STARTUP_PAIRING: "1" }),
+    );
+    assert.strictEqual(yield* Ref.get(issued), 0);
+    yield* ServerRuntimeStartup.announceHeadlessStartup(issue).pipe(withEnv({}));
+    assert.strictEqual(yield* Ref.get(issued), 1);
   }),
 );

@@ -83,34 +83,6 @@ describe("provider compatibility", () => {
     );
   });
 
-  it("compares Cursor build dates without treating semver prereleases as stable", () => {
-    const cursor = ProviderDriverKind.make("cursor");
-    const cursorPolicy: ProviderCompatibilityPolicy = {
-      driver: cursor,
-      t3CodeRange: policy.t3CodeRange,
-      ranges: [
-        { range: "<2026.05.09", status: "unsupported" },
-        { range: ">=2026.05.09", status: "supported" },
-      ],
-    };
-    for (const [version, expected] of [
-      ["2026.05.08-a1b2c3d", "unsupported"],
-      ["2026.05.09-a1b2c3d", "supported"],
-      ["2026.09.22-f2b0fcd", "supported"],
-      ["2026.05.09", "supported"],
-      ["2026.05.09-beta.1", "unknown"],
-    ] as const) {
-      assert.strictEqual(
-        resolveProviderCompatibility([cursorPolicy], cursor, version)?.status,
-        expected,
-      );
-    }
-    assert.strictEqual(
-      resolveProviderCompatibility([policy], driver, "2.0.0-a1b2c3d")?.status,
-      "unknown",
-    );
-  });
-
   it("recognizes Antigravity semver release tags while keeping dated candidates unknown", () => {
     const antigravity = ProviderDriverKind.make("antigravity");
     const taggedPolicy = {

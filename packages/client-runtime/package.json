@@ -251,10 +251,6 @@
       "types": "./src/state/environmentHttpAuth.ts",
       "default": "./src/state/environmentHttpAuth.ts"
     },
-    "./state/connectMcpApproval": {
-      "types": "./src/state/connectMcpApproval.ts",
-      "default": "./src/state/connectMcpApproval.ts"
-    },
     "./state/peerPairingCode": {
       "types": "./src/state/peerPairingCode.ts",
       "default": "./src/state/peerPairingCode.ts"
@@ -569,7 +565,7 @@
     }
   },
   "scripts": {
-    "typecheck": "effect-tsgo tsrs --noEmit",
+    "typecheck": "effect-tsgo tsrs --noEmit --checkers 1",
     "test": "vp test run"
   },
   "dependencies": {
@@ -577,13 +573,8 @@
     "@t3tools/contracts": "workspace:*",
     "@t3tools/provider-acp-registry": "workspace:*",
     "@t3tools/provider-core": "workspace:*",
-    "@t3tools/provider-cursor": "workspace:*",
-    "@t3tools/provider-fx": "workspace:*",
-    "@t3tools/provider-grok": "workspace:*",
-    "@t3tools/provider-kiro": "workspace:*",
     "@t3tools/provider-muse": "workspace:*",
     "@t3tools/provider-opencode": "workspace:*",
-    "@t3tools/provider-pi": "workspace:*",
     "@t3tools/secret-provider-definitions": "workspace:*",
     "@t3tools/shared": "workspace:*",
     "@t3tools/source-control-core": "workspace:*",

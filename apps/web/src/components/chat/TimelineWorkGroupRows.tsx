@@ -12,6 +12,8 @@ import { useAssetUrls } from "~/assets/assetUrls";
 import { observeResize } from "~/lib/observeResize";
 import { tickTextContent } from "~/lib/tickTextContent";
 import { observeVisibleAnimation } from "../../lib/visibleAnimation";
+import { BotThreadContext } from "../../bots/context";
+import { StatusSwap } from "../../bots/StatusSwap";
 import { memo, use, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import { workEntryDisplayIndicatesToolFailure } from "../../session-logic";
@@ -126,7 +128,7 @@ export const WorkGroupSection = memo(function WorkGroupSection({
   );
 });
 
-function WorkingTimer({ createdAt }: { createdAt: string }) {
+export function WorkingTimer({ createdAt }: { createdAt: string }) {
   const { activeThreadEnvironmentId } = use(TimelineRowCtx);
   return (
     <span
@@ -429,14 +431,17 @@ function CompactingLabel({ createdAt }: { createdAt: string | null }) {
 
 export function ThinkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "thinking" }> }) {
   const ctx = use(TimelineRowCtx);
+  const bot = use(BotThreadContext);
   const { isCompacting, isPreparingWorktree, liveAnswerPreview, providerStartingLabel } =
     use(TimelineRowActivityCtx);
   if (isPreparingWorktree || isCompacting) return <WorkLogRow label="" />;
   // A failed group keeps this disclosure while an approval waits, but nothing is thinking then.
   const live = ctx.pendingApprovals.size === 0;
+  const label = providerStartingLabel ?? row.label ?? liveAnswerPreview ?? "Thinking";
   const activity = (
     <LiveActivityRow
-      label={providerStartingLabel ?? row.label ?? liveAnswerPreview ?? "Thinking"}
+      label={label}
+      swapText={bot ? label : undefined}
       iconName="brain"
       active={live}
       shimmer={live}
@@ -463,6 +468,7 @@ function LiveActivityRow({
   failed = false,
   active = false,
   shimmer = false,
+  swapText,
 }: {
   label: ReactNode;
   iconName?: WorkEntryIconName;
@@ -470,25 +476,31 @@ function LiveActivityRow({
   failed?: boolean;
   active?: boolean;
   shimmer?: boolean;
+  /** The label as text; when set, a new line slides in over the old one (bot chats). */
+  swapText?: string | undefined;
 }) {
+  const shown = swapText === undefined ? label : <StatusSwap text={swapText}>{label}</StatusSwap>;
   const animated = active && !failed;
-  const showShimmer = animated && shimmer;
+  // The shine clips to every descendant's text, a swap's leaving line included; bot chats hold
+  // it still anyway.
+  const shine = animated && swapText === undefined;
+  const showShimmer = shine && shimmer;
   return (
     <div
       ref={animated ? observeVisibleAnimation : undefined}
       className="relative min-h-6 w-fit max-w-full min-w-0 overflow-hidden rounded-md text-sm leading-relaxed"
     >
       <LiveActivityContent
-        label={label}
+        label={shown}
         iconName={iconName}
         toolIcon={toolIcon}
         failed={failed}
         announceFailure={failed}
-        active={animated && !shimmer}
+        active={shine && !shimmer}
       />
       {showShimmer ? (
         <ActivityShimmerOverlay>
-          <LiveActivityContent label={label} iconName={iconName} toolIcon={toolIcon} highlighted />
+          <LiveActivityContent label={shown} iconName={iconName} toolIcon={toolIcon} highlighted />
         </ActivityShimmerOverlay>
       ) : null}
     </div>
@@ -566,6 +578,7 @@ export function LiveWorkEntryTimelineRow({
   row: Extract<TimelineRow, { kind: "work-live" }>;
 }) {
   const ctx = use(TimelineRowCtx);
+  const bot = use(BotThreadContext);
   const threadTarget = useThreadReadTarget(row.entry, ctx.activeThreadEnvironmentId);
   const label = liveWorkEntryLabel(row.entry, ctx.workspaceRoot, row.active);
   const threadLabel = threadReadLabel(label, threadTarget);
@@ -581,6 +594,16 @@ export function LiveWorkEntryTimelineRow({
       ? liveThoughtLine((row.thought.detail ?? "").slice(0, THOUGHT_PREVIEW_SOURCE_MAX_LENGTH))
       : "";
   const thoughtIsStatus = thoughtLine !== "" && row.entry === row.thought;
+  const reasoningText = (row.entry.detail ?? label).slice(0, THOUGHT_PREVIEW_SOURCE_MAX_LENGTH);
+  const swapText = !bot
+    ? undefined
+    : thoughtIsStatus
+      ? row.active
+        ? "Thinking"
+        : "Thought"
+      : row.entry.itemType === "reasoning"
+        ? reasoningText
+        : (threadLabel?.text ?? label);
 
   return (
     <button
@@ -610,15 +633,29 @@ export function LiveWorkEntryTimelineRow({
             </span>
           }
           label={
-            <span className="line-clamp-4">
-              <ChatMarkdown
-                inline
-                text={thoughtLine}
-                cwd={ctx.markdownCwd}
-                parseRawHtml={false}
-                extraRemarkPlugins={THOUGHT_PREVIEW_PLUGINS}
-              />
-            </span>
+            bot ? (
+              <StatusSwap text={thoughtLine} wrap>
+                <span className="line-clamp-4">
+                  <ChatMarkdown
+                    inline
+                    text={thoughtLine}
+                    cwd={ctx.markdownCwd}
+                    parseRawHtml={false}
+                    extraRemarkPlugins={THOUGHT_PREVIEW_PLUGINS}
+                  />
+                </span>
+              </StatusSwap>
+            ) : (
+              <span className="line-clamp-4">
+                <ChatMarkdown
+                  inline
+                  text={thoughtLine}
+                  cwd={ctx.markdownCwd}
+                  parseRawHtml={false}
+                  extraRemarkPlugins={THOUGHT_PREVIEW_PLUGINS}
+                />
+              </span>
+            )
           }
           wrapLabel
         />
@@ -634,7 +671,7 @@ export function LiveWorkEntryTimelineRow({
           ) : row.entry.itemType === "reasoning" ? (
             <ChatMarkdown
               inline
-              text={(row.entry.detail ?? label).slice(0, THOUGHT_PREVIEW_SOURCE_MAX_LENGTH)}
+              text={reasoningText}
               cwd={ctx.markdownCwd}
               parseRawHtml={false}
               extraRemarkPlugins={row.active ? THINKING_PREVIEW_PLUGINS : THOUGHT_PREVIEW_PLUGINS}
@@ -653,6 +690,7 @@ export function LiveWorkEntryTimelineRow({
         toolIcon={row.entry.toolIcon ?? row.entry.toolSource?.icon}
         failed={failed}
         active={row.active}
+        swapText={swapText}
       />
     </button>
   );

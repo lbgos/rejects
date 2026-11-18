@@ -4,6 +4,7 @@ import {
   COMPOSER_CONTEXT_CLIPBOARD_MIME,
   encodeComposerContextClipboardHtml,
 } from "@t3tools/shared/composerContextClipboard";
+import { countEffect } from "../observability/stuckControl";
 import { useStableCallback } from "./useStableCallback";
 
 export class ClipboardApiUnavailableError extends Schema.TaggedError<ClipboardApiUnavailableError>()(
@@ -107,6 +108,7 @@ export async function writeTextToClipboard(
   }
 
   if (!value) return false;
+  countEffect();
   if (extraFlavors) {
     extraFlavors = Object.fromEntries(
       Object.entries(extraFlavors).filter(([type]) => type !== "text/plain"),

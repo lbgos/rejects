@@ -1,8 +1,7 @@
 # Security policy
 
-Report security vulnerabilities affecting T3 Code or T3 Tools-operated infrastructure to
-[security@t3.codes](mailto:security@t3.codes). Please do not disclose them publicly until we have had
-a reasonable opportunity to investigate and remediate them.
+Report vulnerabilities in rejects to [contact@lbgos.dev](mailto:contact@lbgos.dev) with "security" in the subject. Do not open a public issue, and give us a reasonable time to fix the problem before you disclose it.
 
-See the [full security policy](https://t3.codes/security-policy) for reporting details, scope,
-and safe harbor terms for good-faith research.
+In scope: escapes from the bot sandbox, a bot reading vault credentials, a sealed bot's data reaching another bot or the network, a bot changing its own grants, and anything that runs a change without the owner's approval on its card.
+
+Vulnerabilities in code inherited unchanged from [T3 Code](https://github.com/pingdotgg/t3code) go to its maintainers through [their security policy](https://t3.codes/security-policy).

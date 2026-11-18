@@ -1,9 +1,12 @@
+import * as BotStore from "../bots/BotStore.ts";
+import * as ConnectionStore from "../connections/ConnectionStore.ts";
 import { assert, it } from "@effect/vitest";
 import {
   type ManagedPolicySummary,
   type ModelSelection,
   type OrchestrationV2AppThread,
   ProjectId,
+  ProviderDriverKind,
   ProviderInstanceId,
   type RuntimeMode,
   type ServerProvider,
@@ -20,6 +23,7 @@ import * as ServerSettings from "../serverSettings.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import * as RuntimePolicy from "./RuntimePolicy.ts";
+import { AgentSandbox } from "@t3tools/shared/AgentScope";
 
 const projectId = ProjectId.make("project:runtime-policy");
 const providerInstanceId = ProviderInstanceId.make("codex");
@@ -71,6 +75,7 @@ const supportedRuntimeModesByInstance = new Map<ProviderInstanceId, ReadonlyArra
 ]);
 const providerInstanceFor = (instanceId: ProviderInstanceId) =>
   ({
+    driverKind: ProviderDriverKind.make(instanceId),
     snapshot: {
       getSnapshot: Effect.succeed({
         supportedRuntimeModes: supportedRuntimeModesByInstance.get(instanceId),
@@ -116,6 +121,12 @@ const layerWithPolicy = (policy?: ManagedPolicySummary) =>
 
 const layerTest = layerWithPolicy();
 
+/** Every bot thread is in a sandbox, as on a Linux server with bwrap and the network rule. */
+const sandboxed = Layer.succeed(AgentSandbox, {
+  ...AgentSandbox.defaultValue(),
+  identity: (threadId) => Effect.succeedSome(threadId),
+});
+
 it.layer(layerTest)("RuntimePolicyV2", (it) => {
   it.effect("asks for Antigravity command approval when a stored Auto thread falls back", () =>
     Effect.gen(function* () {
@@ -159,6 +170,185 @@ it.layer(layerTest)("RuntimePolicyV2", (it) => {
   );
 });
 
+it.effect("inherits bot ownership before resolving worker policy and forces full access", () => {
+  let inherited = false;
+  let main: ThreadId | undefined;
+  const botLayer = Layer.mock(BotStore.BotStore)({
+    bridged: (id) => Effect.succeed(id === ThreadId.make("bot:news")),
+    mainBot: Effect.sync(() => main),
+    inherit: () =>
+      Effect.sync(() => {
+        inherited = true;
+      }),
+    owner: () =>
+      Effect.sync(() =>
+        inherited
+          ? {
+              name: "news",
+              persona: "Report news",
+              modelSelection,
+              dailyTokenCap: 100,
+              threadId: ThreadId.make("bot:news"),
+              projectId,
+              createdAt: "2026-10-27T00:00:00Z",
+              unread: false,
+              notifiedAt: null,
+              lastNotification: null,
+            }
+          : undefined,
+      ),
+  });
+  return Effect.gen(function* () {
+    const policy = yield* RuntimePolicy.RuntimePolicyV2;
+    const now = yield* DateTime.now;
+    const thread = makeThread({ now, worktreePath: null, runtimeMode: "approval-required" });
+    const worker = {
+      ...thread,
+      interactionMode: "plan" as const,
+      lineage: {
+        parentThreadId: ThreadId.make("bot:news"),
+        rootThreadId: ThreadId.make("bot:news"),
+        relationshipToParent: "subagent" as const,
+      },
+    };
+    const resolved = yield* policy.resolve({
+      thread: worker,
+      modelSelection: { instanceId: ProviderInstanceId.make("opencode"), model: "test-model" },
+    });
+    assert.isTrue(inherited);
+    assert.equal(resolved.runtimeMode, "full-access");
+    assert.equal(resolved.interactionMode, "default");
+    assert.equal(resolved.builtinTools, "none");
+    assert.isUndefined(resolved.idleTimeoutMs);
+    const onClaude = yield* policy.resolve({
+      thread: worker,
+      modelSelection: { instanceId: ProviderInstanceId.make("claudeAgent"), model: "test-model" },
+    });
+    assert.equal(onClaude.idleTimeoutMs, RuntimePolicy.BOT_IDLE_TIMEOUT_MS);
+    assert.isTrue(onClaude.compactionManaged);
+    const refused = yield* policy.resolve({ thread: worker, modelSelection }).pipe(Effect.flip);
+    assert.include(String(refused.cause), "runs only on Claude or OpenCode");
+    // The main bot keeps its own tools while bridged.
+    main = ThreadId.make("bot:news");
+    const asMain = yield* policy.resolve({
+      thread: worker,
+      modelSelection: { instanceId: ProviderInstanceId.make("claudeAgent"), model: "test-model" },
+    });
+    assert.notEqual(asMain.builtinTools, "none");
+  }).pipe(Effect.provide(Layer.merge(layerTest.pipe(Layer.provide(botLayer)), sandboxed)));
+});
+
+it.effect(
+  "runs a bot that reads accounts without provider tools, and only where they turn off",
+  () => {
+    const inbox = ThreadId.make("bot:inbox");
+    const research = ThreadId.make("bot:research");
+    const botLayer = Layer.mock(BotStore.BotStore)({
+      bridged: () => Effect.succeed(false),
+      inherit: () => Effect.void,
+      owner: (id) =>
+        Effect.succeed(
+          id === inbox || id === research
+            ? {
+                name: "Inbox",
+                persona: "Watch mail",
+                modelSelection,
+                dailyTokenCap: 100,
+                threadId: id,
+                projectId,
+                createdAt: "2026-11-06T00:00:00Z",
+                unread: false,
+                notifiedAt: null,
+                lastNotification: null,
+              }
+            : undefined,
+        ),
+    });
+    const connectionLayer = Layer.mock(ConnectionStore.ConnectionStore)({
+      held: (id) => Effect.succeed(id === inbox),
+    });
+    return Effect.gen(function* () {
+      const policy = yield* RuntimePolicy.RuntimePolicyV2;
+      const thread = { ...makeThread({ now: yield* DateTime.now, worktreePath: null }), id: inbox };
+      const resolved = yield* policy.resolve({
+        thread,
+        modelSelection: { instanceId: ProviderInstanceId.make("opencode"), model: "test-model" },
+      });
+      assert.equal(resolved.runtimeMode, "full-access");
+      assert.equal(resolved.builtinTools, "none");
+      const refused = yield* policy.resolve({ thread, modelSelection }).pipe(Effect.flip);
+      assert.include(String(refused.cause), "account access runs only on Claude or OpenCode");
+      const onClaude = { instanceId: ProviderInstanceId.make("claudeAgent"), model: "glm" };
+      const tools = (id: ThreadId, selection = onClaude) =>
+        policy
+          .resolve({ thread: { ...thread, id }, modelSelection: selection })
+          .pipe(Effect.map((resolved) => resolved.builtinTools));
+      assert.equal(yield* tools(research), "noWeb");
+      assert.equal(yield* tools(inbox), "none");
+      assert.isUndefined(yield* tools(ThreadId.make("chat")));
+      assert.isUndefined(
+        yield* tools(research, {
+          instanceId: ProviderInstanceId.make("opencode"),
+          model: "test-model",
+        }),
+      );
+    }).pipe(
+      Effect.provide(
+        Layer.merge(
+          layerTest.pipe(Layer.provide(Layer.merge(botLayer, connectionLayer))),
+          sandboxed,
+        ),
+      ),
+    );
+  },
+);
+
+it.effect(
+  "runs a bot without a sandbox with its provider's tools off, and only where they turn off",
+  () => {
+    const news = ThreadId.make("bot:news");
+    const botLayer = Layer.mock(BotStore.BotStore)({
+      bridged: () => Effect.succeed(false),
+      mainBot: Effect.undefined,
+      inherit: () => Effect.void,
+      owner: (id) =>
+        Effect.succeed(
+          id === news
+            ? {
+                name: "News",
+                persona: "Report news",
+                modelSelection,
+                dailyTokenCap: 100,
+                threadId: id,
+                projectId,
+                createdAt: "2026-11-17T00:00:00Z",
+                unread: false,
+                notifiedAt: null,
+                lastNotification: null,
+              }
+            : undefined,
+        ),
+    });
+    return Effect.gen(function* () {
+      const policy = yield* RuntimePolicy.RuntimePolicyV2;
+      const thread = { ...makeThread({ now: yield* DateTime.now, worktreePath: null }), id: news };
+      const tools = (instance: string, id = news) =>
+        policy
+          .resolve({
+            thread: { ...thread, id },
+            modelSelection: { instanceId: ProviderInstanceId.make(instance), model: "m" },
+          })
+          .pipe(Effect.map((resolved) => resolved.builtinTools));
+      assert.equal(yield* tools("claudeAgent"), "none");
+      assert.equal(yield* tools("opencode"), "none");
+      const refused = yield* tools("codex").pipe(Effect.flip);
+      assert.include(String(refused.cause), "Without the bot sandbox, a bot runs only on Claude");
+      // A user's own coding thread keeps its tools.
+      assert.isUndefined(yield* tools("codex", ThreadId.make("chat")));
+      assert.equal(yield* tools("claudeAgent").pipe(Effect.provide(sandboxed)), "noWeb");
+    }).pipe(Effect.provide(layerTest.pipe(Layer.provide(botLayer))));
+  },
+);
 it.layer(
   layerWithPolicy({
     organization: "Example Corp",

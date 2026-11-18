@@ -8,6 +8,7 @@ import {
   RunAttemptId,
   TurnItemId,
   RuntimeRequestId,
+  ScheduledTaskId,
   type OrchestrationV2ProjectedTurnItem,
   type OrchestrationV2TurnItem,
 } from "@t3tools/contracts";
@@ -1188,6 +1189,23 @@ describe("deriveMessagesTimelineRows", () => {
         },
       },
       {
+        id: "work-entry-status",
+        kind: "work" as const,
+        createdAt: "2026-01-01T00:00:09Z",
+        entry: {
+          id: "work-status",
+          createdAt: "2026-01-01T00:00:09Z",
+          runId: "turn-1" as never,
+          label: "Showed a status line",
+          tone: "tool" as const,
+          structuredPayload: {
+            type: "dynamic_tool",
+            toolName: "mcp__t3-code__status",
+            input: { text: "checking" },
+          } as never,
+        },
+      },
+      {
         id: "assistant-final-entry",
         kind: "message" as const,
         createdAt: "2026-01-01T00:00:20Z",
@@ -1218,6 +1236,7 @@ describe("deriveMessagesTimelineRows", () => {
     expect(foldRow?.runId).toBe("turn-1");
     expect(foldRow?.expanded).toBe(false);
     expect(foldRow?.label).toBe("Worked for 22s");
+    expect(foldRow?.toolCount).toBe(1);
     expect(collapsedRows.map((row) => row.id)).toEqual([
       "user-entry",
       "turn-fold:turn-1",
@@ -1237,7 +1256,7 @@ describe("deriveMessagesTimelineRows", () => {
       "user-entry",
       "turn-fold:turn-1",
       "assistant-first-entry",
-      "work-entry-1",
+      "work-toggle:work-entry-1",
       "assistant-final-entry",
     ]);
     expect(
@@ -3637,6 +3656,7 @@ it.each([
     runId: RunId.make("run"),
     createdAt: "2026-01-01T00:00:00Z",
     label: "Worked for 1m",
+    toolCount: 0,
     expanded: true,
     ...(before === undefined ? {} : { deferredWorkItemIds: before }),
   };
@@ -4333,6 +4353,11 @@ describe("linked timeline resources", () => {
     expect(collapsed.find((row) => row.id === "summary:created")).toMatchObject({
       resourceSummary: true,
     });
+    expect(
+      deriveMessagesTimelineRows({ ...common, timelineEntries, collapseScheduledWakes: true }).map(
+        (row) => row.kind,
+      ),
+    ).not.toContain("assistant-meta");
     const expanded = deriveMessagesTimelineRows({
       ...common,
       timelineEntries,
@@ -5145,4 +5170,145 @@ describe("subagent continued by a later turn", () => {
       "closing-2",
     ]);
   });
+});
+
+describe("bot wake folds", () => {
+  const at = "2026-11-05T16:06:13.000Z";
+  const runId = RunId.make("wake-run");
+  const wake = (notified: boolean): TimelineEntry[] => [
+    {
+      kind: "message",
+      id: "wake",
+      createdAt: at,
+      message: {
+        id: MessageId.make("wake"),
+        role: "user",
+        text: "[Wake: homelab watch]\nRun the watch.",
+        runId,
+        scheduledTaskId: ScheduledTaskId.make("task"),
+        streaming: false,
+        createdAt: at,
+        updatedAt: at,
+      },
+    },
+    {
+      kind: "message",
+      id: "quiz",
+      createdAt: at,
+      message: {
+        id: MessageId.make("quiz"),
+        role: "assistant",
+        text: "1. Name the ARC's four lists.",
+        runId,
+        streaming: false,
+        createdAt: at,
+        updatedAt: at,
+      },
+    },
+    ...(notified
+      ? [
+          {
+            kind: "work" as const,
+            id: "notify",
+            createdAt: at,
+            entry: {
+              id: "notify",
+              runId,
+              createdAt: at,
+              label: "Notify user",
+              tone: "tool" as const,
+              structuredPayload: {
+                type: "dynamic_tool",
+                toolName: "t3-code_notify_user",
+                status: "completed",
+              } as never,
+            },
+          },
+        ]
+      : []),
+    {
+      kind: "message",
+      id: "reply",
+      createdAt: at,
+      message: {
+        id: MessageId.make("reply"),
+        role: "assistant",
+        text: "DOWN node1-voice-stt since 15:06",
+        runId,
+        streaming: false,
+        createdAt: at,
+        updatedAt: at,
+      },
+    },
+  ];
+
+  it.each([
+    { notified: true, label: "homelab watch · notified", replyShown: true },
+    { notified: false, label: "homelab watch · quiet", replyShown: false },
+  ])("names the wake and shows what it said only when it notified ($label)", (row) => {
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: wake(row.notified),
+      isWorking: false,
+      turnDiffSummaries: [],
+      supportsConversationRollback: false,
+      collapseScheduledWakes: true,
+    });
+    const fold = rows.find((r) => r.kind === "turn-fold");
+    expect(fold?.kind === "turn-fold" ? fold.label : "").toContain(row.label);
+    const shown = rows.flatMap((r) => (r.kind === "message" ? [r.message.id] : []));
+    expect(shown).toEqual(row.replyShown ? ["quiz", "reply"] : []);
+  });
+});
+
+describe("bot reply buttons", () => {
+  const at = "2026-11-09T00:01:27.000Z";
+  const runId = RunId.make("proposal-run");
+  const message = (id: string, role: "user" | "assistant", text: string): TimelineEntry => ({
+    kind: "message",
+    id,
+    createdAt: at,
+    message: {
+      id: MessageId.make(id),
+      role,
+      text,
+      runId,
+      streaming: false,
+      createdAt: at,
+      updatedAt: at,
+    },
+  });
+  const call = (id: string, toolName: string): TimelineEntry => ({
+    kind: "work",
+    id,
+    createdAt: at,
+    entry: {
+      id,
+      runId,
+      createdAt: at,
+      label: toolName,
+      tone: "tool",
+      structuredPayload: { type: "dynamic_tool", toolName, status: "completed" } as never,
+    },
+  });
+
+  it.each(["mcp__t3-code__offer_replies", "mcp__t3-code__propose_bots"])(
+    "keeps the message the %s buttons answer in view, outside the turn's fold",
+    (buttons) => {
+      const rows = deriveMessagesTimelineRows({
+        timelineEntries: [
+          message("answers", "user", "1. Gmail. 2. Рахунки."),
+          call("memory", "mcp__t3-code__update_memory"),
+          message("proposal", "assistant", "Пропоную: Пошта, Бухгалтерія. Створити?"),
+          call("offer", buttons),
+          message("ask", "assistant", "Скажіть, який варіант — і я створю."),
+        ],
+        isWorking: false,
+        turnDiffSummaries: [],
+        supportsConversationRollback: false,
+      });
+      const shown = rows.flatMap((r) => (r.kind === "message" ? [r.message.id] : []));
+      expect(shown).toEqual(["answers", "proposal", "ask"]);
+      expect(rows.some((r) => r.kind === "turn-fold")).toBe(true);
+    },
+  );
 });

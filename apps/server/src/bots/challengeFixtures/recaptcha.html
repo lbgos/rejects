@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Sign in · Forum</title>
+    <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+  </head>
+  <body>
+    <main>
+      <h1>Sign in</h1>
+      <form method="post" action="/login">
+        <label>Email <input type="email" name="email" /></label
+        ><label>Password <input type="password" name="password" /></label>
+        <div class="g-recaptcha" data-sitekey="6LcAbCdEfGhIjKlMnOpQrStUvWxYz0123456789ab">
+          <div style="width: 304px; height: 78px">
+            <div>
+              <iframe
+                title="reCAPTCHA"
+                width="304"
+                height="78"
+                role="presentation"
+                name="a-x1y2z3"
+                frameborder="0"
+                scrolling="no"
+                sandbox="allow-forms allow-popups allow-same-origin allow-scripts allow-top-navigation allow-modals allow-popups-to-escape-sandbox allow-storage-access-by-user-activation"
+                src="https://www.google.com/recaptcha/api2/anchor?ar=1&amp;k=6LcAbCdEfGhIjKlMnOpQrStUvWxYz0123456789ab&amp;co=aHR0cHM6Ly9mb3J1bS5leGFtcGxlOjQ0Mw..&amp;hl=en&amp;v=abc&amp;size=normal&amp;cb=x1"
+              ></iframe>
+            </div>
+            <textarea
+              id="g-recaptcha-response"
+              name="g-recaptcha-response"
+              class="g-recaptcha-response"
+              style="display: none"
+            ></textarea>
+          </div>
+        </div>
+        <button type="submit">Sign in</button>
+      </form>
+    </main>
+  </body>
+</html>

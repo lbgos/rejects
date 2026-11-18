@@ -1157,6 +1157,7 @@ export default function FilePreviewPanel({
     cwd,
     relativePath,
     attachment === undefined && relativePath !== null,
+    threadRef.threadId,
   );
   const [fileRefreshRevision, setFileRefreshRevision] = useState(0);
   const attemptedPath = file.readError?.resolvedPath ?? file.readError?.operationPath;
@@ -1335,7 +1336,7 @@ export default function FilePreviewPanel({
       (isFolder || (!isMedia && !isPdf && !isDocument)) &&
       !selectedFilePending
       ? revisionedQuery(
-          getProjectFileQueryAtom(environmentId, cwd, relativePath),
+          getProjectFileQueryAtom(environmentId, cwd, relativePath, threadRef.threadId),
           workspaceMutationId,
         )
       : NO_FILE_REVISION_ATOM,
@@ -1715,6 +1716,7 @@ export default function FilePreviewPanel({
                 cwd={hostFolderPath ?? cwd}
                 projectName={hostFolderPath ?? projectName}
                 hostFolder={hostFolderPath !== null}
+                threadId={threadRef.threadId}
                 selectedPath={
                   hostFolderPath === null
                     ? relativePath

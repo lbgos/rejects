@@ -16,7 +16,6 @@ let pendingAnimations: ReadonlyArray<PendingSnapShotAnimation> = [];
 const destinationRequests = new Map<string, Promise<void>>();
 const destinationMountCounts = new Map<string, number>();
 const listeners = new Set<() => void>();
-const DESTINATION_TIMEOUT_MS = 2_000;
 const ARRIVAL_MAX_AGE_MS = 10_000;
 
 export function shouldAnimateSnapShotArrival(capturedAt: string, now = Date.now()): boolean {
@@ -33,14 +32,7 @@ function emitChange(): void {
   for (const listener of listeners) listener();
 }
 
-export function beginSnapShotAnimation(id: string, target: SnapShotTarget): void {
-  if (pendingAnimations.some((capture) => capture.id === id)) return;
-  destinationRequests.delete(id);
-  pendingAnimations = [{ id, target }, ...pendingAnimations];
-  emitChange();
-}
-
-export function finishSnapShotAnimation(id: string): void {
+function finishSnapShotAnimation(id: string): void {
   const next = pendingAnimations.filter((capture) => capture.id !== id);
   destinationRequests.delete(id);
   destinationMountCounts.delete(id);
@@ -49,35 +41,12 @@ export function finishSnapShotAnimation(id: string): void {
   emitChange();
 }
 
-export function updateSnapShotAnimationSource(id: string, source: SnapShotSource): void {
-  const index = pendingAnimations.findIndex((capture) => capture.id === id);
-  if (index < 0 || pendingAnimations[index]?.source === source) return;
-  pendingAnimations = pendingAnimations.map((capture, captureIndex) =>
-    captureIndex === index ? { ...capture, source } : capture,
-  );
-  emitChange();
-}
-
-export async function dismissSnapShotAnimation(id: string): Promise<void> {
+async function dismissSnapShotAnimation(id: string): Promise<void> {
   if (!pendingAnimations.some((capture) => capture.id === id)) return;
   finishSnapShotAnimation(id);
   const bridge = getDesktopSnapShotBridge();
   if (!bridge) return;
   await bridge.dismissSnapShotAnimation(id).catch(() => undefined);
-}
-
-export function dismissAllSnapShotAnimations(): void {
-  const ids = pendingAnimations.map((capture) => capture.id);
-  if (ids.length === 0) return;
-  pendingAnimations = [];
-  destinationRequests.clear();
-  destinationMountCounts.clear();
-  emitChange();
-  const bridge = getDesktopSnapShotBridge();
-  if (!bridge) return;
-  for (const id of ids) {
-    void bridge.dismissSnapShotAnimation(id).catch(() => undefined);
-  }
 }
 
 export function getPendingSnapShotAnimations(): ReadonlyArray<PendingSnapShotAnimation> {
@@ -139,22 +108,6 @@ export function setSnapShotAnimationDestination(
     })
     .catch(() => undefined);
   destinationRequests.set(id, request);
-}
-
-export async function waitForSnapShotAnimationDestination(id: string): Promise<void> {
-  const request = destinationRequests.get(id);
-  if (!request) return;
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-  try {
-    await Promise.race([
-      request,
-      new Promise<void>((resolve) => {
-        timeout = setTimeout(resolve, DESTINATION_TIMEOUT_MS);
-      }),
-    ]);
-  } finally {
-    if (timeout) clearTimeout(timeout);
-  }
 }
 
 export function scheduleSnapShotAnimationDestination(id: string, start: () => void): () => void {

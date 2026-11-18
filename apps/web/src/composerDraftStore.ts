@@ -248,6 +248,15 @@ if (typeof window !== "undefined" && typeof window.addEventListener === "functio
   window.addEventListener("beforeunload", () => {
     composerDebouncedStorage.flush();
   });
+  // iOS skips `beforeunload` but fires `pagehide`, including for a service worker's reload.
+  window.addEventListener("pagehide", () => {
+    composerDebouncedStorage.flush();
+  });
+}
+
+/** iOS Safari skips `beforeunload`, so code that navigates the page away flushes drafts first. */
+export function flushComposerDraftStorage(): void {
+  composerDebouncedStorage.flush();
 }
 
 export const PersistedComposerImageAttachment = Schema.Struct({

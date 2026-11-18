@@ -191,6 +191,8 @@ function normalizeReplayFrame(value: unknown): unknown {
         ...params,
         clientInfo: {
           ...(params.clientInfo as Record<string, unknown>),
+          name: "<ignored>",
+          title: "<ignored>",
           version: "<ignored>",
         },
       };

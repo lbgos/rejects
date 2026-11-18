@@ -152,23 +152,28 @@ export class ServerSecretStore extends Context.Service<
 
 /** @public */
 export const make = Effect.gen(function* () {
+  const serverConfig = yield* ServerConfig.ServerConfig;
+  return yield* makeAt(serverConfig.secretsDir);
+});
+
+/** A store of 0600 `<name>.bin` files in `directory`, which is created and kept at 0700. */
+export const makeAt = Effect.fn("ServerSecretStore.makeAt")(function* (secretsDir: string) {
   const crypto = yield* SecureRandom.SecureRandom;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const serverConfig = yield* ServerConfig.ServerConfig;
 
-  yield* fileSystem.makeDirectory(serverConfig.secretsDir, { recursive: true });
-  yield* fileSystem.chmod(serverConfig.secretsDir, 0o700).pipe(
+  yield* fileSystem.makeDirectory(secretsDir, { recursive: true });
+  yield* fileSystem.chmod(secretsDir, 0o700).pipe(
     Effect.mapError(
       (cause) =>
         new SecretStoreSecureError({
-          resource: `secrets directory ${serverConfig.secretsDir}`,
+          resource: `secrets directory ${secretsDir}`,
           cause,
         }),
     ),
   );
 
-  const resolveSecretPath = (name: string) => path.join(serverConfig.secretsDir, `${name}.bin`);
+  const resolveSecretPath = (name: string) => path.join(secretsDir, `${name}.bin`);
 
   const get: ServerSecretStore["Service"]["get"] = (name) =>
     fileSystem.readFile(resolveSecretPath(name)).pipe(
@@ -319,7 +324,7 @@ export const make = Effect.gen(function* () {
     );
 
   return ServerSecretStore.of({
-    directory: serverConfig.secretsDir,
+    directory: secretsDir,
     get,
     set,
     create,

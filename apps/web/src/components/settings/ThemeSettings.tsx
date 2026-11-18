@@ -155,7 +155,7 @@ function ThemeLibraryCard({
             onClick={onUse}
             style={isActive ? { boxShadow: "inset 0 0 0 1px var(--ring)" } : undefined}
           >
-            <div className="relative">
+            <div data-theme-swatches className="relative">
               {variantNavigation ? (
                 <div
                   aria-label="Light and dark theme variants"
@@ -225,6 +225,7 @@ function ThemeLibraryCard({
                           </button>
                         </ThemeVariantTooltip>
                         <span
+                          data-theme-variant-label
                           className="pointer-events-none absolute bottom-0 left-1/2 inline-flex max-w-24 -translate-x-1/2 items-center gap-1 text-2xs font-medium text-foreground"
                           style={{ marginLeft: rootOffsetX }}
                         >
@@ -293,7 +294,7 @@ function ThemeLibraryCard({
                 />
               )}
             </div>
-            <div className="flex items-center gap-2 px-3 pb-3 pt-2">
+            <div data-theme-row className="flex items-center gap-2 px-3 pb-3 pt-2">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
                   <button
@@ -310,6 +311,10 @@ function ThemeLibraryCard({
                   </button>
                 </div>
               </div>
+              {/* Shown only on a phone, where the theme list marks its active row like iOS. */}
+              {activeModes.length > 0 ? (
+                <CheckIcon data-theme-active-check aria-hidden className="hidden" />
+              ) : null}
               {onEdit || onDuplicate || onDownload || onRemove ? (
                 <div className="flex shrink-0 items-center gap-1">
                   {onDuplicate ? (
@@ -669,7 +674,12 @@ export function ThemeLibrary({
   );
 
   const renderModeTiles = () => (
-    <div aria-label="Appearance mode" className="grid w-full grid-cols-3 gap-3" role="group">
+    <div
+      aria-label="Appearance mode"
+      data-theme-modes
+      className="grid w-full grid-cols-3 gap-3"
+      role="group"
+    >
       {(["system", "light", "dark"] as const).map((mode) => {
         const isActive = appearanceMode === mode;
         return (
@@ -696,6 +706,10 @@ export function ThemeLibrary({
             >
               {mode === "system" ? "System" : mode === "light" ? "Light" : "Dark"}
             </span>
+            {/* A phone marks the picked tile with the iOS check circle instead of a ring. */}
+            <span aria-hidden data-theme-mode-check className="hidden">
+              {isActive ? <CheckIcon /> : null}
+            </span>
           </button>
         );
       })}
@@ -719,6 +733,7 @@ export function ThemeLibrary({
   const renderPairGrid = () => (
     <TooltipProvider>
       <div
+        data-theme-list
         className="grid w-full gap-2"
         style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 16rem), 1fr))" }}
       >
@@ -826,12 +841,18 @@ export function ThemeLibrary({
   );
 
   return (
-    <div className="space-y-3">
-      <h3 className="flex min-h-7 items-center px-3 text-base font-semibold text-foreground sm:px-4">
+    <div data-theme-library className="space-y-3">
+      <h3
+        data-settings-subheader
+        className="flex min-h-7 items-center px-3 text-base font-semibold text-foreground sm:px-4"
+      >
         {searchableSetting("color-scheme").title}
       </h3>
       {renderModeTiles()}
-      <div className="flex min-h-8 flex-wrap items-center justify-between gap-3 px-3 pt-5 sm:px-4">
+      <div
+        data-settings-subheader
+        className="flex min-h-8 flex-wrap items-center justify-between gap-3 px-3 pt-5 sm:px-4"
+      >
         <h3 className="text-base font-semibold text-foreground">
           {searchableSetting("theme").title}
         </h3>

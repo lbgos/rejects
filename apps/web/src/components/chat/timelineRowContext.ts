@@ -104,6 +104,9 @@ export interface TimelineRowSharedState {
   onWorktreeSetupWorkLocally: (() => void) | null;
   onOpenWorktreeSetupTerminal: ((terminalId: string) => void) | null;
   workGroupViewState: WorkGroupViewState;
+  botTimeLabels: ReadonlyMap<string, string> | null;
+  botRunContinues: ReadonlySet<string> | null;
+  botLiveWork: ReadonlySet<string> | null;
 }
 
 export interface TimelineRowActivityState {

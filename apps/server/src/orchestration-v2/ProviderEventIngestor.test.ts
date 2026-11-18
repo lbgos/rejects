@@ -256,6 +256,7 @@ it.effect("takes a hub's reset for an unreset usage_limit, then refreshes the sn
       displayName: undefined,
       orchestrationAdapter: adapter,
       textGeneration: {
+        generateStructured: () => Effect.die("unused"),
         generateBranchName: () => Effect.die("unused"),
         generateCommitMessage: () => Effect.die("unused"),
         generatePrContent: () => Effect.die("unused"),

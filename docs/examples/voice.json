@@ -1,0 +1,10 @@
+{
+  "nemotron": {
+    "host": "192.0.2.30",
+    "user": "stt",
+    "identityFile": "/var/lib/rejects/.ssh/id_ed25519_stt",
+    "url": "http://127.0.0.1:8090"
+  },
+  "whisper": { "host": "192.0.2.31", "port": 10300 },
+  "cloud": { "model": "gpt-4o-mini-transcribe" }
+}

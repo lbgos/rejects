@@ -1,7 +1,8 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import type { ModelSelection, ProjectId, ProviderInstanceId } from "@t3tools/contracts";
+import * as Option from "effect/Option";
+import type { ModelSelection, ProjectId } from "@t3tools/contracts";
 import {
   isProviderAvailable,
   isProviderTextGenerationCapable,
@@ -16,13 +17,14 @@ import { TextGenerationError } from "@t3tools/contracts";
 
 import * as ProviderInstallationGate from "../provider/ProviderInstallationGate.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
-import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 import * as ThreadTitleLinks from "./ThreadTitleLinks.ts";
+import { CallPolicy } from "../policy/CallPolicy.ts";
 import * as TextGenerators from "./TextGenerators.ts";
 import * as TextGenerationOperations from "@t3tools/provider-core/server/textGenerationOperations";
 
 export type {
+  StructuredGenerationInput,
   BranchNameGenerationInput,
   BranchNameGenerationResult,
   CommitMessageGenerationInput,
@@ -42,6 +44,7 @@ export class TextGeneration extends Context.Service<TextGeneration, ProviderText
 ) {}
 
 type TextGenerationOp =
+  | "generateStructured"
   | "generateCommitMessage"
   | "generatePrContent"
   | "generateBranchName"
@@ -49,23 +52,26 @@ type TextGenerationOp =
   | "generateReviewGuide"
   | "generateTranscriptionPostProcessing";
 
-const resolveInstance = (
+const resolveInstance = Effect.fn("TextGeneration.resolveInstance")(function* (
   registry: ProviderInstanceRegistry.ProviderInstanceRegistry["Service"],
   operation: TextGenerationOp,
-  instanceId: ProviderInstanceId,
-): Effect.Effect<ProviderInstance["textGeneration"], TextGenerationError> =>
-  registry.getInstance(instanceId).pipe(
-    Effect.flatMap((instance) =>
-      instance
-        ? Effect.succeed(instance.textGeneration)
-        : Effect.fail(
-            new TextGenerationError({
-              operation,
-              detail: `No provider instance registered for id '${instanceId}'.`,
-            }),
-          ),
-    ),
-  );
+  selection: ModelSelection,
+) {
+  const instance = yield* registry.getInstance(selection.instanceId);
+  if (!instance)
+    return yield* new TextGenerationError({
+      operation,
+      detail: `No provider instance registered for id '${selection.instanceId}'.`,
+    });
+  const refused = yield* (yield* CallPolicy).model({
+    instanceId: selection.instanceId,
+    driver: instance.driverKind,
+    model: selection.model,
+  });
+  if (Option.isSome(refused))
+    return yield* new TextGenerationError({ operation, detail: refused.value });
+  return instance.textGeneration;
+});
 
 // Review guides investigate the checkout read-only; the other drivers reject that request.
 const INVESTIGATING_DRIVERS = new Set(["codex", "claudeAgent"]);
@@ -77,14 +83,14 @@ export const make = Effect.gen(function* () {
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const installationGate = yield* ProviderInstallationGate.ProviderInstallationGate;
   const textGenerators = yield* TextGenerators.TextGenerators;
-  const generate = Effect.fn("TextGeneration.generate")(function* <A>(
+  const generate = Effect.fn("TextGeneration.generate")(function* <A, R>(
     operation: TextGenerationOp,
     selection: ModelSelection,
     projectId: ProjectId | null | undefined,
     invoke: (
       service: ProviderTextGeneration,
       modelSelection: ModelSelection,
-    ) => Effect.Effect<A, TextGenerationError>,
+    ) => Effect.Effect<A, TextGenerationError, R>,
   ) {
     const textGenerator = yield* textGenerators.runner(selection.instanceId);
     // A review guide reaches a text generator only through a fallback; it needs an agent instead.
@@ -154,12 +160,20 @@ export const make = Effect.gen(function* () {
     }
     return yield* installationGate.execute(
       selection.instanceId,
-      resolveInstance(registry, operation, selection.instanceId).pipe(
+      resolveInstance(registry, operation, selection).pipe(
         Effect.flatMap((service) => invoke(service, selection)),
       ),
     );
   });
   return TextGeneration.of({
+    generateStructured: Effect.fn("TextGeneration.generateStructured")(function (input) {
+      return generate(
+        "generateStructured",
+        input.modelSelection,
+        undefined,
+        (service, modelSelection) => service.generateStructured({ ...input, modelSelection }),
+      );
+    }),
     generateCommitMessage: Effect.fn("TextGeneration.generateCommitMessage")(function (input) {
       return generate(
         "generateCommitMessage",

@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 
 import { showContextMenuFallback } from "./contextMenuFallback";
 
+vi.mock("./safeArea", () => ({ safeAreaTop: () => 0, safeAreaBottom: () => 0 }));
+
 type FakeListener = (event: FakeDomEvent) => void;
 
 class FakeDomEvent {
@@ -193,6 +195,7 @@ beforeEach(() => {
     innerHeight: 800,
     addEventListener: vi.fn(),
     removeEventListener: vi.fn(),
+    matchMedia: () => ({ matches: false }),
   });
   vi.stubGlobal("requestAnimationFrame", (callback: (time: number) => void) => {
     callback(0);

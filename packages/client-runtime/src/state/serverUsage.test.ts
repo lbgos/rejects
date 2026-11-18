@@ -57,11 +57,11 @@ const CONFIG = {
 
 const PRICING = { status: "unavailable" as const, source: "test", fetchedAt: null, knownModels: 0 };
 
-const cursorSource = (refreshing: boolean): UsageSource => ({
+const museSource = (refreshing: boolean): UsageSource => ({
   fingerprint: {
-    hostId: "cursor.com",
-    provider: "cursor",
-    resolvedHomePath: "cursor-account:abc",
+    hostId: "muse.ai",
+    provider: "muse",
+    resolvedHomePath: "muse-account:abc",
     volumeId: "abc",
   },
   status: "ok",
@@ -235,7 +235,7 @@ const makeRefreshingHarness = Effect.fn("ServerUsageTest.makeRefreshingHarness")
     // The saved answer differs from the plain one, so a test can tell which was kept.
     (input) => [
       {
-        ...cursorSource(input.awaitRefresh !== true),
+        ...museSource(input.awaitRefresh !== true),
         ...(input.provisional === true ? { scannedFiles: 0 } : {}),
       },
     ],
@@ -290,15 +290,12 @@ it.effect("restarts a pending usage read after a price change", () =>
 it.effect("keeps the cached usage summary when the awaited refresh fails", () =>
   Effect.gen(function* () {
     const harness = yield* makeRefreshingHarness(
-      Effect.fail(new UsageReadError({ reason: "scanFailed", detail: "Cursor is down" })),
+      Effect.fail(new UsageReadError({ reason: "scanFailed", detail: "Muse is down" })),
     );
     const summary = harness.summary();
     const unmount = harness.registry.mount(summary);
-    expect((yield* settledSummary(harness.registry, summary)).sources).toEqual([
-      cursorSource(true),
-    ]);
+    expect((yield* settledSummary(harness.registry, summary)).sources).toEqual([museSource(true)]);
     expect(AsyncResult.isSuccess(harness.registry.get(summary))).toBe(true);
-    // The saved answer is followed by a plain read before the one that waits for Cursor.
     expect(
       harness.inputs().map(({ provisional, awaitRefresh }) => ({ provisional, awaitRefresh })),
     ).toEqual([

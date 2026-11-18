@@ -9,6 +9,7 @@ import {
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
 import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
@@ -48,6 +49,11 @@ export class PeerMcpClient extends Context.Service<
       /** The thread here the call is made for, sent as `T3-Sender-Thread`. */
       readonly sender?: OrchestrationV2LinkedSender;
       readonly success: S;
+      /**
+       * A session of its own instead of the link's, such as the bot bridge's write session.
+       * The link still gives the address. Its failures are not recorded on the link.
+       */
+      readonly token?: Redacted.Redacted<string> | undefined;
     }) => Effect.Effect<S["Type"], OrchestratorMcpFailure>;
   }
 >()("t3/peer/PeerMcpClient") {}
@@ -166,9 +172,9 @@ const make = Effect.gen(function* () {
 
   const call: PeerMcpClient["Service"]["call"] = Effect.fn("PeerMcpClient.call")(
     function* (input) {
-      const resolved = yield* links
-        .resolve(input.environmentId)
-        .pipe(Effect.mapError(fromLinkError));
+      const linked = yield* links.resolve(input.environmentId).pipe(Effect.mapError(fromLinkError));
+      const resolved =
+        input.token === undefined ? linked : { ...linked, token: Redacted.value(input.token) };
       const limitHeader = {
         [McpInvocationContext.MODE_LIMIT_HEADER]: `${input.limits.runtimeMode}/${input.limits.interactionMode}`,
       };
@@ -186,7 +192,7 @@ const make = Effect.gen(function* () {
                 .map((part) => encodeURIComponent(part.toWellFormed()))
                 .join("/"),
             };
-      const sessionKey = `${input.environmentId} ${resolved.url}`;
+      const sessionKey = `${input.environmentId} ${resolved.url}${input.token === undefined ? "" : " own"}`;
       const callOnce = (sessionId: string) =>
         post(
           resolved.url,
@@ -284,10 +290,15 @@ const make = Effect.gen(function* () {
     (effect, input) =>
       effect.pipe(
         Effect.tapError((error) =>
-          links.recordOutcome(input.environmentId, { error: error.message }),
+          input.token === undefined
+            ? links.recordOutcome(input.environmentId, { error: error.message })
+            : Effect.void,
         ),
-        // A refusal is still an answer: the link works, so only this call fails.
-        Effect.tap(() => links.recordOutcome(input.environmentId, { error: null })),
+        Effect.tap(() =>
+          input.token === undefined
+            ? links.recordOutcome(input.environmentId, { error: null })
+            : Effect.void,
+        ),
         // Recorded above with the transport's own message; the agent hears it plainly.
         Effect.catchTags({
           HttpClientError: () => Effect.fail(stoppedAnswering),

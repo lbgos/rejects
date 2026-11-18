@@ -1579,7 +1579,7 @@ export function acpPostSettleWakeEvidence(
 }
 
 /** Still-running tool updates can outlast the quiet window; they must not offer completion wakes. */
-export function acpPostSettleContinuationOfferEvidence(
+function acpPostSettleContinuationOfferEvidence(
   notification: EffectAcpSchema.SessionNotification,
   flavor: Pick<AcpAdapterV2Flavor, "extractBackgroundToolMutation" | "normalizeToolCall"> = {},
 ): boolean {
@@ -1658,7 +1658,7 @@ function acpPostSettleMonitorPromptShouldSuppress(
   return mutation?.status === "running";
 }
 
-export function acpCompletedTurnShouldTerminalizeTool(
+function acpCompletedTurnShouldTerminalizeTool(
   tool: AcpToolCallState,
   flavor: Pick<AcpAdapterV2Flavor, "extractBackgroundTaskId" | "extractSubagentUpdate">,
 ): boolean {

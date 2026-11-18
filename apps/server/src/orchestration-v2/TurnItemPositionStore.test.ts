@@ -57,6 +57,38 @@ it.effect("reuses an item's position without attempting another allocation inser
   }).pipe(Effect.provide(layerTest)),
 );
 
+it.effect("places a recorded message after the thread's latest run", () =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const positions = yield* TurnItemPositionStore.TurnItemPositionStoreV2;
+    const threadId = ThreadId.make("thread:recorded");
+    const recorded = (n: number) => ({
+      threadId,
+      turnItemId: TurnItemId.make(`${TurnItemPositionStore.RECORDED_TURN_ITEM_PREFIX}${n}`),
+      runId: null,
+    });
+    assert.equal(yield* positions.allocate(recorded(1)), 1);
+    for (const ordinal of [1, 2])
+      yield* sql`INSERT INTO orchestration_v2_projection_runs
+        (run_id, thread_id, ordinal, provider, status, requested_at, payload_json)
+        VALUES (${`run:${ordinal}`}, ${threadId}, ${ordinal}, 'codex', 'completed', '', '{}')`;
+    yield* positions.allocate({
+      threadId,
+      turnItemId: TurnItemId.make("item:run-2"),
+      runId: RunId.make("run:2"),
+    });
+    assert.equal(yield* positions.allocate(recorded(2)), 2_000_002);
+    assert.equal(
+      yield* positions.allocate({
+        threadId,
+        turnItemId: TurnItemId.make("item:other"),
+        runId: null,
+      }),
+      2,
+    );
+  }).pipe(Effect.provide(layerTest)),
+);
+
 it.effect("places a run-start item ahead of the run's items, then appends once taken", () =>
   Effect.gen(function* () {
     const positions = yield* TurnItemPositionStore.TurnItemPositionStoreV2;

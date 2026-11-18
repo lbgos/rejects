@@ -3433,25 +3433,6 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         (yield* orchestrator.getThreadShell(threadId))?.pullRequests?.map((link) => link.number),
         [2, 3, 4],
       );
-      for (const [index, route] of ["pull", "pulls"].entries()) {
-        yield* orchestrator.dispatch({
-          type: "thread.pull-request.link",
-          commandId: CommandId.make(`gitcafe-pr-link-${index}`),
-          threadId,
-          host: "git.cafe",
-          repository: "pingdotgg/t3code",
-          number: 21353 + index,
-          url: `https://git.cafe/pingdotgg/t3code/${route}/${21353 + index}`,
-          source: "manual",
-        });
-      }
-      assert.isTrue((yield* maintenance.rebuild).valid);
-      assert.deepEqual(
-        (yield* orchestrator.getThreadShell(threadId))?.pullRequests
-          ?.filter((link) => link.host === "git.cafe")
-          .map((link) => link.url),
-        [21353, 21354].map((number) => `https://git.cafe/pingdotgg/t3code/pulls/${number}`),
-      );
     }),
   );
 
@@ -7328,13 +7309,18 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       }),
   );
 
-  it.effect.each(["usage_limit", "provider_error"] as const)(
+  it.effect.each(["usage_limit", "provider_error", "idle compaction", "keep-warm"] as const)(
     "handles a queued message after a %s failure",
-    (failureClass) =>
+    (failureCase) =>
       Effect.gen(function* () {
         const orchestrator = yield* Orchestrator.OrchestratorV2;
         const eventSink = yield* EventSink.EventSinkV2;
-        const threadId = ThreadId.make(`runtime-layer-failed-queue-${failureClass}`);
+        const failureClass = failureCase === "usage_limit" ? "usage_limit" : "provider_error";
+        const compaction = failureCase === "idle compaction";
+        const keepWarm = failureCase === "keep-warm";
+        const threadId = ThreadId.make(
+          `runtime-layer-failed-queue-${failureCase.replace(" ", "-")}`,
+        );
 
         yield* orchestrator.dispatch({
           type: "thread.create",
@@ -7351,16 +7337,21 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           worktreePath: process.cwd(),
         });
         for (const index of [0, 1]) {
+          const idle = compaction && index === 0;
+          const warming = keepWarm && index === 0;
           yield* orchestrator.dispatch({
             type: "message.dispatch",
-            createdBy: "user",
-            creationSource: "web",
+            createdBy: idle || warming ? "agent" : "user",
+            creationSource: idle || warming ? "server" : "web",
             commandId: CommandId.make(`${threadId}:message:${index}`),
             threadId,
-            messageId: MessageId.make(`${threadId}:message:${index}`),
-            text: index === 0 ? "Active" : "Queued",
+            messageId: MessageId.make(
+              warming ? `bots:keepwarm:${threadId}:1` : `${threadId}:message:${index}`,
+            ),
+            text: idle ? "/compact" : index === 0 ? "Active" : "Queued",
             attachments: [],
             modelSelection,
+            ...(idle ? { idleCompaction: "beforeCacheExpires" as const } : {}),
             dispatchMode: { type: index === 0 ? "start_immediately" : "queue_after_active" },
           });
         }
@@ -7440,6 +7431,11 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           ],
         });
 
+        if (compaction || keepWarm) {
+          assert.equal(yield* Queue.take(promotedRunIds), queuedRun.id);
+          assert.equal(yield* Queue.size(heldRunIds), 0);
+          return;
+        }
         if (failureClass === "provider_error") {
           assert.equal(yield* Queue.take(heldRunIds), queuedRun.id);
           const held = yield* orchestrator.getThreadProjection(threadId);
@@ -7463,6 +7459,69 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         assert.equal(shell?.status, "failed");
         assert.equal(shell?.lastErrorClass, "usage_limit");
       }),
+  );
+
+  it.effect.each([
+    { kind: "an idle compaction", id: "bots:compact:run:1", text: "/compact" },
+    { kind: "a keep-warm turn", id: "bots:keepwarm:run:1:1", text: "Reply with only: ok" },
+  ] as const)("skips $kind while a user turn runs", ({ kind, id, text }) =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const threadId = ThreadId.make(`runtime-layer-upkeep-yields-${kind.replaceAll(" ", "-")}`);
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make(`${threadId}:create`),
+        threadId,
+        projectId: ProjectId.make(`${threadId}:project`),
+        title: "Upkeep yields",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: process.cwd(),
+      });
+      yield* orchestrator.dispatch({
+        type: "message.dispatch",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make(`${threadId}:user`),
+        threadId,
+        messageId: MessageId.make(`${threadId}:user`),
+        text: "Hello",
+        attachments: [],
+        modelSelection,
+        dispatchMode: { type: "start_immediately" },
+      });
+      const upkeep = orchestrator.dispatch({
+        type: "message.dispatch",
+        createdBy: "agent",
+        creationSource: "server",
+        commandId: CommandId.make(`${threadId}:${id}`),
+        threadId,
+        messageId: MessageId.make(id),
+        text,
+        attachments: [],
+        ...(text === "/compact" ? { idleCompaction: "beforeCacheExpires" as const } : {}),
+        dispatchMode: { type: "start_immediately" },
+      });
+      if (text === "/compact") {
+        yield* upkeep;
+      } else {
+        const refused = yield* Effect.flip(upkeep);
+        assert.instanceOf(refused, Orchestrator.OrchestratorDispatchError);
+        assert.equal(
+          refused.cause,
+          "The thread has a turn running or queued; idle upkeep skipped.",
+        );
+      }
+      const after = yield* orchestrator.getThreadProjection(threadId);
+      assert.deepEqual(
+        after.runs.map((run) => run.userMessageId),
+        [MessageId.make(`${threadId}:user`)],
+      );
+    }),
   );
 
   // A thread fed by agent messages, with helpers to end its runs as a provider would.

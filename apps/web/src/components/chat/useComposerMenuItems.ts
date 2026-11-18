@@ -302,6 +302,9 @@ export function useComposerMenuItems({
       // T3's `/clear` replaces the provider's, which would clear a session T3 still treats as live.
       const visibleProviderSlashCommandItems = providerSlashCommandItems.filter(
         (item) =>
+          !/^(?:plan|default|review|pr-review|commit|push|pull-request|worktree|terminal)$/.test(
+            item.command.name,
+          ) &&
           (item.command.name !== "compact" || compactSlashCommandAvailable) &&
           (item.command.name !== "clear" || !freshSessionAvailable),
       );

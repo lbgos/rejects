@@ -1,4 +1,6 @@
 import {
+  AuthOrchestrationOperateScope,
+  AuthOrchestrationReadScope,
   OrchestratorMcpFailure,
   OrchestratorMcpThreadListResult,
   OrchestratorMcpThreadReadResult,
@@ -15,7 +17,9 @@ import {
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Console from "effect/Console";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -23,6 +27,7 @@ import * as Path from "effect/Path";
 import * as References from "effect/References";
 import * as Runtime from "effect/Runtime";
 import * as Schema from "effect/Schema";
+import * as Scope from "effect/Scope";
 import * as Stdio from "effect/Stdio";
 import * as Stream from "effect/Stream";
 import { Argument, Command, Flag, GlobalFlag } from "effect/cli";
@@ -53,13 +58,28 @@ const READ_PAGE_LIMIT = 100;
 const READ_ITEM_MAX_CHARS = 20_000;
 const TITLE_MAX_CHARS = 80;
 
+/**
+ * Revoked on exit, so this only bounds what a killed CLI leaves behind. A
+ * `--wait` can outlive it, so the session renews a minute before it lapses.
+ */
+export const THREAD_CLI_SESSION_TTL = Duration.minutes(15);
+const THREAD_CLI_SESSION_RENEW_AFTER = Duration.subtract(
+  THREAD_CLI_SESSION_TTL,
+  Duration.minutes(1),
+);
+
+export const THREAD_CLI_SCOPES = [
+  AuthOrchestrationReadScope,
+  AuthOrchestrationOperateScope,
+] as const;
+
 export class ThreadServerNotRunningError extends Schema.TaggedError<ThreadServerNotRunningError>()(
   "ThreadServerNotRunningError",
   { baseDir: Schema.String },
 ) {
   override readonly [Runtime.errorReported] = false;
   override get message(): string {
-    return `No running T3 Code server uses ${this.baseDir}. Start T3 Code, then retry.`;
+    return `No running rejects server uses ${this.baseDir}. Start rejects, then retry.`;
   }
 }
 
@@ -70,7 +90,7 @@ export class ThreadServerUnreachableError extends Schema.TaggedError<ThreadServe
   override readonly [Runtime.errorReported] = false;
   override get message(): string {
     const reason = this.cause instanceof Error ? ` ${this.cause.message}` : "";
-    return `Could not reach the T3 Code server at ${this.origin}.${reason}`;
+    return `Could not reach the rejects server at ${this.origin}.${reason}`;
   }
 }
 
@@ -99,7 +119,7 @@ export class ThreadProjectNotFoundError extends Schema.TaggedError<ThreadProject
 ) {
   override readonly [Runtime.errorReported] = false;
   override get message(): string {
-    return `No T3 Code project matches '${this.identifier}'. Pass a project id or a path inside a project.`;
+    return `No rejects project matches '${this.identifier}'. Pass a project id or a path inside a project.`;
   }
 }
 
@@ -112,7 +132,7 @@ export class ThreadNeedsInputError extends Schema.TaggedError<ThreadNeedsInputEr
   override readonly [Runtime.errorExitCode] = 2;
 
   override get message(): string {
-    return `Thread ${this.threadId} is waiting for an answer. Open it in T3 Code to respond.`;
+    return `Thread ${this.threadId} is waiting for an answer. Open it in rejects to respond.`;
   }
 }
 
@@ -184,7 +204,10 @@ const toolFailureDetail = (result: typeof ToolResult.Type) => {
   });
 };
 
-const makeThreadTools = (session: McpToolSession, origin: string) => {
+const makeThreadTools = (
+  session: Effect.Effect<McpToolSession, ThreadServerUnreachableError | ThreadToolFailedError>,
+  origin: string,
+) => {
   const unexpected = (tool: string) =>
     new ThreadToolFailedError({
       tool,
@@ -196,7 +219,8 @@ const makeThreadTools = (session: McpToolSession, origin: string) => {
       args: Readonly<Record<string, unknown>>,
       schema: S,
     ): Effect.fn.Return<S["Type"], ThreadServerUnreachableError | ThreadToolFailedError> {
-      const raw = yield* session
+      const current = yield* session;
+      const raw = yield* current
         .call(tool, args)
         .pipe(Effect.mapError((cause) => new ThreadServerUnreachableError({ origin, cause })));
       const result = yield* decodeToolResult(raw).pipe(Effect.mapError(() => unexpected(tool)));
@@ -228,23 +252,39 @@ const withThreadTools = Effect.fn("cli.thread.withThreadTools")(function* <A, E,
     }
     const origin = runtimeState.value.origin;
     const environmentAuth = yield* EnvironmentAuth.EnvironmentAuth;
-    const issued = yield* Effect.acquireRelease(
-      environmentAuth.issueMcpClientSession({
-        label: "t3 thread cli",
-        // The CLI runs as the machine's owner. New threads still start at
-        // the project's default mode, never at this ceiling by default.
-        access: "full-access",
-        peerLink: false,
-        client: { deviceType: "bot" },
-      }),
-      (session) =>
-        environmentAuth.revokeSession(session.sessionId).pipe(Effect.ignore({ log: true })),
+    const scope = yield* Scope.Scope;
+    const openSession = Effect.gen(function* () {
+      const issued = yield* Effect.acquireRelease(
+        environmentAuth
+          .issueMcpClientSession({
+            label: "t3 thread cli",
+            // The CLI runs as the machine's owner. New threads still start at
+            // the project's default mode, never at this ceiling by default.
+            access: "full-access",
+            scopes: THREAD_CLI_SCOPES,
+            peerLink: false,
+            client: { deviceType: "bot" },
+            ttl: THREAD_CLI_SESSION_TTL,
+          })
+          .pipe(
+            Effect.mapError(
+              (cause) => new ThreadToolFailedError({ tool: "session", detail: cause.message }),
+            ),
+          ),
+        (session) =>
+          environmentAuth.revokeSession(session.sessionId).pipe(Effect.ignore({ log: true })),
+      );
+      return yield* mcpToolSession({
+        endpoint: new URL("/mcp", origin).href,
+        authorization: `Bearer ${issued.token}`,
+        clientName: "t3-thread-cli",
+      }).pipe(Effect.mapError((cause) => new ThreadServerUnreachableError({ origin, cause })));
+    }).pipe(Effect.provideService(Scope.Scope, scope));
+    // Reissued before the token lapses, so a `--wait` that outlives the TTL
+    // keeps working; every session issued this way is revoked on exit.
+    const session = yield* Effect.cachedWithTTL(openSession, (exit) =>
+      Exit.isSuccess(exit) ? THREAD_CLI_SESSION_RENEW_AFTER : Duration.zero,
     );
-    const session = yield* mcpToolSession({
-      endpoint: new URL("/mcp", origin).href,
-      authorization: `Bearer ${issued.token}`,
-      clientName: "t3-thread-cli",
-    }).pipe(Effect.mapError((cause) => new ThreadServerUnreachableError({ origin, cause })));
     return yield* run(makeThreadTools(session, origin));
   }).pipe(
     Effect.scoped,

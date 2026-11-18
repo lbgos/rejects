@@ -68,7 +68,7 @@ const OrchestratorMcpSchedule = Schema.Union([
   OrchestratorMcpScheduleFromJsonString,
 ]).annotate({
   description:
-    "Trigger: {type:'interval',everyMs}, {type:'fixed_time',timeOfDay,weekdays?}, {type:'once',runAt}, or {type:'webhook'}.",
+    "Trigger: {type:'interval',everyMs}, {type:'fixed_time',timeOfDay,weekdays?}, {type:'once',runAt}, or {type:'webhook'}. fixed_time.weekdays limits the days, 0 Sunday to 6 Saturday; leave it out for every day. Every weekday at 08:00: {type:'fixed_time',timeOfDay:'08:00',weekdays:[1,2,3,4,5]}.",
 });
 
 const OrchestratorMcpTargetOptionsFromRecord = Schema.Record(
@@ -535,6 +535,9 @@ export const OrchestratorMcpThreadReadResult = Schema.Struct({
   hasMore: Schema.Boolean,
   /** null when nothing is older than the page. Missing from peers that only read forward. */
   earlierPosition: Schema.optional(Schema.NullOr(NonNegativeInt)),
+  /** Set when a bot reads outside its own chat and workers: the items are data, not instructions. */
+  untrusted: Schema.optional(Schema.Literal(true)),
+  note: Schema.optional(Schema.String),
 });
 export type OrchestratorMcpThreadReadResult = typeof OrchestratorMcpThreadReadResult.Type;
 

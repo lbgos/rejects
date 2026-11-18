@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Sign in · Bank</title>
+    <script src="https://www.google.com/recaptcha/api.js?render=6LcAbCdEfGhIjKlMnOpQrStUvWxYz0123456789ab"></script>
+  </head>
+  <body>
+    <main>
+      <h1>Sign in to your bank</h1>
+      <form method="post" action="/login">
+        <label>Login <input name="login" /></label
+        ><label>Password <input type="password" name="password" /></label>
+        <div
+          class="g-recaptcha"
+          data-sitekey="6LcAbCdEfGhIjKlMnOpQrStUvWxYz0123456789ab"
+          data-size="invisible"
+          data-callback="onSubmit"
+        ></div>
+        <iframe
+          title="reCAPTCHA"
+          src="https://www.google.com/recaptcha/api2/anchor?ar=1&amp;k=6LcAbCdEfGhIjKlMnOpQrStUvWxYz0123456789ab&amp;hl=en&amp;size=invisible&amp;cb=y2"
+        ></iframe
+        ><button type="submit">Sign in</button>
+      </form>
+      <p>Forgot your password? Call us.</p>
+    </main>
+  </body>
+</html>

@@ -41,6 +41,7 @@ import { readT3ProjectFile } from "../lib/t3ProjectFileDefaults";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentSummaries } from "../state/presentation";
 import { environmentServerConfigsAtom } from "../state/server";
+import { isBotProject, useBotProjectKeys, withoutBotProjects } from "../bots/state";
 import { resolveThreadRouteTarget } from "../threadRoutes";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
 import { getClientSettings } from "./useSettings";
@@ -483,7 +484,11 @@ export function useHandleNewThread() {
   const routeTarget = useThreadRouteTarget();
   const routeThreadRef = routeTarget?.kind === "server" ? routeTarget.threadRef : null;
   const routeDraftId = routeTarget?.kind === "draft" ? routeTarget.draftId : null;
-  const activeThread = useQuietThreadShell(routeThreadRef);
+  const routeThread = useQuietThreadShell(routeThreadRef);
+  // A bot's project is not a place for new threads: from a bot chat, "new thread" uses the default project.
+  const botProjectKeys = useBotProjectKeys();
+  const activeThread =
+    routeThread && isBotProject(botProjectKeys, routeThread) ? null : routeThread;
   const getDraftThread = useComposerDraftStore((store) => store.getDraftThread);
   const activeDraftThread = useComposerDraftStore(() =>
     routeTarget
@@ -495,7 +500,7 @@ export function useHandleNewThread() {
   const projects = useProjects();
   const handleNewThread = useNewThreadHandler();
   const defaultProjectRef = resolveDefaultProjectRef(
-    projects,
+    withoutBotProjects(botProjectKeys, projects),
     projectOrder,
     lastUsedProjectKey,
     defaultProjectFallbackReady,

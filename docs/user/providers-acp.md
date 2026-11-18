@@ -5,8 +5,8 @@ T3 Code can run installed ACP commands or coding agents from the official
 own models, tools, and sign-in, while T3 Code provides projects, threads, checkpoints, and task
 delegation.
 
-Agents that T3 Code supports as their own providers, such as Codex, Claude, Cursor, Grok, OpenCode,
-Pi, and [Antigravity](./providers-antigravity.md), don't appear in the Registry list. Enable them in
+Agents that T3 Code supports as their own providers, such as Codex, Claude, OpenCode,
+Muse Code, and [Antigravity](./providers-antigravity.md), don't appear in the Registry list. Enable them in
 **Settings → Providers** instead.
 
 T3 Code prefers the current ACP v2 preview protocol and uses its richer messages, usage, plans,
@@ -73,8 +73,7 @@ are kept. ACP does not describe account isolation, so adding another instance do
 a separate account; use the agent's own configuration to isolate accounts when supported.
 
 If an agent cannot complete its advertised flow remotely, its CLI remains available on the
-server. For example, Codex supports `codex login --device-auth`, and Grok Build supports
-`grok login --device-auth`.
+server. For example, Codex supports `codex login --device-auth`.
 
 ## Models and options
 

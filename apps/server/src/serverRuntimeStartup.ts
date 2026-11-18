@@ -13,6 +13,7 @@ import {
 import { formatHostForUrl, isWildcardHost } from "@t3tools/shared/hostClassification";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import * as Cause from "effect/Cause";
+import * as Config from "effect/Config";
 import * as Console from "effect/Console";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
@@ -50,7 +51,11 @@ import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import { getServerOwners } from "./telemetry/Identify.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
-import { formatHeadlessServeOutput, issueHeadlessServeAccessInfo } from "./startupAccess.ts";
+import {
+  formatHeadlessServeOutput,
+  issueHeadlessServeAccessInfo,
+  type HeadlessServeAccessInfo,
+} from "./startupAccess.ts";
 
 export class ServerRuntimeStartupError extends Schema.TaggedError<ServerRuntimeStartupError>()(
   "ServerRuntimeStartupError",
@@ -96,6 +101,20 @@ const settleQueuedCommand = <A, E>(deferred: Deferred.Deferred<A, E>, exit: Exit
   Exit.isSuccess(exit)
     ? Deferred.succeed(deferred, exit.value)
     : Deferred.failCause(deferred, exit.cause);
+
+/**
+ * `serve` prints a pairing credential on every start. Deployments whose stdout lands in a journal
+ * set T3CODE_NO_STARTUP_PAIRING=1 and mint one on demand with `auth pairing create`.
+ */
+export const announceHeadlessStartup = Effect.fn("serverRuntimeStartup.announceHeadlessStartup")(
+  function* <E, R>(issueAccessInfo: Effect.Effect<HeadlessServeAccessInfo, E, R>) {
+    if (yield* Config.Boolean("T3CODE_NO_STARTUP_PAIRING").pipe(Config.withDefault(false))) {
+      yield* Console.log("rejects server is ready.");
+      return;
+    }
+    yield* Console.log(formatHeadlessServeOutput(yield* issueAccessInfo));
+  },
+);
 
 export const makeCommandGate = Effect.gen(function* () {
   const commandReady = yield* Deferred.make<void, ServerRuntimeStartupError>();
@@ -354,7 +373,7 @@ const resolveStartupBrowserTarget = Effect.gen(function* () {
 
 /** Prints the one-time admin pairing URL to stdout only; logger records reach trace files and collectors. */
 export const announceStartupPairingUrl = (pairingUrl: string) =>
-  Effect.logInfo("Authentication required. Open T3 Code using the pairing URL.").pipe(
+  Effect.logInfo("Authentication required. Open rejects using the pairing URL.").pipe(
     Effect.andThen(Console.log(`  pairingUrl: ${pairingUrl}`)),
   );
 
@@ -625,10 +644,9 @@ const make = Effect.fn("serverRuntimeStartup.make")(function* (options?: Startup
         );
         if (serverConfig.startupPresentation === "headless") {
           yield* Effect.logDebug("startup phase: headless access info");
-          const accessInfo = yield* issueHeadlessServeAccessInfo();
           yield* runStartupPhase(
             "headless.output",
-            Console.log(formatHeadlessServeOutput(accessInfo)),
+            announceHeadlessStartup(issueHeadlessServeAccessInfo()),
           );
         } else {
           yield* Effect.logDebug("startup phase: browser open check");

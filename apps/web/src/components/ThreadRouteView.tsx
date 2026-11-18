@@ -1,3 +1,5 @@
+import { BotThread } from "../bots/BotThread";
+import { EdgeSwipeBack } from "../bots/EdgeSwipeBack";
 import { useAtomValue } from "@effect/atom-react";
 import { parseScopedThreadKey, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { parseThreadKey, threadKey } from "@t3tools/client-runtime/state/entities";
@@ -226,10 +228,13 @@ export function ThreadRouteView({
 
   return (
     <SidebarInset
-      className="h-svh min-h-0 overflow-hidden overscroll-y-none md:h-dvh"
+      className="h-[var(--app-height,100svh)] min-h-0 overflow-hidden overscroll-y-none md:h-dvh"
       inert={background}
     >
-      <BackgroundThreadContext value={background}>{view}</BackgroundThreadContext>
+      <BackgroundThreadContext value={background}>
+        {target.kind === "server" ? <BotThread target={target.threadRef}>{view}</BotThread> : view}
+      </BackgroundThreadContext>
+      {background ? null : <EdgeSwipeBack />}
       {background ? null : redirect}
     </SidebarInset>
   );

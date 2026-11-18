@@ -62,6 +62,7 @@ import * as NativeAppIconResolver from "./NativeAppIconResolver.ts";
 import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
 import { extractIcnsPng } from "./icns.ts";
 import { openMediaFile, readMediaFileHeader, type OpenMediaFile } from "./MediaFile.ts";
+import { AgentSandbox } from "@t3tools/shared/AgentScope";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
 export const ASSET_ROUTE_PREFIX = "/api/assets";
@@ -567,6 +568,16 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
           );
         requestedPath = path.resolve(workspaceRoot, requestedPath);
       }
+      const namedPath = requestedPath;
+      // A sandboxed agent's thread serves the existing host file behind the path the agent saw.
+      if (!isNetworkPath(namedPath))
+        requestedPath = Option.getOrElse(
+          yield* (yield* AgentSandbox).filePath({
+            threadId: input.resource.threadId,
+            path: namedPath,
+          }),
+          () => namedPath,
+        );
       const finalized = yield* finalizeAbsoluteMediaFileAsset({
         requestedPath,
         workspaceRoot: input.workspaceRoot,
@@ -673,7 +684,8 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
         version: 1,
         kind: "attachment",
         attachmentId: input.resource.attachmentId,
-        ...(isGenericFile && !isVideo && inlinePreviewMimeType === undefined
+        ...(input.resource.disposition === "attachment" ||
+        (isGenericFile && !isVideo && inlinePreviewMimeType === undefined)
           ? { download: true }
           : {}),
         ...(input.resource.fileName !== undefined ? { fileName: input.resource.fileName } : {}),

@@ -1,7 +1,9 @@
+import { APP_BASE_NAME } from "~/branding";
 import { AuthPreviewOperateScope, type EnvironmentId } from "@t3tools/contracts";
 import type { AnyRouter } from "@tanstack/react-router";
 
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
+import { isBotProject, readBotProjectKeys, withoutBotProjects } from "../bots/state";
 import { isPreviewAvailableFor } from "../browser/previewRuntime";
 import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
 import { useComposerDraftStore } from "../composerDraftStore";
@@ -67,7 +69,10 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
     const lastUsedProjectKey = readLastUsedProjectKey();
     const target = readRouteTarget();
     const drafts = useComposerDraftStore.getState();
-    const activeThread = target?.kind === "server" ? readThreadShell(target.threadRef) : null;
+    const routeThread = target?.kind === "server" ? readThreadShell(target.threadRef) : null;
+    // A bot's project is not a place for new threads: from a bot chat, "new thread" uses the default project.
+    const activeThread =
+      routeThread && isBotProject(readBotProjectKeys(), routeThread) ? null : routeThread;
     const activeDraftThread = target
       ? target.kind === "server"
         ? drafts.getDraftThread(target.threadRef)
@@ -77,7 +82,7 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
       activeDraftThread,
       activeThread: activeThread ?? undefined,
       defaultProjectRef: resolveDefaultProjectRef(
-        readProjects(),
+        withoutBotProjects(readBotProjectKeys(), readProjects()),
         useUiStateStore.getState().projectOrder,
         lastUsedProjectKey,
         appAtomRegistry.get(defaultProjectFallbackReadyAtom(lastUsedProjectKey)),
@@ -88,7 +93,7 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
   // Grouped like the sidebar, so the shortcut and the New thread button agree.
   const readProjectGroups = () =>
     buildSidebarProjectSnapshots({
-      projects: readProjects(),
+      projects: withoutBotProjects(readBotProjectKeys(), readProjects()),
       groupScratchProjects: true,
       settings: selectProjectGroupingSettings(getClientSettings()),
       primaryEnvironmentId: appAtomRegistry.get(primaryEnvironmentIdAtom),
@@ -156,7 +161,7 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
             stackedThreadToast({
               type: "info",
               title: "Preview is desktop-only",
-              description: "Open T3 Code in the desktop app to use the in-app preview.",
+              description: `Open ${APP_BASE_NAME} in the desktop app to use the in-app preview.`,
             }),
           );
           return;

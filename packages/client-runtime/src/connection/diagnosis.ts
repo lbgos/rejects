@@ -11,6 +11,7 @@ import type {
   ConnectionHop,
   SupervisorConnectionState,
 } from "./model.ts";
+import { CLI_COMMAND_NAME } from "@t3tools/shared/cliRelease";
 
 export type ConnectionHopResult = "ok" | "failed" | "unchecked";
 
@@ -156,14 +157,14 @@ function headline(host: string, located: Located, failure: ConnectionAttemptErro
 }
 
 function steps(host: string, located: Located, failure: ConnectionAttemptError | null): string[] {
-  const checkHost = `On ${host}, check Settings > Sharing & access or run \`t3 connect status\`.`;
+  const checkHost = `On ${host}, check Settings > Sharing & access or run \`${CLI_COMMAND_NAME} connect status\`.`;
   switch (located.cause) {
     case "offline":
       return ["Connect this device to the internet. T3 Code reconnects on its own."];
     case "session_pending":
       return [
-        "Wait a moment. T3 Code retries on its own.",
-        "If it keeps waiting, reload or restart T3 Code on this device.",
+        "Wait a moment. rejects retries on its own.",
+        "If it keeps waiting, reload or restart rejects on this device.",
       ];
     case "approval_pending": {
       const code =
@@ -171,7 +172,7 @@ function steps(host: string, located: Located, failure: ConnectionAttemptError |
       const approve = code ? `approve the device showing ${code}` : "approve this device";
       return [
         `On a device already connected to ${host}, open Settings > Sharing & access and ${approve}.`,
-        `Or run \`t3 auth connect-device approve ${code ?? "<code>"}\` on ${host}.`,
+        `Or run \`${CLI_COMMAND_NAME} auth connect-device approve ${code ?? "<code>"}\` on ${host}.`,
       ];
     }
     case "outdated":

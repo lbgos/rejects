@@ -786,6 +786,33 @@ describe("VcsStatusBroadcaster", () => {
     },
   );
 
+  it.effect("does not poll a local-only Lab repository", () => {
+    const { sourceControlProvider: _provider, ...local } = baseLocalStatus;
+    const state = {
+      currentLocalStatus: { ...local, hasPrimaryRemote: false },
+      currentRemoteStatus: baseRemoteStatus,
+      localStatusCalls: 0,
+      remoteStatusCalls: 0,
+      localInvalidationCalls: 0,
+      remoteInvalidationCalls: 0,
+    };
+    return Effect.gen(function* () {
+      const broadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
+      const status = yield* broadcaster.getStatus({ cwd: "/lab" });
+      assert.isNull(status.pr);
+      const scope = yield* Scope.make();
+      const snapshot = yield* Deferred.make<void>();
+      yield* Stream.runForEach(broadcaster.streamStatus({ cwd: "/lab" }), () =>
+        Deferred.succeed(snapshot, undefined),
+      ).pipe(Effect.forkIn(scope));
+      yield* Deferred.await(snapshot);
+      yield* TestClock.adjust(Duration.minutes(3));
+      assert.equal(state.remoteStatusCalls, 0);
+      assert.equal(state.remoteInvalidationCalls, 0);
+      yield* Scope.close(scope, Exit.void);
+    }).pipe(Effect.provide(Layer.merge(layerTestFor(state), TestClock.layer())));
+  });
+
   it.effect("refreshes a loaded cwd without reusing a previous branch's PR", () => {
     const state: Parameters<typeof layerTestFor>[0] = {
       currentLocalStatus: baseLocalStatus,

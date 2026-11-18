@@ -28,7 +28,12 @@ describe("confirm dialog coordinator", () => {
     const first = requireConfirmation(
       requestConfirmDialog("Delete the project?", { initialFocus: "confirm" }),
     );
-    const second = requireConfirmation(requestConfirmDialog("Delete the worktree too?"));
+    const second = requireConfirmation(
+      requestConfirmDialog("Delete the worktree too?", {
+        variant: "destructive",
+        confirmLabel: "Delete",
+      }),
+    );
 
     respondToConfirmDialog(false);
     await expect(first).resolves.toBe(false);
@@ -36,6 +41,7 @@ describe("confirm dialog coordinator", () => {
       status: "closing",
       message: "Delete the project?",
       variant: "default",
+      confirmLabel: "Confirm",
       initialFocus: "confirm",
     });
 
@@ -43,7 +49,8 @@ describe("confirm dialog coordinator", () => {
     expect(readConfirmDialogState()).toEqual({
       status: "confirming",
       message: "Delete the worktree too?",
-      variant: "default",
+      variant: "destructive",
+      confirmLabel: "Delete",
     });
 
     respondToConfirmDialog(true);

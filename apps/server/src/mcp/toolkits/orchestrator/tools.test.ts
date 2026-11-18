@@ -27,3 +27,11 @@ it("refuses a t3_thread_update whose fields do not fit its action", () => {
     true,
   );
 });
+
+it("takes the notify_user and update_memory inputs bots send", () => {
+  const notify = Schema.decodeUnknownExit(OrchestratorToolkit.tools.notify_user.parametersSchema);
+  expect(Exit.isSuccess(notify({ text: "x".repeat(400) }))).toBe(true);
+  expect(Exit.isFailure(notify({ text: "x".repeat(401) }))).toBe(true);
+  const memory = Schema.decodeUnknownExit(OrchestratorToolkit.tools.update_memory.parametersSchema);
+  expect(Exit.isSuccess(memory({ add: "One note.", quote: "their words" }))).toBe(true);
+});

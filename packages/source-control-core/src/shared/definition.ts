@@ -157,13 +157,6 @@ export interface SourceControlIconPath {
 }
 
 /** Whether the mark is drawn in the text colour alone, so a client may tint it. */
-export function isMonochromeSourceControlIcon(icon: SourceControlIcon): boolean {
-  return icon.paths.every(
-    (path) =>
-      (path.fill === undefined || path.fill === "currentColor") &&
-      (path.stroke === undefined || path.stroke === "currentColor"),
-  );
-}
 
 /**
  * For a host whose server signs in per hostname, with a saved token or one of a CLI's logins.
@@ -463,7 +456,7 @@ export function defineSourceControl<const Definition extends SourceControlDefini
   return definition;
 }
 
-export function isChangeRequestAuthorityOfProject(
+function isChangeRequestAuthorityOfProject(
   identity: ChangeRequestProjectIdentity,
   link: ChangeRequestLink | CommitLink,
 ): boolean {
@@ -547,7 +540,7 @@ export function parseGitRemoteHost(remoteUrl: string): GitRemoteHost | null {
 }
 
 /** What a remote on a host no definition claims reads as. */
-export function unknownRemoteProvider(remote: GitRemoteHost): SourceControlProviderInfo {
+function unknownRemoteProvider(remote: GitRemoteHost): SourceControlProviderInfo {
   return {
     kind: SourceControlProviderKind.make("unknown"),
     name: remote.host,

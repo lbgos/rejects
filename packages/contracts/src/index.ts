@@ -73,3 +73,16 @@ export * from "./secretRequest.ts";
 export * from "./secretReference.ts";
 export * from "./settingsSecretValue.ts";
 export * from "./clientRpcPermissions.ts";
+
+export * from "./botIcons.ts";
+export * from "./bots.ts";
+export * from "./botReadiness.ts";
+export * from "./stuckControl.ts";
+export * from "./botTemplates.ts";
+export * from "./zdr.ts";
+export * from "./botBridge.ts";
+export * from "./connections.ts";
+export * from "./lab.ts";
+export * from "./telegram.ts";
+export * from "./voice.ts";
+export * from "./botComputer.ts";

@@ -28,7 +28,7 @@ import {
   getProviderModels,
   resolveSelectableProvider,
 } from "./providerModels";
-import { ModelEsque } from "./components/chat/providerIconUtils";
+import { formatUnlistedModelName, ModelEsque } from "./components/chat/providerIconUtils";
 import {
   type ProviderInstanceEntry,
   deriveProviderInstanceEntries,
@@ -91,7 +91,10 @@ function appendUnavailableDynamicModelSelection(
   if (hiddenModels.includes(slug)) return options;
   if (options.some((option) => option.slug === slug)) return options;
 
-  return [...options, { slug, name: slug, isCustom: false, isUnavailable: true }];
+  return [
+    ...options,
+    { slug, name: formatUnlistedModelName(slug), isCustom: false, isUnavailable: true },
+  ];
 }
 
 function toAppModelOption(

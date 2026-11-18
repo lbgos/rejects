@@ -4,8 +4,8 @@ import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 
 import {
+  CHAT_FILE_ATTACHMENT_MAX_BYTES,
   ChatAttachment,
-  PROVIDER_SEND_TURN_MAX_FILE_BYTES,
   SnapShotAccessibility,
 } from "./chatAttachment.ts";
 
@@ -32,8 +32,14 @@ it.effect("rejects malformed known attachment types instead of tolerating them",
       name: "report.pdf",
       mimeType: "application/pdf",
     };
+    const largestFile = yield* decodeAttachment({
+      ...base,
+      type: "file",
+      sizeBytes: 300 * 1024 * 1024,
+    });
+    assert.strictEqual(largestFile.sizeBytes, 300 * 1024 * 1024);
     const oversizedFile = yield* Effect.exit(
-      decodeAttachment({ ...base, type: "file", sizeBytes: PROVIDER_SEND_TURN_MAX_FILE_BYTES + 1 }),
+      decodeAttachment({ ...base, type: "file", sizeBytes: CHAT_FILE_ATTACHMENT_MAX_BYTES + 1 }),
     );
     assert.strictEqual(Exit.isFailure(oversizedFile), true);
     const badMimeImage = yield* Effect.exit(

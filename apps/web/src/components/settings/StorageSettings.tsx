@@ -241,7 +241,7 @@ function RetentionControl({
           </NumberFieldGroup>
         </NumberField>
       ) : (
-        <span className="text-xs text-muted-foreground">Off</span>
+        <span className="text-xs text-muted-foreground max-md:hidden">Off</span>
       )}
       <Switch
         aria-label={label}

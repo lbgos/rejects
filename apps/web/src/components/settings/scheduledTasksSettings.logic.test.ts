@@ -409,6 +409,13 @@ it("rejects dedupe templates without a request placeholder", () => {
   expect(scheduleFromDraft({ ...draft, coalesceKey: "{{body.bad" })).toBeNull();
 });
 
+it("preserves a one-time instant through the local datetime editor", () => {
+  const schedule = { type: "once", runAt: "2026-10-28T16:00:00.123Z" } as const;
+  const draft = taskToDraft({ ...legacyTask, schedule });
+  expect(draft.scheduleMode).toBe("once");
+  expect(scheduleFromDraft(draft)).toEqual(schedule);
+});
+
 it("appends the server zone only to fixed-time schedule labels", () => {
   expect(scheduleLabel({ type: "fixed_time", timeOfDay: "16:31" }, "Etc/UTC")).toBe(
     "Daily at 16:31 UTC",

@@ -103,3 +103,11 @@ export function AppRouteModalClose() {
     </Tooltip>
   );
 }
+
+export function AppRouteModalPhoneClose() {
+  return (
+    <DialogPrimitive.Close aria-label="Close" render={<Button size="icon" variant="ghost" />}>
+      <XIcon />
+    </DialogPrimitive.Close>
+  );
+}

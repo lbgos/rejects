@@ -1,6 +1,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
+import { AgentSandbox, AgentScopeThreadId } from "@t3tools/shared/AgentScope";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -248,11 +249,27 @@ describe("OpenCode2Server spawned server", () => {
         directory,
         environment: { ...(yield* HostProcess.Environment), OPENCODE_SERVER_PASSWORD: "ambient" },
       });
-      const first = yield* server.withConnection((connection) => Effect.succeed(connection));
-      const second = yield* server.withConnection((connection) => Effect.succeed(connection));
+      const connect = server.withConnection((connection) => Effect.succeed(connection));
+      const first = yield* connect;
+      const second = yield* connect;
       assert.strictEqual(first.version, "2.0.18");
       assert.strictEqual(first.external, false);
       assert.strictEqual(second.client, first.client);
+
+      const asThread = (threadId: string) =>
+        connect.pipe(
+          Effect.provideService(AgentScopeThreadId, threadId),
+          Effect.provideService(AgentSandbox, {
+            ...AgentSandbox.defaultValue(),
+            identity: (id) => Effect.succeedSome(id.replace(/-wake$/, "")),
+          }),
+        );
+      const news = yield* asThread("news");
+      const newsWake = yield* asThread("news-wake");
+      const weather = yield* asThread("weather");
+      assert.strictEqual(newsWake.client, news.client);
+      assert.notStrictEqual(news.url, first.url);
+      assert.notStrictEqual(weather.url, news.url);
       if (first.processExit === undefined)
         return yield* Effect.die("Missing owned process lifetime");
       return first.processExit;

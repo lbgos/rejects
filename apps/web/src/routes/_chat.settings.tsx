@@ -1,12 +1,29 @@
 import { workspaceAreaProps } from "../lib/workspaceFocus";
-import { Outlet, createFileRoute, redirect, useLocation } from "@tanstack/react-router";
+import {
+  Link,
+  Outlet,
+  createFileRoute,
+  redirect,
+  useLocation,
+  useRouterState,
+} from "@tanstack/react-router";
 import { useState, type ReactNode } from "react";
-import { RotateCcwIcon } from "lucide-react";
+import { ChevronLeftIcon, RotateCcwIcon } from "lucide-react";
+import { useMediaQuery } from "../hooks/useMediaQuery";
+import { useBotTabHostActive } from "../bots/BotTabHost";
 import { Button } from "../components/ui/button";
 import { useSettingsRestore } from "../components/settings/SettingsPanels";
 
-import { AppRouteModal, AppRouteModalClose } from "../components/AppRouteModal";
-import { SettingsBreadcrumb } from "../components/settings/SettingsBreadcrumb";
+import {
+  AppRouteModal,
+  AppRouteModalClose,
+  AppRouteModalPhoneClose,
+} from "../components/AppRouteModal";
+import {
+  SettingsBreadcrumb,
+  settingsBreadcrumbLabel,
+} from "../components/settings/SettingsBreadcrumb";
+import { SettingsIndexScreen } from "../components/settings/SettingsIndexScreen";
 import { SettingsSidebarNav } from "../components/settings/SettingsSidebarNav";
 import {
   SettingsScopeProvider,
@@ -108,28 +125,65 @@ function SettingsScopeBoundary({ pathname, children }: { pathname: string; child
 
 function SettingsContentLayout() {
   const contentArea = workspaceAreaProps("settings", 1, "Settings content");
-  const location = useLocation();
+  // The rendered route's location: a tab switch's view transition snapshots this screen after the
+  // pending location has moved on, and the old screen has to stay the one shown.
+  const location = useRouterState({
+    select: ({ resolvedLocation, location }) => resolvedLocation ?? location,
+  });
   const { search, environment } = useSettingsScope();
   const contentScopeKey =
     location.pathname === "/settings/diagnostics" || location.pathname === "/settings/providers"
       ? environment?.environmentId
       : JSON.stringify(search);
   const [restoreSignal, setRestoreSignal] = useState(0);
+  const phone = useMediaQuery("max-md");
+  const phoneIndex = phone && location.pathname === "/settings";
+  const tabHost = useBotTabHostActive();
 
+  // In the bots app the index is the Settings tab, which BotTabHost keeps mounted.
+  if (phoneIndex && tabHost) return null;
+  if (phoneIndex) {
+    return (
+      <AppRouteModal label="Settings">
+        <SettingsIndexScreen close={<AppRouteModalPhoneClose />} />
+      </AppRouteModal>
+    );
+  }
   return (
     <AppRouteModal label="Settings">
       <div className="relative flex min-h-0 flex-1">
-        <SettingsSidebarNav pathname={location.pathname} />
+        {phone ? null : <SettingsSidebarNav pathname={location.pathname} />}
         <div {...contentArea} className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <header className="flex h-12 shrink-0 items-center gap-3 border-b ps-5 pe-2">
-            <SettingsBreadcrumb pathname={location.pathname} />
+          <header
+            data-settings-page-header
+            className="relative flex h-12 shrink-0 items-center gap-3 border-b ps-5 pe-2 max-md:mt-1 max-md:h-11 max-md:gap-1 max-md:border-b-0 max-md:ps-0 max-md:pe-4"
+          >
+            {phone ? (
+              <>
+                {/* A pushed page: the chat header's back button, the page title centered. */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="z-10 ms-3"
+                  aria-label="Back to settings"
+                  render={<Link to="/settings" />}
+                >
+                  <ChevronLeftIcon />
+                </Button>
+                <h1 className="pointer-events-none absolute inset-x-18 truncate text-center text-bot-body font-semibold">
+                  {settingsBreadcrumbLabel(location.pathname) ?? "Settings"}
+                </h1>
+              </>
+            ) : (
+              <SettingsBreadcrumb pathname={location.pathname} />
+            )}
             <div className="ms-auto flex shrink-0 items-center gap-1">
               {location.pathname === "/settings/general" ? (
                 <RestoreDeviceDefaultsButton
                   onRestored={() => setRestoreSignal((value) => value + 1)}
                 />
               ) : null}
-              <AppRouteModalClose />
+              {phone ? null : <AppRouteModalClose />}
             </div>
           </header>
           <div key={`${contentScopeKey}:${restoreSignal}`} className="min-h-0 flex flex-1 flex-col">
@@ -176,7 +230,10 @@ export const Route = createFileRoute("/_chat/settings")({
   search: { middlewares: [retainSettingsScope] },
   beforeLoad: async ({ location }) => {
     if (location.pathname === "/settings") {
-      throw redirect({ to: "/settings/general", replace: true });
+      if (window.matchMedia("(width >= 48rem)").matches) {
+        throw redirect({ to: "/settings/general", replace: true });
+      }
+      return;
     }
     const moved = movedSettingsPath(location.pathname, location.hash);
     if (moved) throw redirect({ to: moved, search: true, hash: true, replace: true });

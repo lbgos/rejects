@@ -8,7 +8,7 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeOS from "node:os";
 import { assert, it, vi } from "vite-plus/test";
 
-import { fixPath, hydratePosixHome } from "./os-jank.ts";
+import { fixPath, hydratePosixHome, resolveBaseDir } from "./os-jank.ts";
 
 vi.mock("node:child_process", { spy: true });
 
@@ -203,4 +203,16 @@ effectIt.effect("replaces a Path-spelled Windows PATH instead of adding a second
 
     assert.deepEqual(env, { PATH: "C:\\Tools;C:\\Windows" });
   }),
+);
+
+effectIt.effect("separates the default rejects home and preserves explicit homes", () =>
+  Effect.gen(function* () {
+    assert.equal(yield* resolveBaseDir(undefined), "/home/learner/.rejects");
+    assert.equal(yield* resolveBaseDir("  "), "/home/learner/.rejects");
+    assert.equal(yield* resolveBaseDir("~/custom-lab"), "/home/learner/custom-lab");
+    assert.equal(yield* resolveBaseDir("/tmp/custom-lab"), "/tmp/custom-lab");
+  }).pipe(
+    Effect.provideService(HostProcess.HomeDirectory, "/home/learner"),
+    Effect.provide(NodeServices.layer),
+  ),
 );

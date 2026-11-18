@@ -1,5 +1,6 @@
 import {
   memo,
+  useContext,
   useEffect,
   useState,
   type MouseEventHandler,
@@ -14,6 +15,7 @@ import {
   CornerUpRightIcon,
   ListPlusIcon,
 } from "lucide-react";
+import { BotThreadContext } from "../../bots/context";
 import { useEnvironmentIdentificationMode } from "~/hooks/useSettings";
 import { formatContextWindowTokens } from "~/lib/contextWindow";
 import { cn, isMacPlatform } from "~/lib/utils";
@@ -92,6 +94,11 @@ const STOP_LANDED_CLICK_GUARD_MS = 500;
 const messageActionPillClassName =
   "inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-message-action font-medium text-base text-message-action-foreground shadow-xs shadow-message-action/24 outline-none hover:bg-message-action-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-64 disabled:shadow-none sm:text-sm";
 
+// The 32px circle keeps a 44px touch target. The mic beside it has its own 44px target reaching into
+// the gap, so the extension starts at this button's left edge and grows right and vertically.
+const touchHitAreaClassName =
+  "relative pointer-coarse:after:absolute pointer-coarse:after:-inset-y-1.5 pointer-coarse:after:left-0 pointer-coarse:after:-right-3";
+
 const preventPointerFocus: PointerEventHandler<HTMLElement> = (event) => {
   event.preventDefault();
 };
@@ -145,6 +152,7 @@ function StopGenerationButton({
   onInterrupt: () => void;
 }) {
   const isStopDisabled = stopPhase === "pending";
+  const isBotThread = useContext(BotThreadContext);
   return (
     <Tooltip>
       <TooltipTrigger
@@ -152,8 +160,13 @@ function StopGenerationButton({
           <button
             type="button"
             className={cn(
-              "flex shrink-0 cursor-pointer items-center justify-center rounded-full bg-destructive/90 text-white shadow-xs shadow-destructive/24 inset-shadow-control-highlight transition-colors duration-150 hover:bg-destructive active:inset-shadow-control-pressed active:shadow-none disabled:cursor-default disabled:opacity-64 disabled:hover:bg-destructive/90 [&_svg]:pointer-events-none",
-              insidePendingAction ? "size-8 sm:size-7" : "size-8 sm:h-8 sm:w-8",
+              touchHitAreaClassName,
+              "flex shrink-0 cursor-pointer items-center justify-center rounded-full inset-shadow-control-highlight transition-colors duration-150 active:inset-shadow-control-pressed active:shadow-none disabled:cursor-default disabled:opacity-64 [&_svg]:pointer-events-none",
+              // Red stays for Delete in a bot chat; Stop takes the send button's fill there.
+              isBotThread
+                ? "bg-message-action text-message-action-foreground hover:bg-message-action-hover disabled:hover:bg-message-action"
+                : "bg-destructive/90 text-white shadow-xs shadow-destructive/24 hover:bg-destructive disabled:hover:bg-destructive/90",
+              insidePendingAction ? "size-8 sm:size-7" : "size-8",
             )}
             onPointerDown={preserveComposerFocusOnPointerDown ? preventPointerFocus : undefined}
             disabled={!canOperateThread || isStopDisabled}
@@ -264,7 +277,11 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     }) === "queue";
   const alternateAction = alternateComposerDispatchAction(followUpBehavior);
   const isSendDisabled = !canOperateThread || sendDisabledReason !== null;
-  const stageBackdropVariant = useSidebarStageBackdropVariant(environmentIdentificationMode);
+  // Bot conversations hide stage art (bots.css), so their send keeps its plain fill.
+  const isBotThread = useContext(BotThreadContext);
+  const stageBackdropVariant = useSidebarStageBackdropVariant(
+    isBotThread ? "none" : environmentIdentificationMode,
+  );
 
   const renderStopGenerationButton = (insidePendingAction: boolean) => (
     <StopGenerationButton
@@ -402,7 +419,8 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     <button
       type={showResume ? "button" : "submit"}
       className={cn(
-        "relative isolate flex h-9 w-9 items-center justify-center overflow-hidden rounded-full shadow-xs transition-all duration-150 enabled:cursor-pointer enabled:inset-shadow-control-highlight hover:scale-105 active:inset-shadow-control-pressed active:shadow-none disabled:pointer-events-none disabled:shadow-none disabled:hover:scale-100 sm:h-8 sm:w-8 [&_svg]:pointer-events-none",
+        touchHitAreaClassName,
+        "isolate flex size-8 items-center justify-center rounded-full shadow-xs transition-all duration-150 enabled:cursor-pointer enabled:inset-shadow-control-highlight hover:scale-105 active:inset-shadow-control-pressed active:shadow-none disabled:pointer-events-none disabled:shadow-none disabled:hover:scale-100 [&_svg]:pointer-events-none",
         stageBackdropVariant
           ? "bg-transparent text-white enabled:shadow-black/24 enabled:hover:brightness-110 disabled:opacity-64"
           : "bg-message-action text-message-action-foreground enabled:shadow-message-action/24 hover:bg-message-action-hover disabled:bg-foreground/12 disabled:text-muted-foreground",
@@ -425,7 +443,10 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       aria-label={submitStatus ?? submitLabel}
     >
       {stageBackdropVariant ? (
-        <span className="pointer-events-none absolute inset-0 -z-10" aria-hidden="true">
+        <span
+          className="pointer-events-none absolute inset-0 -z-10 overflow-hidden rounded-full"
+          aria-hidden="true"
+        >
           <StageBackdropButtonArt variant={stageBackdropVariant} />
         </span>
       ) : null}

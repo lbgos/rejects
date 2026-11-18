@@ -186,7 +186,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, NetService.layer))
     },
     {
       label: "the local network opens",
-      prints: "Run `t3 pair --base-dir <baseDir>`.",
+      prints: "Run `rejects pair --base-dir <baseDir>`.",
       installed: true,
       env: "T3CODE_LAN=false\n",
       args: ["--lan"],
@@ -225,7 +225,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, NetService.layer))
     {
       label: "a failed update keeps service.env matching the old service",
       // The old service still runs, so no foreground server is offered.
-      prints: "Fix that, then run `t3 up --base-dir <baseDir>` again.",
+      prints: "Fix that, then run `rejects up --base-dir <baseDir>` again.",
       installed: true,
       status: { current: false },
       installFails: true,
@@ -288,7 +288,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, NetService.layer))
       installed: true,
       reportStatus: true,
       prints: "overridden · T3CODE_HOST=0.0.0.0",
-      omits: "t3 up --no-lan",
+      omits: "rejects up --no-lan",
       env: "T3CODE_HOST=0.0.0.0\n",
       args: [],
       installs: 0,

@@ -1,0 +1,393 @@
+# Public CI on GitHub-hosted runners. No job here holds a secret; the private denylist runs in
+# leak-gate.yml.
+#
+# Branch protection on main requires the `Check` job. A pull request runs its own copy of this
+# file, so it can rewrite a check into a pass: workflow runs from all outside contributors need
+# approval, and changes to .github/, .vite-hooks/ and leak-scan.sh are always read by hand.
+name: Checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      base:
+        description: Revision the leak checks compare against
+        required: false
+        default: origin/main
+
+permissions: {}
+
+concurrency:
+  group: checks-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: Changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      typecheck: ${{ steps.detect.outputs.typecheck }}
+      build: ${{ steps.detect.outputs.build }}
+      test: ${{ steps.detect.outputs.test }}
+      test_packages: ${{ steps.detect.outputs.test_packages }}
+      test_web: ${{ steps.detect.outputs.test_web }}
+      test_server: ${{ steps.detect.outputs.test_server }}
+      rust: ${{ steps.detect.outputs.rust }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          sparse-checkout: |
+            /*
+            !/.repos/
+            !/apps/mobile/modules/t3-terminal/Vendor/**/*.a
+          sparse-checkout-cone-mode: false
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: package.json
+      # Fails open: a manual run, or a diff it cannot resolve, runs every job.
+      - name: Detect affected jobs
+        id: detect
+        uses: ./.github/actions/ci-changes
+
+  leaks:
+    name: Leaks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Resolve the change
+        id: range
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          INPUT_BASE: ${{ inputs.base }}
+        run: |
+          case "$EVENT_NAME" in
+            pull_request) base=$PR_BASE head=$PR_HEAD ;;
+            push) base=$PUSH_BEFORE head=$GITHUB_SHA ;;
+            *) base=${INPUT_BASE:-origin/main} head=$GITHUB_SHA ;;
+          esac
+          # A push that creates the branch has no previous commit.
+          case "$base" in *[!0]*) ;; *) base="$head^" ;; esac
+          base=$(git rev-parse --verify "$base^{commit}")
+          head=$(git rev-parse --verify "$head^{commit}")
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "head=$head" >> "$GITHUB_OUTPUT"
+          echo "Checking $base..$head"
+      - name: Install gitleaks
+        run: |
+          archive="$RUNNER_TEMP/gitleaks.tar.gz"
+          curl -sSfL -o "$archive" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  ${archive}" | sha256sum -c -
+          tar -xzf "$archive" -C "$RUNNER_TEMP" gitleaks
+      - name: Gitleaks on the new commits
+        env:
+          BASE: ${{ steps.range.outputs.base }}
+          HEAD_SHA: ${{ steps.range.outputs.head }}
+        run: |
+          "$RUNNER_TEMP/gitleaks" git --no-banner --no-color --redact --verbose \
+            --log-opts="$BASE..$HEAD_SHA" .
+      # Upstream-sync pull requests bring upstream's own addresses and emails; gitleaks and the
+      # leak gate still run on them.
+      - name: Private addresses and emails on added lines
+        env:
+          BASE: ${{ steps.range.outputs.base }}
+          HEAD_SHA: ${{ steps.range.outputs.head }}
+          UPSTREAM_SYNC: >-
+            ${{ github.event_name == 'pull_request'
+            && github.event.pull_request.head.repo.full_name == github.repository
+            && (startsWith(github.head_ref, 't3/upstream') || contains(github.event.pull_request.labels.*.name, 'upstream-sync')) }}
+        run: |
+          if [ "$UPSTREAM_SYNC" = true ]; then
+            echo "Upstream sync: skipped."
+            exit 0
+          fi
+          sh .github/scripts/leak-scan.sh generic "$BASE" "$HEAD_SHA"
+
+  checks:
+    name: Format, Lint, Typecheck and Knip
+    needs: changes
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          sparse-checkout: |
+            /*
+            !/.repos/
+            !/apps/mobile/modules/t3-terminal/Vendor/**/*.a
+          sparse-checkout-cone-mode: false
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1.15.0
+        with:
+          node-version-file: package.json
+          cache: false
+          run-install: false
+      - name: Install dependencies
+        run: vp install
+      - name: Format
+        run: vp fmt --check '!pnpm-workspace.yaml' '!scripts/package.json' '!third-party-licenses.config.json'
+      - name: Lint
+        run: vp run lint
+      - name: Typecheck
+        if: needs.changes.outputs.typecheck != 'false'
+        run: vp run --concurrency-limit 1 --filter '!@t3tools/mobile' --filter '!@t3tools/marketing' --filter '!t3code-relay' typecheck --checkers 1 --incremental
+      - name: Knip
+        run: vp run knip:check
+
+  build:
+    name: Build
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.build != 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            /*
+            !/.repos/
+            !/apps/mobile/modules/t3-terminal/Vendor/**/*.a
+          sparse-checkout-cone-mode: false
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1.15.0
+        with:
+          node-version-file: package.json
+          cache: false
+          run-install: false
+      - name: Install dependencies
+        run: vp install
+      - name: Build web
+        run: |
+          vp run --filter @t3tools/web build
+          node apps/web/scripts/verify-built-boot.ts
+
+  test:
+    name: Test Packages
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.test != 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            /*
+            !/.repos/
+            !/apps/mobile/modules/t3-terminal/Vendor/**/*.a
+          sparse-checkout-cone-mode: false
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1.15.0
+        with:
+          node-version-file: package.json
+          cache: false
+          run-install: false
+      - name: Install dependencies
+        run: vp install
+      - name: Test packages
+        env:
+          TEST_PACKAGES: ${{ needs.changes.outputs.test_packages }}
+        run: |
+          filters=(--filter '!t3' --filter '!@t3tools/monorepo' --filter '!@t3tools/web' --filter '!@t3tools/mobile' --filter '!@t3tools/marketing' --filter '!t3code-relay' --filter '!@t3tools/scripts')
+          if [[ -n "$TEST_PACKAGES" ]]; then
+            filters=()
+            for package in $TEST_PACKAGES; do filters+=(--filter "$package"); done
+          fi
+          filters+=(--filter '!@t3tools/desktop' --filter '!@t3tools/mobile' --filter '!@t3tools/marketing' --filter '!t3code-relay' --filter '!@t3tools/scripts')
+          vp run --parallel --concurrency-limit 1 "${filters[@]}" test -- --maxWorkers=2
+
+  test_web:
+    name: Test Web
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.test_web != 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            /*
+            !/.repos/
+            !/apps/mobile/modules/t3-terminal/Vendor/**/*.a
+          sparse-checkout-cone-mode: false
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1.15.0
+        with:
+          node-version-file: package.json
+          cache: false
+          run-install: false
+      - name: Install dependencies
+        run: vp install
+      - name: Install Chromium for web browser tests
+        run: node apps/web/node_modules/playwright/cli.js install --with-deps --only-shell chromium
+      - name: Test web unit and browser suites
+        working-directory: apps/web
+        run: vp test run --passWithNoTests --project unit --project browser --maxWorkers=2
+      - name: Boot the built web client
+        run: |
+          vp run --filter @t3tools/web build
+          node apps/web/scripts/verify-built-boot.ts
+
+  test_server:
+    name: Test Server
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.test_server != 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          sparse-checkout: |
+            /*
+            !/.repos/
+            !/apps/mobile/modules/t3-terminal/Vendor/**/*.a
+          sparse-checkout-cone-mode: false
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1.15.0
+        with:
+          node-version-file: package.json
+          cache: false
+          run-install: false
+      - name: Install dependencies
+        run: vp install
+      - name: Install Chromium for server browser tests
+        run: node apps/server/node_modules/playwright-core/cli.js install --with-deps --only-shell chromium
+      - name: Test server
+        env:
+          T3CODE_TRANSFER_BUDGET_REPORT_PATH: ${{ runner.temp }}/t3code-transfer-budget.md
+          T3CODE_TRANSFER_BUDGET_RESULT_PATH: ${{ runner.temp }}/thread-transfer-result.json
+        run: |
+          mapfile -t server_tests < <(git ls-files 'apps/server/**/*.test.*' 'apps/server/**/*.spec.*')
+          vp run test:cached -- --uncached apps/server/integration/transferBudgetV2.integration.test.ts \
+            --verify-hits 1 --report "$RUNNER_TEMP/test-cache.json" "${server_tests[@]}" -- --maxWorkers=2
+      - name: Publish transfer budget report
+        if: always() && hashFiles(format('{0}/t3code-transfer-budget.md', runner.temp)) != ''
+        run: tee -a "$GITHUB_STEP_SUMMARY" < "$RUNNER_TEMP/t3code-transfer-budget.md"
+
+  rust:
+    name: Rust
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.rust != 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            /*
+            !/.repos/
+            !/apps/mobile/modules/t3-terminal/Vendor/**/*.a
+          sparse-checkout-cone-mode: false
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+          components: rustfmt
+      - name: Check Rust
+        run: |
+          shopt -s nullglob
+          manifests=(native/*/Cargo.toml)
+          if [[ ${#manifests[@]} -eq 0 ]]; then
+            echo "No native Rust crates in this checkout"
+            exit 0
+          fi
+          for manifest in "${manifests[@]}"; do
+            cargo fmt --manifest-path "$manifest" -- --check
+            cargo test --locked --manifest-path "$manifest"
+          done
+
+  # `always()`: a skipped job reports success to branch protection, so a cancelled run must
+  # still fail this one. Branch protection requires this job only.
+  check:
+    name: Check
+    if: ${{ always() }}
+    needs: [changes, leaks, checks, build, test, test_web, test_server, rust]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Require every job to pass
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          echo "$RESULTS" | jq -e 'all(to_entries[]; .value.result == "success" or .value.result == "skipped")' > /dev/null
+
+  e2e:
+    name: Replay Smoke Test
+    needs: check
+    if: ${{ needs.check.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            /*
+            !/.repos/
+            !/apps/mobile/modules/t3-terminal/Vendor/**/*.a
+          sparse-checkout-cone-mode: false
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1.15.0
+        with:
+          node-version-file: package.json
+          cache: false
+          run-install: false
+      - name: Install dependencies
+        run: vp install
+      - name: Install Chromium
+        run: node apps/web/node_modules/playwright/cli.js install --with-deps --only-shell chromium
+      - name: Run replay smoke test
+        run: node scripts/rejects-e2e.ts

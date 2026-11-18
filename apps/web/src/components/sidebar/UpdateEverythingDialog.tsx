@@ -1,3 +1,4 @@
+import { APP_BASE_NAME } from "~/branding";
 import { useAtomValue } from "@effect/atom-react";
 import { EnvironmentId } from "@t3tools/contracts";
 import { Atom } from "effect/reactivity";
@@ -137,7 +138,7 @@ function UpdateEverythingDialogContent({
         <AlertDialogDescription>
           {version !== null ? (
             <>
-              T3 Code <span className="font-mono text-xs">{version}</span>
+              {APP_BASE_NAME} <span className="font-mono text-xs">{version}</span>
             </>
           ) : null}
           {version !== null && providerCount > 0 ? " · " : null}
@@ -166,7 +167,7 @@ function UpdateEverythingDialogContent({
               className="col-span-full grid grid-cols-subgrid border-b pb-1.5 text-muted-foreground text-xs"
             >
               <span role="columnheader">Machine</span>
-              <span role="columnheader">T3 Code</span>
+              <span role="columnheader">{APP_BASE_NAME}</span>
               <span role="columnheader">Providers</span>
               <span role="columnheader" />
             </div>

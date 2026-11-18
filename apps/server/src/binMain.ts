@@ -1,9 +1,10 @@
 import { enableCliCompileCache } from "./cliCompileCache.ts";
+import type { ServerExtension } from "./serverExtension.ts";
 
 // Packaged builds load this graph with require(esm): top-level await anywhere in it breaks them.
 // ACP agents spawn `acp-mcp-bridge` per session and `acp-mcp-call` per tool call, so those fast
 // paths dispatch before the full CLI module graph (seconds of evaluation) loads.
-export async function runCliCommand() {
+export async function runCliCommand(extension?: ServerExtension) {
   const command = process.argv[2];
   // Install the socket guard before importing code that can open outbound connections.
   const { ignoreMacosTypeOfServiceEinval } = await import("./outboundHttp.ts");
@@ -22,6 +23,10 @@ export async function runCliCommand() {
   } else if (command === "__managed-chatgpt-token") {
     const { runManagedChatGptTokenCli } = await import("./cli/managedChatGptToken.ts");
     await runManagedChatGptTokenCli(process.argv.slice(3));
+  } else if (command === "vault") {
+    // The account vault runs as its own user and loads none of the server.
+    const { runVault } = await import("./vault/main.ts");
+    runVault(process.argv.slice(3));
   } else if (command === "acp-mcp-bridge" || command === "acp-mcp-call") {
     const { runAcpMcpCliFastPath } = await import("./mcp/AcpMcpStdioBridge.ts");
     await runAcpMcpCliFastPath(command, process.argv.slice(3));
@@ -40,6 +45,6 @@ export async function runCliCommand() {
     if (process.env.T3CODE_STARTUP_PROFILE_DIR) {
       performance.measure("server.import.binCli", { start: importStart });
     }
-    runCli();
+    runCli(extension);
   }
 }

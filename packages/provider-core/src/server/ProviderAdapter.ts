@@ -52,6 +52,14 @@ export const ProviderAdapterV2RuntimePolicy = Schema.Struct({
   approvalPolicy: Schema.optional(Schema.Unknown),
   sandboxPolicy: Schema.optional(Schema.Unknown),
   /**
+   * "none" turns off the provider's own shell, file and web tools; MCP tools remain. Claude and
+   * OpenCode. "noWeb", for bots, turns off Claude Code's web, Skill and coding-session tools.
+   */
+  builtinTools: Schema.optional(Schema.Literals(["none", "noWeb"])),
+  idleTimeoutMs: Schema.optional(Schema.Number),
+  /** The server compacts this thread itself (bots): Claude resumes old sessions without asking. */
+  compactionManaged: Schema.optional(Schema.Boolean),
+  /**
    * The administrator's ceiling, when a managed policy sets one. `runtimeMode` is already under
    * it; adapters use it to refuse native mode choices a user makes beside T3 Code's own.
    */
@@ -552,6 +560,7 @@ export interface ProviderAdapterV2TurnInput {
   readonly inlineContextLength?: number;
   readonly modelSelection: ModelSelection;
   readonly runtimePolicy: ProviderAdapterV2RuntimePolicy;
+  readonly standingInstructions?: string;
   readonly appContext?: ReadonlyArray<{ readonly key: string; readonly text: string }>;
 }
 
@@ -740,6 +749,13 @@ export interface ProviderAdapterV2SessionRuntime {
     input: ProviderAdapterV2ResumeTurnInput,
   ) => Effect.Effect<void, ProviderAdapterV2Error>;
   readonly compactThread?: (
+    input: ProviderAdapterV2TurnInput,
+  ) => Effect.Effect<void, ProviderAdapterV2Error>;
+  /**
+   * A provider turn that reads the thread's prompt cache, restarting its TTL, and leaves the
+   * thread's history unchanged. It reports usage only.
+   */
+  readonly keepWarm?: (
     input: ProviderAdapterV2TurnInput,
   ) => Effect.Effect<void, ProviderAdapterV2Error>;
   readonly steerTurn: (

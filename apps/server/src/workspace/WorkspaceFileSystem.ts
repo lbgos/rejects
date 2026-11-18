@@ -10,14 +10,17 @@ import type {
   ProjectReadFileResult,
   ProjectWriteFileInput,
   ProjectWriteFileResult,
+  ThreadId,
 } from "@t3tools/contracts";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
+import { AgentSandbox } from "@t3tools/shared/AgentScope";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { isNetworkPath } from "@t3tools/shared/path";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Schema from "effect/Schema";
@@ -165,20 +168,28 @@ export const make = Effect.gen(function* () {
   const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
   const isServerInternalPath = yield* makeIsServerInternalPath;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  const sandbox = yield* AgentSandbox;
 
   const toHostPath = (requestedPath: string) =>
     toWslDrivePath(requestedPath).pipe(
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
     );
 
-  const metadataForPath = Effect.fnUntraced(function* (requestedPath: string) {
-    const expandedPath = expandHomePath(
+  const metadataForPath = Effect.fnUntraced(function* (
+    requestedPath: string,
+    threadId: ThreadId | undefined,
+  ) {
+    const namedPath = expandHomePath(
       yield* toHostPath(requestedPath),
       yield* HostProcess.HomeDirectory,
     );
     // Chips ask as soon as an agent's message renders, and touching a network
     // path makes Windows sign in to its host with the user's NTLM credentials.
-    if (!path.isAbsolute(expandedPath) || isNetworkPath(expandedPath)) return null;
+    if (!path.isAbsolute(namedPath) || isNetworkPath(namedPath)) return null;
+    const expandedPath =
+      threadId === undefined
+        ? namedPath
+        : Option.getOrElse(yield* sandbox.filePath({ threadId, path: namedPath }), () => namedPath);
     const stat = yield* fileSystem.stat(expandedPath).pipe(Effect.option);
     // Server state files answer like missing paths, as readFile refuses them.
     if (stat._tag === "None" || (yield* isServerInternalPath(expandedPath))) return null;
@@ -215,7 +226,13 @@ export const make = Effect.gen(function* () {
     "WorkspaceFileSystem.getMetadata",
   )(function* (input) {
     const paths = [...new Set(input.paths)];
-    const entries = yield* Effect.forEach(paths, metadataForPath, { concurrency: 8 });
+    const entries = yield* Effect.forEach(
+      paths,
+      (value) => metadataForPath(value, input.threadId),
+      {
+        concurrency: 8,
+      },
+    );
     const byPath = new Map(paths.map((value, index) => [value, entries[index] ?? null]));
     return { entries: input.paths.map((value) => byPath.get(value) ?? null) };
   });
@@ -260,9 +277,17 @@ export const make = Effect.gen(function* () {
     input: ProjectReadFileInput,
   ) {
     const requestedPath = input.relativePath;
-    const hostPath = requestedPath.startsWith("~/")
+    const namedPath = requestedPath.startsWith("~/")
       ? expandHomePath(requestedPath, yield* HostProcess.HomeDirectory)
       : yield* toHostPath(requestedPath);
+    // A sandboxed agent's thread reads the existing host file behind the path the agent saw.
+    const hostPath =
+      input.threadId === undefined || !path.isAbsolute(namedPath) || isNetworkPath(namedPath)
+        ? namedPath
+        : Option.getOrElse(
+            yield* sandbox.filePath({ threadId: input.threadId, path: namedPath }),
+            () => namedPath,
+          );
     if (
       isNetworkPath(hostPath) &&
       !KnownWorkspaces.isWithinRoot(path, path.resolve(hostPath), path.resolve(input.cwd))

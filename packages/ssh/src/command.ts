@@ -32,6 +32,18 @@ const encoder = new TextEncoder();
 export interface SshCommandResult {
   readonly stdout: string;
   readonly stderr: string;
+  /** `outputCap.stopAfterBytes` was reached and the command was stopped; its exit is unknown. */
+  readonly stopped?: true;
+}
+
+/**
+ * Bounds what is kept of stdout and of stderr: the first `headBytes` and the last `tailBytes` of
+ * each, with the cut marked. Past `stopAfterBytes` read from both, ssh is stopped.
+ */
+export interface SshOutputCap {
+  readonly headBytes: number;
+  readonly tailBytes: number;
+  readonly stopAfterBytes?: number;
 }
 
 export interface RunSshCommandOptions extends SshAuthOptions {
@@ -41,6 +53,7 @@ export interface RunSshCommandOptions extends SshAuthOptions {
   readonly timeoutMs?: number;
   /** Keep the end of long failed-command stdout, where the final cause usually is. */
   readonly keepErrorOutputTail?: boolean;
+  readonly outputCap?: SshOutputCap;
 }
 
 export function parseSshResolveOutput(alias: string, stdout: string): DesktopSshEnvironmentTarget {
@@ -152,6 +165,55 @@ const collectProcessOutput = <E>(
       }),
     ),
   );
+
+interface KeptOutput {
+  readonly head: Array<Uint8Array>;
+  headBytes: number;
+  readonly tail: Array<Uint8Array>;
+  tailBytes: number;
+  total: number;
+}
+
+const decoder = new TextDecoder();
+const joinBytes = (chunks: ReadonlyArray<Uint8Array>) => {
+  const joined = new Uint8Array(chunks.reduce((sum, chunk) => sum + chunk.length, 0));
+  let offset = 0;
+  for (const chunk of chunks) {
+    joined.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return joined;
+};
+
+/** Keeps a stream's head and a rolling tail; memory stays at about head + tail + one chunk. */
+const keepOutput = (kept: KeptOutput, chunk: Uint8Array, cap: SshOutputCap) => {
+  kept.total += chunk.length;
+  const head = chunk.subarray(0, Math.max(0, cap.headBytes - kept.headBytes));
+  if (head.length > 0) {
+    kept.head.push(head);
+    kept.headBytes += head.length;
+  }
+  const rest = chunk.subarray(head.length);
+  if (rest.length === 0) return;
+  kept.tail.push(rest);
+  kept.tailBytes += rest.length;
+  while (kept.tail.length > 1 && kept.tailBytes - kept.tail[0]!.length >= cap.tailBytes) {
+    kept.tailBytes -= kept.tail.shift()!.length;
+  }
+};
+
+const keptText = (kept: KeptOutput, cap: SshOutputCap) => {
+  const tail = joinBytes(kept.tail);
+  const shown = tail.subarray(Math.max(0, tail.length - cap.tailBytes));
+  const cut = kept.total - kept.headBytes - shown.length;
+  return cut === 0
+    ? decoder.decode(joinBytes([...kept.head, shown]))
+    : `${decoder.decode(joinBytes(kept.head))}\n… (${cut} bytes cut) …\n${decoder.decode(shown)}`;
+};
+
+const OUTPUT_CAP_REACHED = Symbol("ssh/command.outputCapReached");
+
+const emptyKept = (): KeptOutput => ({ head: [], headBytes: 0, tail: [], tailBytes: 0, total: 0 });
 
 function redactSshErrorOutput(output: string, keepTail = false): string {
   const redacted = output.replace(
@@ -304,14 +366,39 @@ const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(func
       ),
     );
 
-  const [, , exitCode] = yield* Effect.all(
+  const cap = input.outputCap;
+  const kept = { stdout: emptyKept(), stderr: emptyKept() };
+  // Bytes are kept as they arrive, so a long output never sits whole in memory.
+  const collect = <E>(stream: Stream.Stream<Uint8Array, E>, key: keyof SshCommandOutput) =>
+    cap === undefined
+      ? collectProcessOutput(stream, output, key)
+      : stream.pipe(
+          Stream.runForEach((chunk) =>
+            Effect.suspend(() => {
+              keepOutput(kept[key], chunk, cap);
+              output[key] = keptText(kept[key], cap);
+              // Failing ends the read at once; Effect.all then interrupts the other reader.
+              return cap.stopAfterBytes !== undefined &&
+                kept.stdout.total + kept.stderr.total >= cap.stopAfterBytes
+                ? Effect.fail(OUTPUT_CAP_REACHED)
+                : Effect.void;
+            }),
+          ),
+        );
+  // Closing the command scope after a stop kills ssh.
+  const exitCode = yield* Effect.all(
     [
-      collectProcessOutput(child.stdout, output, "stdout"),
-      collectProcessOutput(child.stderr, output, "stderr"),
+      collect(child.stdout, "stdout"),
+      collect(child.stderr, "stderr"),
       child.exitCode.pipe(Effect.map(Number)),
     ],
     { concurrency: "unbounded" },
   ).pipe(
+    Effect.map(([, , code]): number | "stopped" => code),
+    Effect.catchIf(
+      (cause) => cause === OUTPUT_CAP_REACHED,
+      () => Effect.succeed("stopped" as const),
+    ),
     Effect.mapError(
       (cause) =>
         new SshCommandError({
@@ -326,6 +413,13 @@ const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(func
   );
 
   const { stdout, stderr } = output;
+  if (exitCode === "stopped") {
+    yield* Effect.logWarning("ssh.command.stopped", {
+      ...sshTargetLogFields(target),
+      stopAfterBytes: cap?.stopAfterBytes,
+    });
+    return { stdout, stderr, stopped: true } as const;
+  }
   if (exitCode !== 0) {
     const diagnosticStdout = redactSshErrorOutput(stdout, input.keepErrorOutputTail);
     yield* Effect.logWarning("ssh.command.failed", {

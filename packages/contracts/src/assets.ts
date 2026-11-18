@@ -2,6 +2,7 @@ import * as Schema from "effect/Schema";
 
 import { NonNegativeInt, ThreadId, TrimmedNonEmptyString, TurnItemId } from "./baseSchemas.ts";
 import {
+  CHAT_FILE_ATTACHMENT_MAX_BYTES,
   PROVIDER_SEND_TURN_MAX_FILE_BYTES,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
   PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPES,
@@ -97,7 +98,13 @@ export const AssetCreateUrlResult = Schema.Struct({
 });
 export type AssetCreateUrlResult = typeof AssetCreateUrlResult.Type;
 
-export const ATTACHMENT_UPLOAD_URL_TTL_MS = 10 * 60_000;
+/** Covers a chunked upload of the largest file on a slow phone uplink. */
+export const ATTACHMENT_UPLOAD_URL_TTL_MS = 60 * 60_000;
+/**
+ * Each upload request stays under the 100 MiB request cap of proxies such as Cloudflare. Files up to
+ * the old 50 MiB cap go in one request, which servers without chunked uploads still accept.
+ */
+export const ATTACHMENT_UPLOAD_CHUNK_BYTES = PROVIDER_SEND_TURN_MAX_FILE_BYTES;
 
 const ImageAttachmentCreateUploadUrlInput = Schema.Struct({
   type: Schema.optionalKey(Schema.Literal("image")),
@@ -115,7 +122,7 @@ const FileAttachmentCreateUploadUrlInput = Schema.Struct({
   mimeType: TrimmedNonEmptyString.check(Schema.isMaxLength(100)),
   sizeBytes: NonNegativeInt.check(
     Schema.isGreaterThanOrEqualTo(1),
-    Schema.isLessThanOrEqualTo(PROVIDER_SEND_TURN_MAX_FILE_BYTES),
+    Schema.isLessThanOrEqualTo(CHAT_FILE_ATTACHMENT_MAX_BYTES),
   ),
 });
 

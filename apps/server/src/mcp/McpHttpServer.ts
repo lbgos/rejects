@@ -1,3 +1,47 @@
+import * as BotStore from "../bots/BotStore.ts";
+import * as BotBridge from "../bots/BotBridge.ts";
+import { botScope, withToolVisibility } from "./BotTools.ts";
+import { BridgeOperateToolkit, BridgeReadToolkit } from "./toolkits/bridge/tools.ts";
+import * as BridgeHandlers from "./toolkits/bridge/handlers.ts";
+import * as BotFilesHandlers from "./toolkits/botFiles/handlers.ts";
+import { BotFilesToolkit } from "./toolkits/botFiles/tools.ts";
+import * as ConnectionStore from "../connections/ConnectionStore.ts";
+import { ConnectionsToolkit } from "./toolkits/connections/tools.ts";
+import * as ConnectionsHandlers from "./toolkits/connections/handlers.ts";
+import { MailToolkit } from "./toolkits/mail/tools.ts";
+import * as MailHandlers from "./toolkits/mail/handlers.ts";
+import { SecretsToolkit } from "./toolkits/secrets/tools.ts";
+import * as SecretsHandlers from "./toolkits/secrets/handlers.ts";
+import * as Cortex from "../bots/Cortex.ts";
+import { CortexToolkit } from "./toolkits/cortex/tools.ts";
+import * as CortexHandlers from "./toolkits/cortex/handlers.ts";
+import * as WebBrowser from "../bots/WebBrowser.ts";
+import { WebToolkit } from "./toolkits/web/tools.ts";
+import * as WebHandlers from "./toolkits/web/handlers.ts";
+import * as MusicHandlers from "./toolkits/music/handlers.ts";
+import * as LabHandlers from "./toolkits/lab/handlers.ts";
+import { LabToolkit } from "./toolkits/lab/tools.ts";
+import { labBot } from "../lab/LabShell.ts";
+import { MusicToolkit } from "./toolkits/music/tools.ts";
+import * as VideoHandlers from "./toolkits/video/handlers.ts";
+import { VideoToolkit } from "./toolkits/video/tools.ts";
+import * as Transcript from "../video/Transcript.ts";
+import * as Media from "../video/Media.ts";
+import * as BotSkillsHandlers from "./toolkits/botSkills/handlers.ts";
+import { BotSkillsToolkit } from "./toolkits/botSkills/tools.ts";
+import * as BotComputer from "../bots/BotComputer.ts";
+import * as BotRecordings from "../bots/BotRecordings.ts";
+import * as Accounts from "../connections/Accounts.ts";
+import * as BotSecrets from "../secrets/BotSecrets.ts";
+import * as ComputerHandlers from "./toolkits/computer/handlers.ts";
+import {
+  ComputerDesktopTool,
+  ComputerDesktopToolkit,
+  ComputerBrowserTool,
+  ComputerBrowserToolkit,
+  ComputerShellToolkit,
+} from "./toolkits/computer/tools.ts";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -28,6 +72,7 @@ import {
 import packageJson from "../../package.json" with { type: "json" };
 import { parseBearerToken } from "../auth/EnvironmentAuth.ts";
 import * as ServerConfig from "../config.ts";
+import { telegramLinked } from "../telegram/linked.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as DeviceService from "../device/DeviceService.ts";
 import * as HtmlRender from "../htmlRender/HtmlRender.ts";
@@ -117,7 +162,7 @@ const unauthorized = (input: {
   return HttpServerResponse.jsonUnsafe(
     {
       error: "invalid_mcp_credential",
-      message: "A valid T3 Code MCP credential is required.",
+      message: "A valid rejects MCP credential is required.",
     },
     {
       status: 401,
@@ -235,7 +280,20 @@ const linkedEnvironmentsOff = HttpServerResponse.jsonUnsafe(
 
 const makeMcpAuthMiddleware = Effect.gen(function* () {
   const registry = yield* McpSessionRegistry.McpSessionRegistry;
+  const bots = yield* Effect.serviceOption(BotStore.BotStore);
+  const bridge = yield* Effect.serviceOption(BotBridge.BotBridge);
+  const connections = yield* Effect.serviceOption(ConnectionStore.ConnectionStore);
   const clients = yield* Effect.serviceOption(McpClientAuthenticator);
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const serverConfig = yield* Effect.serviceOption(ServerConfig.ServerConfig);
+  // Without a server config there is no telegram.json to read, so every tool stays listed.
+  const telegramLinkedNow = Option.isSome(serverConfig)
+    ? telegramLinked(fileSystem, path.join(serverConfig.value.stateDir, "telegram.json"))
+    : Effect.succeed(true);
+  const labBotNow = Option.isSome(serverConfig)
+    ? labBot(fileSystem, path.join(serverConfig.value.stateDir, "lab.json"))
+    : Effect.undefined;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const runtimeModeCeiling = serverSettings.managedPolicy?.limits?.maxRuntimeMode;
   const linksEnabled = serverSettings.getSettings.pipe(
@@ -274,8 +332,19 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
     const limited = McpInvocationContext.withRuntimeModeCeiling(asked, runtimeModeCeiling);
     const linkedEnvironments = yield* linksEnabled;
     if (limited.client?.linked === true && !linkedEnvironments) return linkedEnvironmentsOff;
+    const bot =
+      limited.thread !== undefined && Option.isSome(bots)
+        ? yield* botScope(
+            limited.thread.threadId,
+            bots.value,
+            bridge,
+            connections,
+            telegramLinkedNow,
+            labBotNow,
+          )
+        : undefined;
     const origin = Option.getOrUndefined(Option.map(requestUrl(request), (url) => url.origin));
-    return { ...limited, linkedEnvironments, origin };
+    return { ...limited, linkedEnvironments, origin, ...bot };
   });
   // Untraced: a span here would wrap the tool call; the HTTP server span already covers it.
   return Effect.fnUntraced(function* (httpEffect) {
@@ -622,7 +691,7 @@ const registerPreviewSnapshot = Effect.fn("McpHttpServer.registerPreviewSnapshot
         openWorldHint: Context.get(tool.annotations, Tool.OpenWorld),
       },
     }),
-    annotations: tool.annotations,
+    annotations: withToolVisibility(tool.name, tool.annotations),
     handle: (payload) =>
       Effect.withFiber((fiber) => {
         const invocation = Context.getUnsafe(
@@ -722,6 +791,10 @@ const registerPreviewSnapshot = Effect.fn("McpHttpServer.registerPreviewSnapshot
 });
 
 interface ImageToolResult {
+  readonly screenshots?: readonly (ImageToolResult["screenshot"] & {
+    readonly step: number;
+    readonly t: number;
+  })[];
   readonly screenshot: {
     readonly mimeType: "image/png";
     readonly data: string;
@@ -814,7 +887,7 @@ const registerImageTool = Effect.fn("McpHttpServer.registerImageTool")(function*
         openWorldHint: Context.get(tool.annotations, Tool.OpenWorld),
       },
     }),
-    annotations: tool.annotations,
+    annotations: withToolVisibility(tool.name, tool.annotations),
     handle: (payload) =>
       Effect.withFiber((fiber) => {
         const invocation = Context.getUnsafe(
@@ -825,8 +898,42 @@ const registerImageTool = Effect.fn("McpHttpServer.registerImageTool")(function*
           Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
           Effect.matchCauseEffect({
             onFailure: imageToolFailure(tool.name, operation, failureText),
-            onSuccess: ({ encodedResult }) => {
-              const { screenshot, ...rest } = encodedResult as ImageToolResult;
+            onSuccess: Effect.fn("McpHttpServer.imageToolSuccess")(({ encodedResult }) => {
+              const { screenshot, screenshots, ...rest } = encodedResult as ImageToolResult;
+              if (screenshots !== undefined) {
+                const metadata = {
+                  ...rest,
+                  screenshots: screenshots.map(({ data: _data, ...frame }) => frame),
+                };
+                return Effect.succeed(
+                  new McpSchema.CallToolResult({
+                    isError: rest.passed === false,
+                    structuredContent: metadata,
+                    content: [
+                      { type: "text", text: JSON.stringify(metadata) },
+                      ...screenshots.flatMap((frame) => [
+                        {
+                          type: "text" as const,
+                          text: `Step ${frame.step}, t=${frame.t}, ${frame.width}×${frame.height}`,
+                        },
+                        {
+                          type: "image" as const,
+                          data: new Uint8Array(Buffer.from(frame.data, "base64")),
+                          mimeType: frame.mimeType,
+                        },
+                      ]),
+                    ],
+                  }),
+                );
+              }
+              if (screenshot === undefined)
+                return Effect.succeed(
+                  new McpSchema.CallToolResult({
+                    isError: false,
+                    structuredContent: rest,
+                    content: [{ type: "text", text: JSON.stringify(rest) }],
+                  }),
+                );
               const metadata = {
                 ...rest,
                 screenshot: {
@@ -849,7 +956,7 @@ const registerImageTool = Effect.fn("McpHttpServer.registerImageTool")(function*
                   ],
                 }),
               );
-            },
+            }),
           }),
         );
       }),
@@ -882,6 +989,58 @@ const registerDeviceScreenshot = Effect.fn("McpHttpServer.registerDeviceScreensh
         ? `${error.message} Call device_list to check the device state, and device_open if it needs to be reopened.`
         : error.message;
     },
+  );
+});
+
+const registerComputerBrowser = Effect.fn("McpHttpServer.registerComputerBrowser")(function* () {
+  const computer = yield* BotComputer.BotComputer;
+  const threads = yield* ThreadManagementService.ThreadManagementService;
+  const secrets = yield* BotSecrets.BotSecrets;
+  const recordings = yield* BotRecordings.BotRecordings;
+  const accounts = yield* Accounts.Accounts;
+  const built = yield* decodeAsAdvertised(ComputerBrowserToolkit);
+  yield* registerImageTool(
+    ComputerBrowserTool,
+    (payload) =>
+      built
+        .handle("computer_browser", payload)
+        .pipe(Stream.unwrap, Stream.run(Sink.last()), Effect.flatMap(Effect.fromOption)),
+    (effect) =>
+      effect.pipe(
+        Effect.provideService(BotComputer.BotComputer, computer),
+        Effect.provideService(ThreadManagementService.ThreadManagementService, threads),
+        Effect.provideService(BotSecrets.BotSecrets, secrets),
+        Effect.provideService(BotRecordings.BotRecordings, recordings),
+        Effect.provideService(Accounts.Accounts, accounts),
+      ),
+    "computer",
+    (error) => (isOrchestratorMcpFailure(error) ? error.message : "Computer action failed."),
+  );
+});
+
+const registerComputerDesktop = Effect.fn("McpHttpServer.registerComputerDesktop")(function* () {
+  const computer = yield* BotComputer.BotComputer;
+  const threads = yield* ThreadManagementService.ThreadManagementService;
+  const secrets = yield* BotSecrets.BotSecrets;
+  const recordings = yield* BotRecordings.BotRecordings;
+  const accounts = yield* Accounts.Accounts;
+  const built = yield* decodeAsAdvertised(ComputerDesktopToolkit);
+  yield* registerImageTool(
+    ComputerDesktopTool,
+    (payload) =>
+      built
+        .handle("computer_desktop", payload)
+        .pipe(Stream.unwrap, Stream.run(Sink.last()), Effect.flatMap(Effect.fromOption)),
+    (effect) =>
+      effect.pipe(
+        Effect.provideService(BotComputer.BotComputer, computer),
+        Effect.provideService(ThreadManagementService.ThreadManagementService, threads),
+        Effect.provideService(BotSecrets.BotSecrets, secrets),
+        Effect.provideService(BotRecordings.BotRecordings, recordings),
+        Effect.provideService(Accounts.Accounts, accounts),
+      ),
+    "computer",
+    (error) => (isOrchestratorMcpFailure(error) ? error.message : "Computer action failed."),
   );
 });
 
@@ -1156,11 +1315,15 @@ const withAdvertisedSchemas = Effect.fn("McpHttpServer.withAdvertisedSchemas")(f
     ...server,
     addTool: Effect.fn("McpServer.addTool")(function (options) {
       const tool = tools[options.tool.name];
+      const visible = {
+        ...options,
+        annotations: withToolVisibility(options.tool.name, options.annotations),
+      };
       return server.addTool(
         tool === undefined
-          ? options
+          ? visible
           : {
-              ...options,
+              ...visible,
               tool: new McpSchema.Tool({
                 ...options.tool,
                 inputSchema: advertisedJsonSchema(tool),
@@ -1313,7 +1476,7 @@ export const layerInProcessMcpServer = McpServer.middleware<{
 
 export const layerMcpTransport = <RA, RE, RR>(registrations: Layer.Layer<RA, RE, RR>) =>
   McpServer.layerHttp({
-    name: "T3 Code",
+    name: "rejects",
     version: packageJson.version,
     path: "/mcp",
     // The first protocol is the fallback for clients that offer an unknown version.
@@ -1336,6 +1499,30 @@ export const layerTools = Layer.mergeAll(
   layerPullRequestsToolkit,
   layerDeviceToolkit,
   layerHtmlToolkit,
+  toolkitRegistration(CortexToolkit, CortexHandlers.layer).pipe(
+    Layer.provide(Cortex.layer.pipe(Layer.provide(FetchHttpClient.layer))),
+  ),
+  toolkitRegistration(WebToolkit, WebHandlers.layer).pipe(
+    Layer.provide(WebBrowser.layer.pipe(Layer.provide(FetchHttpClient.layer))),
+  ),
+  toolkitRegistration(ComputerShellToolkit, ComputerHandlers.layerShell),
+  toolkitRegistration(BridgeReadToolkit, BridgeHandlers.layerRead),
+  toolkitRegistration(BridgeOperateToolkit, BridgeHandlers.layerOperate),
+  toolkitRegistration(BotFilesToolkit, BotFilesHandlers.layer).pipe(
+    Layer.provide(HtmlRender.layer),
+  ),
+  toolkitRegistration(ConnectionsToolkit, ConnectionsHandlers.layer),
+  toolkitRegistration(MailToolkit, MailHandlers.layer),
+  toolkitRegistration(SecretsToolkit, SecretsHandlers.layer),
+  toolkitRegistration(MusicToolkit, MusicHandlers.layer),
+  toolkitRegistration(LabToolkit, LabHandlers.layer),
+  toolkitRegistration(VideoToolkit, VideoHandlers.layer).pipe(
+    Layer.provide(Transcript.layer),
+    Layer.provide(Media.layer),
+  ),
+  toolkitRegistration(BotSkillsToolkit, BotSkillsHandlers.layer),
+  imageToolRegistration(registerComputerBrowser(), ComputerHandlers.layerBrowser),
+  imageToolRegistration(registerComputerDesktop(), ComputerHandlers.layerDesktop),
   layerMessageToolkit,
 );
 

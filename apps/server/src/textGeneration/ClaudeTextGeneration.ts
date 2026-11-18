@@ -49,16 +49,26 @@ const CLAUDE_INVESTIGATION_ALLOWED = [
 // Denies override allows; block git --output/-o because allowed trailing args can otherwise write anywhere.
 const CLAUDE_INVESTIGATION_DENIED = ["Bash(git * --output*)", "Bash(git * -o *)"].join(",");
 
+// Usage is Claude Code's own count for the call: cache reads and writes come separately from input.
+const ClaudeCliUsage = Schema.Struct({
+  input_tokens: Schema.optional(Schema.NullOr(Schema.Number)),
+  cache_creation_input_tokens: Schema.optional(Schema.NullOr(Schema.Number)),
+  cache_read_input_tokens: Schema.optional(Schema.NullOr(Schema.Number)),
+  output_tokens: Schema.optional(Schema.NullOr(Schema.Number)),
+});
+
 const NO_SESSION_PERSISTENCE = "--no-session-persistence";
 // Claude Code before 2.0.63 exits with this on stderr; those runs retry without the flag.
 const NO_SESSION_PERSISTENCE_REJECTED = `error: unknown option '${NO_SESSION_PERSISTENCE}'`;
 
 const ClaudeOutputEnvelope = Schema.Struct({
   structured_output: Schema.Unknown,
+  usage: Schema.optionalKey(ClaudeCliUsage),
 });
 const ClaudeOutputMessage = Schema.Struct({
   type: Schema.String,
   structured_output: Schema.optionalKey(Schema.Unknown),
+  usage: Schema.optionalKey(ClaudeCliUsage),
 });
 const isClaudeOutputEnvelope = Schema.is(ClaudeOutputEnvelope);
 
@@ -148,13 +158,15 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
     outputSchema: outputSchemaJson,
     modelSelection,
     investigate,
+    structured,
+    onUsage,
   }: TextGenerationOperations.Request<S>): Effect.fn.Return<
     S["Type"],
     TextGenerationError,
     S["DecodingServices"] | Scope.Scope
   > {
     const workingDirectory =
-      operation === "generateThreadTitle"
+      operation === "generateThreadTitle" && !structured
         ? yield* fileSystem
             .makeTempDirectoryScoped({ prefix: "t3code-claude-title-" })
             .pipe(
@@ -170,7 +182,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
     };
     const jsonSchemaStr = yield* encodeJsonForOperation(
       operation,
-      toJsonSchemaObject(outputSchemaJson),
+      toJsonSchemaObject(structured ? Schema.toEncoded(outputSchemaJson) : outputSchemaJson),
       "Failed to encode structured output schema.",
     );
     const caps = getClaudeCatalogModelCapabilities(catalog, resolvedModelSelection.model);
@@ -333,6 +345,17 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
     const envelope = isClaudeOutputEnvelope(output)
       ? output
       : output.findLast((message) => message.type === "result");
+    if (envelope?.usage !== undefined && onUsage !== undefined) {
+      const cached = envelope.usage.cache_read_input_tokens ?? 0;
+      onUsage({
+        input:
+          (envelope.usage.input_tokens ?? 0) +
+          cached +
+          (envelope.usage.cache_creation_input_tokens ?? 0),
+        cached,
+        output: envelope.usage.output_tokens ?? 0,
+      });
+    }
 
     const decodeOutput = Schema.decodeEffect(outputSchemaJson);
     return yield* decodeOutput(envelope?.structured_output).pipe(

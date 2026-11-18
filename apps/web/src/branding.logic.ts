@@ -11,7 +11,7 @@ export function formatAppDisplayName(input: {
   return `${input.baseName} (${input.stageLabel})`;
 }
 
-export function resolveHostedAppChannelLabel(channel: string | null | undefined): string | null {
+function resolveHostedAppChannelLabel(channel: string | null | undefined): string | null {
   const normalized = channel?.trim().toLowerCase();
   return normalized === "nightly" ? "Nightly" : normalized === "latest" ? "Latest" : null;
 }
@@ -42,14 +42,9 @@ export function resolveServerBackedAppDisplayName(input: {
   readonly fallbackStageLabel: string;
   readonly primaryServerVersion: string | null | undefined;
 }): string {
-  const stageLabel = resolveServerBackedAppStageLabel({
-    primaryServerVersion: input.primaryServerVersion,
-    fallbackStageLabel: input.fallbackStageLabel,
-  });
-
-  return stageLabel === input.fallbackStageLabel
-    ? input.fallbackDisplayName
-    : formatAppDisplayName({ baseName: input.baseName, stageLabel });
+  return input.fallbackStageLabel === "Dev"
+    ? formatAppDisplayName({ baseName: input.baseName, stageLabel: "Dev" })
+    : input.baseName;
 }
 
 /**

@@ -41,6 +41,7 @@ export type T3McpToolSummaryAction =
   | "question-read"
   | "question-respond"
   | "secret-request"
+  | "notify-user"
   | "worktree-handoff"
   | "worktree-list"
   | "worktree-status"
@@ -71,6 +72,21 @@ export type T3McpToolSummaryAction =
   | "device"
   | "html-preview"
   | "html-render"
+  | "memory-update"
+  | "memory-search"
+  | "status"
+  | "react"
+  | "hand-off"
+  | "offer-replies"
+  | "web-search"
+  | "web-browse"
+  | "shell"
+  | "login-request"
+  | "music"
+  | "cortex"
+  | "computer"
+  | "bridge"
+  | "connections"
   | "send-to-user";
 
 export interface T3McpToolDefinition {
@@ -99,6 +115,7 @@ const T3_MCP_SERVER_ALIASES = new Set([
 ]);
 
 const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
+  notify_user: tool(["Notify", "Notifying", "Notified", "the user"], "notify-user"),
   link_pull_request: tool(
     ["Link", "Linking", "Linked", "a pull request"],
     "link-pr",
@@ -382,6 +399,53 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
 
 export const T3_MCP_TOOL_NAMES: ReadonlySet<string> = new Set(Object.keys(T3_MCP_TOOLS));
 
+/**
+ * Bots mode's tools on the same server, labeled in work logs only. They stay out of
+ * `T3_MCP_TOOL_NAMES`, which ACP matches against bare tool titles such as "status".
+ */
+const BOT_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
+  update_memory: tool(["Update", "Updating", "Updated", "memory"], "memory-update"),
+  memory_search: tool(["Search", "Searching", "Searched", "memory"], "memory-search"),
+  status: tool(["Show", "Showing", "Showed", "a status line"], "status"),
+  react: tool(["React", "Reacting", "Reacted", "to a message"], "react"),
+  hand_off: tool(["Suggest", "Suggesting", "Suggested", "another bot"], "hand-off"),
+  offer_replies: tool(["Offer", "Offering", "Offered", "reply buttons"], "offer-replies"),
+  web_search: tool(["Search", "Searching", "Searched", "the web"], "web-search", "browser"),
+  web_browse: tool(["Open", "Opening", "Opened", "a web page"], "web-browse", "browser"),
+  computer_shell: tool(["Run", "Running", "Ran", "a command"], "shell"),
+  lab_shell: tool(["Run", "Running", "Ran", "a lab command"], "shell"),
+  request_login: tool(["Ask for", "Asking for", "Asked for", "a sign-in"], "login-request"),
+  ask_secret: tool(["Ask for", "Asking for", "Asked for", "a secret"], "secret-request"),
+  computer_browser: tool(["Use", "Using", "Used", "the browser"], "computer", "browser"),
+  computer_desktop: tool(["Use", "Using", "Used", "the desktop"], "computer"),
+  music_search: tool(["Search", "Searching", "Searched", "music"], "music"),
+  music_download: tool(["Download", "Downloading", "Downloaded", "an album"], "music"),
+  music_status: tool(["Check", "Checking", "Checked", "downloads"], "music"),
+  cortex_search: tool(["Search", "Searching", "Searched", "Cortex"], "cortex"),
+  cortex_read: tool(["Read", "Reading", "Read", "from Cortex"], "cortex"),
+  cortex_record: tool(["Record", "Recording", "Recorded", "in Cortex"], "cortex"),
+  cortex_beliefs: tool(["Check", "Checking", "Checked", "Cortex beliefs"], "cortex"),
+  cortex_add_source: tool(["Add", "Adding", "Added", "a Cortex source"], "cortex"),
+  bridge_list: tool(["List", "Listing", "Listed", "bridged threads"], "bridge"),
+  bridge_read: tool(["Read", "Reading", "Read", "a bridged thread"], "bridge"),
+  bridge_models: tool(["List", "Listing", "Listed", "bridged models"], "bridge"),
+  bridge_watch: tool(["Watch", "Watching", "Watched", "a bridged thread"], "bridge"),
+  bridge_unwatch: tool(["Unwatch", "Unwatching", "Unwatched", "a bridged thread"], "bridge"),
+  bridge_start: tool(["Start", "Starting", "Started", "a bridged thread"], "bridge"),
+  bridge_send: tool(["Send", "Sending", "Sent", "to a bridged thread"], "bridge"),
+  bridge_cancel: tool(["Stop", "Stopping", "Stopped", "a bridged turn"], "bridge"),
+  connections_list: tool(["List", "Listing", "Listed", "connections"], "connections"),
+  mail_search: tool(["Search", "Searching", "Searched", "mail"], "connections"),
+  mail_read: tool(["Read", "Reading", "Read", "mail"], "connections"),
+  slack_unread: tool(["Check", "Checking", "Checked", "unread Slack"], "connections"),
+  slack_read: tool(["Read", "Reading", "Read", "Slack"], "connections"),
+  inbox_alerts: tool(["Check", "Checking", "Checked", "inbox alerts"], "connections"),
+};
+const T3_MCP_DEFINITIONS: Readonly<Record<string, T3McpToolDefinition>> = {
+  ...T3_MCP_TOOLS,
+  ...BOT_MCP_TOOLS,
+};
+
 function normalizeT3McpToolLabel(value: string): string {
   return value.replace(/\s+(?:complete|completed)\s*$/i, "").trim();
 }
@@ -392,7 +456,8 @@ const toolNameCache = new Map<string, string | null>();
 const TOOL_NAME_CACHE_LIMIT = 10_000;
 const TOOL_NAME_CACHE_MAX_KEY_LENGTH = 256;
 
-function resolveT3McpToolName(value: string): string | null {
+/** A bare name claims only T3's own tools, since "status" or "web_search" may be another server's or a provider's built-in. */
+export function resolveT3McpToolName(value: string): string | null {
   if (value.length > TOOL_NAME_CACHE_MAX_KEY_LENGTH) return parseT3McpToolName(value);
   const cached = toolNameCache.get(value);
   if (cached !== undefined) return cached;
@@ -425,11 +490,11 @@ function parseT3McpToolName(value: string): string | null {
 
   const prefixed = /^(?:mcp[-_]{1,2})?t3[-_ ]?code(?:__|[-_.:/ ])(?<tool>.+)$/i.exec(label);
   const candidate = prefixed?.groups?.tool ?? label;
-  if (Object.hasOwn(T3_MCP_TOOLS, candidate)) return candidate;
+  if (Object.hasOwn(prefixed ? T3_MCP_DEFINITIONS : T3_MCP_TOOLS, candidate)) return candidate;
   // OpenCode 2 thread prefixes can contain underscores; choose the longest known tool-name suffix.
   if (!/^t3-code-/i.test(label)) return null;
   let longest: string | null = null;
-  for (const tool of Object.keys(T3_MCP_TOOLS)) {
+  for (const tool of Object.keys(T3_MCP_DEFINITIONS)) {
     if (label.endsWith(`_${tool}`) && tool.length > (longest?.length ?? 0)) longest = tool;
   }
   return longest;
@@ -462,12 +527,12 @@ export function resolveT3McpToolDefinition(
   input?: unknown,
 ): T3McpToolDefinition | null {
   const name = toolName == null ? null : resolveT3McpToolName(toolName);
-  if (name === null || !Object.hasOwn(T3_MCP_TOOLS, name)) return null;
+  if (name === null || !Object.hasOwn(T3_MCP_DEFINITIONS, name)) return null;
   const action = asSummaryInput(input)?.action;
   const actionTool = typeof action === "string" ? ACTION_TOOLS[name]?.(action) : undefined;
-  return actionTool !== undefined && Object.hasOwn(T3_MCP_TOOLS, actionTool)
-    ? T3_MCP_TOOLS[actionTool]!
-    : T3_MCP_TOOLS[name]!;
+  return actionTool !== undefined && Object.hasOwn(T3_MCP_DEFINITIONS, actionTool)
+    ? T3_MCP_DEFINITIONS[actionTool]!
+    : T3_MCP_DEFINITIONS[name]!;
 }
 
 /** Tools whose summary depends on which fields a call sets. */

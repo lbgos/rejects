@@ -398,18 +398,15 @@ describe("instance-scoped model selection", () => {
       driverName: "opencode",
       availableModel: "opencode/big-pickle",
       missingModel: "opencode/kimi-k3",
+      missingName: "Kimi K3",
     },
     {
       driverName: "antigravity",
       availableModel: "gemini-3.1-pro",
       missingModel: "gemini-3.1-pro-high",
+      missingName: "Gemini 3.1 Pro High",
     },
-    {
-      driverName: "cursor",
-      availableModel: "auto-smart",
-      missingModel: "claude-opus-5-5",
-    },
-  ])("$driverName catalog gaps", ({ driverName, availableModel, missingModel }) => {
+  ])("$driverName catalog gaps", ({ driverName, availableModel, missingModel, missingName }) => {
     it("preserves a selected model when a catalog refresh no longer contains it", () => {
       const providers = [
         provider({
@@ -454,7 +451,7 @@ describe("instance-scoped model selection", () => {
         expect.objectContaining({ slug: availableModel }),
         expect.objectContaining({
           slug: missingModel,
-          name: missingModel,
+          name: missingName,
           isUnavailable: true,
         }),
       ]);

@@ -22,7 +22,6 @@ import {
 } from "@t3tools/contracts";
 import type * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
-import * as Predicate from "effect/Predicate";
 
 import type {
   OrchestratorV2ScenarioResult,
@@ -166,8 +165,6 @@ export const PROPOSED_PLAN_PROMPT =
   "Create a short implementation plan for adding deterministic replay fixtures. Do not ask questions. Present the final plan in a proposed plan block.";
 export const WEB_SEARCH_PROMPT =
   "Search the web for FIFA World Cup ticket pricing, then answer exactly: web search fixture complete";
-export const SKILL_INVOCATION_PROMPT = "$review README.md";
-export const SKILL_INVOCATION_CURSOR_MESSAGE = "/review README.md";
 
 export type OrchestratorFixtureInputStep =
   | {
@@ -327,11 +324,6 @@ export const CLAUDE_MODEL_SELECTION = {
   model: "claude-sonnet-4-6",
 } satisfies ModelSelection;
 
-export const CURSOR_MODEL_SELECTION = {
-  instanceId: ProviderInstanceId.make("cursor"),
-  model: "composer-2.5",
-} satisfies ModelSelection;
-
 export const MUSE_MODEL_SELECTION = {
   instanceId: ProviderInstanceId.make("muse"),
   model: "muse-spark-1.3-contributor",
@@ -340,18 +332,6 @@ export const MUSE_MODEL_SELECTION = {
 export const GROK_MODEL_SELECTION = {
   instanceId: ProviderInstanceId.make("grok"),
   model: "grok-build",
-} satisfies ModelSelection;
-
-/** fx fixtures run on fx's Default; the replay adapter has no probed model, so it writes none. */
-export const FX_MODEL_SELECTION = {
-  instanceId: ProviderInstanceId.make("fx"),
-  model: "default",
-} satisfies ModelSelection;
-
-/** Kiro's cheapest listed model, so recordings stay cheap and do not depend on "auto" routing. */
-export const KIRO_MODEL_SELECTION = {
-  instanceId: ProviderInstanceId.make("kiro"),
-  model: "claude-haiku-4.5",
 } satisfies ModelSelection;
 
 export const OPENCODE_MODEL_SELECTION = {
@@ -364,11 +344,6 @@ export const OPENCODE2_MODEL_SELECTION = {
   instanceId: ProviderInstanceId.make("opencode"),
   model: "opencode/space-bunny-free",
   options: [{ id: "variant", value: "high" }],
-} satisfies ModelSelection;
-
-export const PI_MODEL_SELECTION = {
-  instanceId: ProviderInstanceId.make("pi"),
-  model: "openrouter/deepseek/deepseek-v4-flash",
 } satisfies ModelSelection;
 
 export const ACP_REGISTRY_MODEL_SELECTION = {
@@ -980,11 +955,6 @@ export function materializeFixtureInput(input: {
         forkThreadId === undefined ? [ids.threadId] : [ids.threadId, forkThreadId],
     };
   });
-}
-
-/** Reads `key` from a recorded frame or payload of unknown shape. */
-export function field(value: unknown, key: string): unknown {
-  return Predicate.hasProperty(value, key) ? value[key] : undefined;
 }
 
 export function projectionFor(

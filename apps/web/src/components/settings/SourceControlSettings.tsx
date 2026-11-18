@@ -137,6 +137,7 @@ function SourceControlItemMark({
     <span className="relative inline-flex size-5 shrink-0 items-center justify-center">
       {icon}
       <span
+        data-source-control-dot
         className={cn(
           "pointer-events-none absolute -left-0.5 -top-0.5 size-2 rounded-full ring-2 ring-background",
           dotClassName,
@@ -244,10 +245,13 @@ function DiscoveryItemRow({
         isVcsNotReady(item) && "opacity-80",
       )}
     >
-      <div className="px-3 py-3 sm:px-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div data-settings-item-row className="px-3 py-3 sm:px-4">
+        <div
+          data-settings-list-row
+          className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+        >
           <div className="min-w-0 flex-1 space-y-1">
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <div data-settings-item-title className="flex min-w-0 flex-wrap items-center gap-2">
               <SourceControlItemMark item={item} />
               <span className="truncate text-sm font-medium text-foreground">{item.label}</span>
               {version ? <code className="text-xs text-muted-foreground">{version}</code> : null}

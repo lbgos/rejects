@@ -122,6 +122,7 @@ export function SettingsScopeNotice({
     return choices.map((choice) => (
       <button
         key={JSON.stringify(choice.search)}
+        data-scope-choice={group ? "checkout" : target}
         type="button"
         className={cn(
           ITEM_ROW_CLASSNAME,
@@ -148,7 +149,12 @@ export function SettingsScopeNotice({
           {choice.secondary ? (
             <Tooltip>
               <TooltipTrigger
-                render={<span className="block truncate text-xs text-muted-foreground" />}
+                render={
+                  <span
+                    data-scope-choice-detail
+                    className="block truncate text-xs text-muted-foreground"
+                  />
+                }
               >
                 {choice.secondary}
               </TooltipTrigger>
@@ -162,7 +168,7 @@ export function SettingsScopeNotice({
   };
   const notice = (
     <div className="space-y-3">
-      <p role="status" className="px-3 text-sm text-muted-foreground sm:px-4">
+      <p data-settings-notice role="status" className="px-3 text-sm text-muted-foreground sm:px-4">
         {children}
       </p>
       <div className="space-y-4">

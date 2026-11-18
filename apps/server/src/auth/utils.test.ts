@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { deriveAuthClientMetadata, resolveSessionCookieName } from "./utils.ts";
+import {
+  deriveAuthClientMetadata,
+  isLocalBrowserRequest,
+  resolveSessionCookieName,
+} from "./utils.ts";
 
 describe("deriveAuthClientMetadata", () => {
   it("labels Electron user agents as Electron instead of Chrome", () => {
@@ -149,5 +153,31 @@ describe("session cookie isolation", () => {
     });
 
     expect(first).toBe(second);
+  });
+});
+
+describe("isLocalBrowserRequest", () => {
+  const request = (remoteAddress: string, headers: Record<string, string>) =>
+    ({ headers, source: { remoteAddress } }) as never;
+
+  it("accepts a loopback browser on its own local page", () => {
+    expect(isLocalBrowserRequest(request("::ffff:127.0.0.1", { host: "localhost:5733" }))).toBe(
+      true,
+    );
+    expect(
+      isLocalBrowserRequest(
+        request("::1", { host: "[::1]:3873", origin: "http://localhost:5733" }),
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects remote sockets, foreign origins and rebinding hosts", () => {
+    expect(isLocalBrowserRequest(request("192.168.1.5", { host: "localhost:3873" }))).toBe(false);
+    expect(
+      isLocalBrowserRequest(
+        request("127.0.0.1", { host: "localhost:3873", origin: "https://evil.example" }),
+      ),
+    ).toBe(false);
+    expect(isLocalBrowserRequest(request("127.0.0.1", { host: "evil.example:3873" }))).toBe(false);
   });
 });

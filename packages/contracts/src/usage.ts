@@ -10,11 +10,8 @@ export const USAGE_MERGE_COMPATIBLE_SINCE = 4 as const;
 export const UsageProviderKind = Schema.Literals([
   "claude",
   "codex",
-  "grok",
-  "cursor",
   "opencode",
   "antigravity",
-  "pi",
   "muse",
 ]);
 export type UsageProviderKind = typeof UsageProviderKind.Type;

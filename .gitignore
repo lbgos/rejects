@@ -30,15 +30,9 @@ squashfs-root/
 /audits/
 dist-electron/
 .electron-runtime/
-.showcase/
-apps/mobile/.showcase/
-apps/mobile/.generated/
-apps/mobile/.android-cache/
 /.generated/
+.showcase/
 artifacts/app-store/screenshots/
-artifacts/mobile-e2e/
-artifacts/mobile-behavior/
-scripts/.e2e/
 .github/pr-assets/
 native/**/target/
 node_modules/
@@ -49,5 +43,6 @@ node_modules/
 
 # pnpm content-addressable store; never belongs in the repo.
 .pnpm-store/
+/.t3-*/
 
 /packages/ssh/.ssh-launcher-test-*/

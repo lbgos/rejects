@@ -4,6 +4,7 @@ import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as OpenCodeServerLedger from "./OpenCodeServerLedger.ts";
 import { assert, describe, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import type { OpencodeClient, ToolPart } from "@opencode-ai/sdk/v2";
 import { toolOutputImages } from "@t3tools/shared/toolOutput";
@@ -126,6 +127,22 @@ function runtimePolicy(
 function permissionAction(rules: ReturnType<typeof openCodePermissionRules>, permission: string) {
   return rules.findLast((rule) => rule.permission === "*" || rule.permission === permission)
     ?.action;
+}
+
+function openCodeRule(rules: ReturnType<typeof openCodePermissionRules>, permission: string) {
+  return rules.findLast((rule) =>
+    new RegExp(
+      `^${rule.permission.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replaceAll("*", ".*")}$`,
+    ).test(permission),
+  );
+}
+
+function openCodeListsTool(rules: ReturnType<typeof openCodePermissionRules>, tool: string) {
+  const rule = openCodeRule(
+    rules,
+    ["edit", "write", "apply_patch", "multiedit"].includes(tool) ? "edit" : tool,
+  );
+  return !(rule?.pattern === "*" && rule.action === "deny");
 }
 
 function providerTurn(input: {
@@ -618,6 +635,84 @@ describe("OpenCodeAdapterV2", () => {
       assert.equal(terminal?.status, "failed");
       assert.equal(terminal?.failure?.class, "usage_limit");
     }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer))),
+  );
+
+  it.effect.each([
+    {
+      message: "Go usage limit exceeded",
+      failureClass: "usage_limit",
+      resetAt: "1970-01-01T01:00:00.000Z",
+      retrying: "root",
+      aborted: ["root"],
+    },
+    {
+      message: "Insufficient permissions for this model",
+      failureClass: "provider_error",
+      retrying: "root",
+      aborted: ["root"],
+    },
+    {
+      message: "Go usage limit exceeded",
+      failureClass: "usage_limit",
+      resetAt: "1970-01-01T01:00:00.000Z",
+      retrying: "child",
+      aborted: ["child", "root"],
+    },
+  ])("fails a turn OpenCode would retry only after a long wait: $retrying, $message", (expected) =>
+    Effect.gen(function* () {
+      const nativeEvents = asyncEventStream();
+      const aborted: Array<string> = [];
+      const harness = yield* makeOpenCodeRuntimeHarness("retry-wait", "root", {
+        event: { subscribe: async () => ({ stream: nativeEvents.stream }) },
+        session: {
+          create: async () => ({ data: { id: "root", time: { created: 1, updated: 1 } } }),
+          promptAsync: async () => ({ data: true }),
+          abort: async (input: { sessionID: string }) => {
+            aborted.push(input.sessionID);
+            return { data: true };
+          },
+          children: async () => ({ data: [] }),
+        },
+      });
+      yield* harness.startTurn();
+      const received = yield* harness.runtime.events.pipe(
+        Stream.takeUntil((event) => event.type === "turn.terminal"),
+        Stream.runCollect,
+        Effect.forkScoped,
+      );
+      yield* Effect.promise(() =>
+        nativeEvents.push({
+          type: "session.created",
+          properties: {
+            sessionID: "child",
+            info: { id: "child", parentID: "root", time: { created: 2, updated: 2 } },
+          },
+        }),
+      );
+      const retry = (attempt: number, message: string, next: number) =>
+        Effect.promise(() =>
+          nativeEvents.push({
+            type: "session.status",
+            properties: {
+              sessionID: expected.retrying,
+              status: { type: "retry", attempt, message, next },
+            },
+          }),
+        );
+      yield* retry(1, "Rate limited", 2_000);
+      yield* retry(2, expected.message, 3_600_000);
+      const terminal = (yield* Fiber.join(received)).find(
+        (event) => event.type === "turn.terminal",
+      );
+      assert.equal(terminal?.status, "failed");
+      assert.equal(terminal?.failure?.class, expected.failureClass);
+      assert.equal(terminal?.failure?.message, expected.message);
+      assert.equal(terminal?.failure?.resetAt, expected.resetAt);
+      assert.deepEqual(aborted, expected.aborted);
+    }).pipe(
+      Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer)),
+      Effect.scoped,
+    ),
   );
 
   it.effect("applies a changed runtime policy to the session on resume and turn start", () =>
@@ -3641,6 +3736,33 @@ describe("OpenCodeAdapterV2", () => {
     assert.equal(permissionAction(approvalRequiredWorkspaceWrite, "edit"), "ask");
   });
 
+  it("lists only T3's tools when the policy turns off built-in tools", () => {
+    const fullAccess = openCodePermissionRules(runtimePolicy("full-access"));
+    assert.isTrue(openCodeListsTool(fullAccess, "bash"));
+
+    const bridged = openCodePermissionRules(runtimePolicy("full-access", { builtinTools: "none" }));
+    for (const tool of [
+      "bash",
+      "edit",
+      "write",
+      "read",
+      "glob",
+      "grep",
+      "webfetch",
+      "websearch",
+      "codesearch",
+      "task",
+      "skill",
+      "other-server_fetch",
+    ]) {
+      assert.isFalse(openCodeListsTool(bridged, tool), tool);
+    }
+    for (const tool of ["t3-code_bridge_list", "t3-code_bridge_start", "t3-code_notify_user"]) {
+      assert.isTrue(openCodeListsTool(bridged, tool), tool);
+      assert.equal(openCodeRule(bridged, tool)?.action, "allow", tool);
+    }
+  });
+
   it("enforces non-interactive sandbox policy through OpenCode permissions", () => {
     const readOnly = openCodePermissionRules(
       runtimePolicy("full-access", {
@@ -3869,7 +3991,7 @@ it.live.each([true, false])("opens an authenticated OpenCode session (external=%
         ),
       ),
       Layer.provide(OpenCodeServerLedger.layerTest),
-      Layer.provideMerge(NodeServices.layer),
+      Layer.provideMerge(Layer.merge(NodeServices.layer, NodeCrypto.layer)),
     );
     const instanceId = ProviderInstanceId.make("opencode-auth");
     const adapter = yield* makeOpenCodeAdapterV2({

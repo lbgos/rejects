@@ -613,6 +613,8 @@ export class EnvironmentAuth extends Context.Service<
       readonly access: AuthMcpClientAccess;
       readonly peerLink: boolean;
       readonly client: AuthClientMetadata;
+      readonly ttl?: Duration.Duration;
+      readonly scopes?: ReadonlyArray<AuthEnvironmentScope>;
     }) => Effect.Effect<
       {
         readonly sessionId: AuthSessionId;
@@ -1551,8 +1553,8 @@ export const make = Effect.gen(function* () {
       .issue({
         subject: MCP_CLIENT_SUBJECT,
         method: "bearer-access-token",
-        scopes: mcpClientScopes(input.access),
-        ttl: MCP_CLIENT_SESSION_TTL,
+        scopes: input.scopes ?? mcpClientScopes(input.access),
+        ttl: input.ttl ?? MCP_CLIENT_SESSION_TTL,
         ...(input.access === "read-only" ? {} : { runtimeModeCeiling: input.access }),
         peerLink: input.peerLink,
         client: { ...input.client, label: input.label, deviceType: "bot" },

@@ -76,6 +76,7 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import { Tool } from "effect/ai";
+import { AgentSandbox } from "@t3tools/shared/AgentScope";
 import { formatClaudeResumeCompactionQuestion } from "@t3tools/shared/claudeCompaction";
 import { backgroundWorkHoldsCompletion } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -400,38 +401,20 @@ describe("ClaudeAdapterV2 runtime query policy", () => {
     assert.isUndefined(options.extraArgs?.["add-dir"]);
   });
 
-  it("gives delegated children Claude's subagent prompt cache TTL", () => {
-    const lineage = (relationshipToParent: "fork" | "subagent" | null) => ({
-      lineage: {
-        parentThreadId: null,
-        relationshipToParent,
-        rootThreadId: ThreadId.make("thread-root"),
-      },
-    });
+  it("sets the session's prompt cache TTL unless the instance env names one", () => {
     const env = { PATH: "/bin" };
-    const ttl = (environment: NodeJS.ProcessEnv, ...args: Parameters<typeof lineage>) =>
-      ClaudeAdapterV2.claudeQueryEnvironment(environment, lineage(...args), "5m")
-        .CLAUDE_CODE_PROMPT_CACHE_TTL;
-    assert.equal(ttl(env, "subagent"), "5m");
-    assert.isUndefined(ttl(env, null));
-    assert.isUndefined(ttl(env, "fork"));
-    assert.equal(ttl({ ...env, CLAUDE_CODE_PROMPT_CACHE_TTL: "1h" }, "subagent"), "1h");
-    assert.strictEqual(
-      ClaudeAdapterV2.claudeQueryEnvironment(env, lineage("subagent"), undefined),
-      env,
+    const ttl = ClaudeAdapterV2.claudeQueryEnvironment;
+    assert.equal(ttl(env, "1h").CLAUDE_CODE_PROMPT_CACHE_TTL, "1h");
+    assert.equal(
+      ttl({ ...env, CLAUDE_CODE_PROMPT_CACHE_TTL: "5m" }, "1h").CLAUDE_CODE_PROMPT_CACHE_TTL,
+      "5m",
     );
+    assert.strictEqual(ttl(env, undefined), env);
   });
 
   it("makes a resumed Claude session wait for its MCP servers before the first request", () => {
-    const appThread = {
-      lineage: {
-        parentThreadId: null,
-        relationshipToParent: null,
-        rootThreadId: ThreadId.make("t"),
-      },
-    };
     const nonblocking = (environment: NodeJS.ProcessEnv, resume: boolean) =>
-      ClaudeAdapterV2.claudeQueryEnvironment(environment, appThread, undefined, resume)
+      ClaudeAdapterV2.claudeQueryEnvironment(environment, undefined, resume)
         .MCP_CONNECTION_NONBLOCKING;
     assert.equal(nonblocking({}, true), "0");
     assert.isUndefined(nonblocking({}, false));
@@ -618,6 +601,85 @@ describe("ClaudeAdapterV2 runtime query policy", () => {
     });
   });
 
+  it("turns off every built-in tool when the policy has none", () => {
+    const queryPolicy = ClaudeAdapterV2.claudeRuntimeQueryPolicyForRuntimePolicy(
+      ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        cwd: "/workspace",
+        builtinTools: "none",
+      }),
+    );
+
+    assert.deepEqual(queryPolicy, {
+      permissionMode: "bypassPermissions",
+      tools: [],
+      allowDangerouslySkipPermissions: true,
+      installPermissionCallback: false,
+    });
+  });
+
+  it("turns off Claude Code's web, Skill and coding-session tools when the policy has noWeb", () => {
+    const queryPolicy = ClaudeAdapterV2.claudeRuntimeQueryPolicyForRuntimePolicy(
+      ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        cwd: "/workspace",
+        builtinTools: "noWeb",
+      }),
+    );
+
+    assert.equal(queryPolicy.permissionMode, "bypassPermissions");
+    const off = new Set(queryPolicy.disallowedTools);
+    for (const tool of ["WebSearch", "Skill", "Workflow", "ReportFindings", "ScheduleWakeup"]) {
+      assert.isTrue(off.has(tool), tool);
+    }
+    for (const tool of ["Agent", "Bash", "Read", "Edit", "Write", "AskUserQuestion", "Monitor"]) {
+      assert.isFalse(off.has(tool), tool);
+    }
+  });
+
+  it("gives a bot its standing instructions in place of the coding-agent instructions", () => {
+    const base = {
+      modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+      nativeThreadId: "bot-thread",
+      resume: false,
+      cwd: "/workspace",
+      mcpServers: { "t3-code": { type: "http", url: "http://127.0.0.1:43123/mcp" } },
+    } as const;
+    const bot = ClaudeAdapterV2.makeClaudeQueryOptions({
+      ...base,
+      standingInstructions: "You are Ada.",
+    });
+    const append = bot.systemPrompt as { readonly append: string };
+    assert.include(
+      append.append,
+      "<bot_standing_instructions>\nYou are Ada.\n</bot_standing_instructions>",
+    );
+    assert.notInclude(append.append, "pull_request_linking");
+    assert.notInclude(append.append, "T3 Code orchestration");
+    assert.equal(bot.title, "Bot chat");
+    const coding = ClaudeAdapterV2.makeClaudeQueryOptions(base).systemPrompt as {
+      readonly append: string;
+    };
+    assert.include(coding.append, "T3 Code orchestration");
+    assert.isUndefined(ClaudeAdapterV2.makeClaudeQueryOptions(base).title);
+  });
+
+  it("reopens a live query when a bot's standing instructions change", () => {
+    const policy = ClaudeAdapterV2.claudeRuntimeQueryPolicyForRuntimePolicy(
+      ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        cwd: "/workspace",
+        builtinTools: "noWeb",
+      }),
+    );
+    const key = (instructions: string) =>
+      ClaudeAdapterV2.claudeEffectiveQueryPolicyKey(policy, {}, instructions);
+    assert.notEqual(key("Other bots: none."), key("Other bots: Ada."));
+  });
+
   it("keeps approval checks when Full access must fall back to an allowed Claude mode", () => {
     const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
       runtimeMode: "full-access",
@@ -703,6 +765,18 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
       mcpServers: T3_MCP_SERVERS,
     });
     assert.isFalse(overrides.allowedTools?.includes(ClaudeAdapterV2.CLAUDE_T3_MCP_TOOL_WILDCARD));
+  });
+
+  it("loads t3-code tools up front when there is no ToolSearch", () => {
+    const overrides = ClaudeAdapterV2.claudeMcpQueryOverrides({
+      mcpSession: mcpSessionFor(ThreadId.make("thread-claude-mcp-always-load")),
+      readOnlySandbox: false,
+      alwaysLoad: true,
+    });
+
+    assert.deepEqual(overrides.mcpServers, {
+      "t3-code": { ...T3_MCP_SERVERS["t3-code"], alwaysLoad: true },
+    });
   });
 
   it("invalidates live-query reuse when MCP credentials rotate", () => {
@@ -1615,9 +1689,12 @@ describe("ClaudeAdapterV2 MCP elicitation acceptance", () => {
 const captureSdkExecutablePaths = Effect.fn("captureSdkExecutablePaths")(function* (
   binaryPath: string,
   environment: ResolvedProviderInstanceEnvironment = [],
+  runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy = CLAUDE_TEST_RUNTIME_POLICY,
 ) {
   const executablePaths: Array<string | undefined> = [];
   const taskToolEnvironment: Array<string | undefined> = [];
+  const promptCacheTtls: Array<string | undefined> = [];
+  const resumeAnswers: Array<unknown> = [];
   const adapter = yield* ClaudeAdapterV2.createClaudeAdapterV2(
     {
       instanceId: ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID,
@@ -1639,6 +1716,17 @@ const captureSdkExecutablePaths = Effect.fn("captureSdkExecutablePaths")(functio
         Effect.sync(() => {
           executablePaths.push(input.options.pathToClaudeCodeExecutable);
           taskToolEnvironment.push(input.options.env?.CLAUDE_CODE_ENABLE_TODO_TOOLS);
+          promptCacheTtls.push(input.options.env?.CLAUDE_CODE_PROMPT_CACHE_TTL);
+          if (runtimePolicy.compactionManaged === true)
+            resumeAnswers.push(
+              input.options.onUserDialog?.(
+                {
+                  dialogKind: "resume_return",
+                  payload: { sessionAgeMinutes: 90, estimatedTokens: 300_000 },
+                } as never,
+                { signal: new AbortController().signal, requestId: "resume" } as never,
+              ),
+            );
           return {
             messages: Stream.never,
             offer: () => Effect.void,
@@ -1681,9 +1769,15 @@ const captureSdkExecutablePaths = Effect.fn("captureSdkExecutablePaths")(functio
       attemptId: RunAttemptId.make("attempt-claude-binary-path"),
       text: "hello",
       attachments: [],
+      runtimePolicy,
     }),
   );
-  return { executablePaths, taskToolEnvironment };
+  return {
+    executablePaths,
+    taskToolEnvironment,
+    promptCacheTtls,
+    resumeAnswers: yield* Effect.promise(() => Promise.all(resumeAnswers)),
+  };
 });
 
 describe("ClaudeAdapterV2 executable path", () => {
@@ -1699,6 +1793,55 @@ describe("ClaudeAdapterV2 executable path", () => {
         );
 
         assert.deepEqual(executablePaths, [packageExe]);
+      }),
+    ).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          ProviderInstallationGate.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
+});
+
+describe("ClaudeAdapterV2 prompt cache TTL", () => {
+  it.effect("asks Claude Code for a 1h cache unless the instance env sets one", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const defaults = yield* captureSdkExecutablePaths("claude");
+        assert.deepEqual(defaults.promptCacheTtls, ["1h"]);
+        const pinned = yield* captureSdkExecutablePaths("claude", [
+          { name: "CLAUDE_CODE_PROMPT_CACHE_TTL", value: "5m", sensitive: false },
+        ]);
+        assert.deepEqual(pinned.promptCacheTtls, ["5m"]);
+      }),
+    ).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          ProviderInstallationGate.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
+});
+
+describe("ClaudeAdapterV2 server-managed compaction", () => {
+  it.effect("resumes a thread the server compacts without asking whether to compact", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const bot = yield* captureSdkExecutablePaths("claude", [], {
+          ...CLAUDE_TEST_RUNTIME_POLICY,
+          compactionManaged: true,
+        });
+        assert.deepEqual(bot.resumeAnswers, [{ behavior: "completed", result: "continue" }]);
       }),
     ).pipe(
       Effect.provide(
@@ -1738,7 +1881,7 @@ describe("ClaudeAdapterV2 resumeThread", () => {
           path.join(projectDir, "native-thread-saved.jsonl"),
           `{"type":"user","message":{"role":"user","content":"hello"},"sessionId":"native-thread-saved"}\n`,
         );
-        const adapter = yield* ClaudeAdapterV2.makeClaudeAdapterV2({
+        const options = {
           instanceId: ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID,
           settings: DEFAULT_CLAUDE_SETTINGS,
           environment: { CLAUDE_CONFIG_DIR: configDir },
@@ -1755,46 +1898,65 @@ describe("ClaudeAdapterV2 resumeThread", () => {
             subagentModel: () => Effect.succeed(null),
             assertComplete: Effect.void,
           },
-        });
+        };
         const threadId = ThreadId.make("thread-claude-empty-session");
-        const runtime = yield* adapter.openSession({
-          threadId,
-          providerSessionId: ProviderSessionId.make("provider-session-claude-empty-session"),
-          modelSelection: CLAUDE_TEST_MODEL_SELECTION,
-          runtimePolicy: CLAUDE_TEST_RUNTIME_POLICY,
-        });
-        const providerThread = yield* runtime.ensureThread({
-          threadId,
-          modelSelection: CLAUDE_TEST_MODEL_SELECTION,
-          runtimePolicy: CLAUDE_TEST_RUNTIME_POLICY,
-        });
+        const open = (
+          adapter: Effect.Success<ReturnType<typeof ClaudeAdapterV2.makeClaudeAdapterV2>>,
+        ) =>
+          Effect.gen(function* () {
+            const runtime = yield* adapter.openSession({
+              threadId,
+              providerSessionId: ProviderSessionId.make("provider-session-claude-empty-session"),
+              modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+              runtimePolicy: CLAUDE_TEST_RUNTIME_POLICY,
+            });
+            const providerThread = yield* runtime.ensureThread({
+              threadId,
+              modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+              runtimePolicy: CLAUDE_TEST_RUNTIME_POLICY,
+            });
+            const resume = (nativeId: string) =>
+              runtime.resumeThread({
+                providerThread: {
+                  ...providerThread,
+                  nativeThreadRef: {
+                    driver: ClaudeAdapterV2.CLAUDE_PROVIDER,
+                    nativeId,
+                    strength: "strong",
+                  },
+                },
+              });
+            return { runtime, providerThread, resume };
+          });
+        const { runtime, providerThread, resume } = yield* open(
+          yield* ClaudeAdapterV2.makeClaudeAdapterV2(options),
+        );
 
         const error = yield* Effect.flip(runtime.resumeThread({ providerThread }));
         assert.equal(error._tag, "ProviderAdapterResumeThreadError");
 
-        const saved = yield* runtime.resumeThread({
-          providerThread: {
-            ...providerThread,
-            nativeThreadRef: {
-              driver: ClaudeAdapterV2.CLAUDE_PROVIDER,
-              nativeId: "native-thread-saved",
-              strength: "strong",
-            },
-          },
-        });
+        const saved = yield* resume("native-thread-saved");
         assert.equal(saved.nativeThreadRef?.nativeId, "native-thread-saved");
 
-        const missing = yield* runtime.resumeThread({
-          providerThread: {
-            ...providerThread,
-            nativeThreadRef: {
-              driver: ClaudeAdapterV2.CLAUDE_PROVIDER,
-              nativeId: "native-thread-missing",
-              strength: "strong",
-            },
-          },
-        });
+        const missing = yield* resume("native-thread-missing");
         assert.equal(missing.nativeThreadRef?.nativeId, "native-thread-missing");
+
+        const sandboxed = yield* open(
+          yield* ClaudeAdapterV2.makeClaudeAdapterV2(options).pipe(
+            Effect.provideService(AgentSandbox, {
+              ...AgentSandbox.defaultValue(),
+              hostPath: (input) => Effect.succeedSome(input.path),
+            }),
+          ),
+        );
+        assert.equal(
+          (yield* Effect.flip(sandboxed.resume("native-thread-missing")))._tag,
+          "ProviderAdapterResumeThreadError",
+        );
+        assert.equal(
+          (yield* sandboxed.resume("native-thread-saved")).nativeThreadRef?.nativeId,
+          "native-thread-saved",
+        );
       }),
     ).pipe(
       Effect.provide(
@@ -8273,6 +8435,81 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             IdAllocator.layer,
             McpProviderSessions.layer,
             NodeServices.layer,
+            NodeCrypto.layer,
+          ),
+        ),
+      ),
+  );
+
+  it.effect(
+    "keeps the cache warm with an unsaved resume that reports only its usage, then resumes the thread itself",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* makeWakeHarness;
+        const now = yield* DateTime.now;
+        const keepWarm = harness.runtime.keepWarm;
+        assert.isDefined(keepWarm);
+        if (keepWarm === undefined) return;
+        const turn = (attempt: string, text: string) =>
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now,
+            attemptId: RunAttemptId.make(attempt),
+            text,
+            attachments: [],
+            providerTurnOrdinal: 2,
+          });
+        yield* keepWarm(turn("claude-keepwarm-attempt", "Reply with only: ok"));
+        const warming = harness.getOpenedOptions();
+        assert.equal(warming?.resume, WAKE_NATIVE_SESSION);
+        assert.isUndefined(warming?.forkSession);
+        assert.isFalse(warming?.persistSession);
+        yield* Queue.offer(
+          harness.sdkMessages,
+          makeResultFrame({
+            uuid: "00000000-0000-4000-8000-000000000211",
+            result: "ok",
+            usage: {
+              input_tokens: 4,
+              output_tokens: 2,
+              cache_creation_input_tokens: 61,
+              cache_read_input_tokens: 57_658,
+              cache_creation: { ephemeral_1h_input_tokens: 61, ephemeral_5m_input_tokens: 0 },
+            } as never,
+          }),
+        );
+        const terminal = yield* Queue.take(harness.terminalReceipts);
+        assert.equal(terminal.status, "completed");
+        assert.deepEqual(harness.offeredMessages[0]?.message.content, "Reply with only: ok");
+        const ended = harness.events.findLast((event) => event.type === "provider_turn.updated");
+        assert.equal(ended?.type, "provider_turn.updated");
+        if (ended?.type === "provider_turn.updated") {
+          assert.equal(ended.providerTurn.id, terminal.providerTurnId);
+          assert.equal(ended.providerTurn.status, "completed");
+          assert.include(ended.providerTurn.tokenUsage, {
+            inputTokens: 57_723,
+            cachedInputTokens: 57_658,
+            promptCacheTtlMs: 3_600_000,
+          });
+        }
+        assert.isFalse(
+          harness.events.some(
+            (event) => event.type === "turn_item.updated" || event.type === "message.updated",
+          ),
+        );
+        yield* harness.runtime.startTurn(turn("claude-after-keepwarm-attempt", "Hello"));
+        const resumed = harness.getOpenedOptions();
+        assert.equal(resumed?.resume, WAKE_NATIVE_SESSION);
+        assert.isUndefined(resumed?.forkSession);
+        assert.isUndefined(resumed?.persistSession);
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          Layer.mergeAll(
+            NodeServices.layer,
+            IdAllocator.layer,
+            McpProviderSessions.layer,
             NodeCrypto.layer,
           ),
         ),

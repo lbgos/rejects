@@ -145,7 +145,7 @@ For mobile verification, a missing or outdated native client is an install step,
 
 ## Evals
 
-`evals/` checks how real models behave with T3 Code's model-facing text: agent instructions, MCP tool descriptions and schemas, and generated titles. Before you change that text, read [evals/README.md](evals/README.md) and run the evals it names. When you fix a model behavior bug, add a case that fails before the fix.
+The evals that check how real models behave with model-facing text (agent instructions, MCP tool descriptions and schemas, generated titles) are kept outside this repository and run against this tree. Before you change that text, run the evals that cover it. When you fix a model behavior bug, add a case that fails before the fix.
 
 ## Pull requests
 

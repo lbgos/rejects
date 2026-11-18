@@ -311,6 +311,9 @@ export function summarizeT3ToolCalls(
         quantity(countEntities(entityIds("requestId")), "pending question request"),
       );
       break;
+    case "notify-user":
+      label = phrase("Sent", "send", quantity(selected.length, "notification"));
+      break;
     case "secret-request":
       label = phrase("Asked for", "ask for", quantity(selected.length, "secret"));
       break;
@@ -483,6 +486,51 @@ export function summarizeT3ToolCalls(
       break;
     case "capabilities":
       label = phrase("Checked", "check", `orchestration capabilities ${times}`);
+      break;
+    case "memory-update":
+      label = phrase("Updated", "update", `memory ${times}`);
+      break;
+    case "memory-search":
+      label = phrase("Searched", "search", `memory ${times}`);
+      break;
+    case "status":
+      label = phrase("Showed", "show", quantity(selected.length, "status line"));
+      break;
+    case "react":
+      label = phrase("Reacted", "react", `to ${quantity(selected.length, "message")}`);
+      break;
+    case "hand-off":
+      label = phrase("Suggested", "suggest", quantity(selected.length, "other bot"));
+      break;
+    case "offer-replies":
+      label = phrase("Offered", "offer", `reply buttons ${times}`);
+      break;
+    case "web-search":
+      label = phrase("Searched", "search", `the web ${times}`);
+      break;
+    case "web-browse":
+      label = phrase("Opened", "open", quantity(selected.length, "web page"));
+      break;
+    case "shell":
+      label = phrase("Ran", "run", quantity(selected.length, "command"));
+      break;
+    case "login-request":
+      label = phrase("Asked for", "ask for", quantity(selected.length, "sign-in"));
+      break;
+    case "music":
+      label = phrase("Used", "use", `music ${times}`);
+      break;
+    case "cortex":
+      label = phrase("Used", "use", `Cortex ${times}`);
+      break;
+    case "computer":
+      label = phrase("Used", "use", `the computer ${times}`);
+      break;
+    case "bridge":
+      label = phrase("Used", "use", `the bridge ${times}`);
+      break;
+    case "connections":
+      label = phrase("Checked", "check", `connected accounts ${times}`);
       break;
   }
   return { label, failedCount };

@@ -40,6 +40,16 @@ describe("ScheduledTaskSchedule", () => {
   });
 });
 
+it("accepts one-time instants and rejects missing timezone or invalid dates", () => {
+  expect(decodeUpsertSchedule({ type: "once", runAt: "2026-10-28T18:00:00+02:00" })).toEqual({
+    type: "once",
+    runAt: "2026-10-28T18:00:00+02:00",
+  });
+  for (const runAt of ["tomorrow", "2026-10-28T18:00:00", "2026-99-99T18:00:00Z"]) {
+    expect(() => decodeUpsertSchedule({ type: "once", runAt })).toThrow();
+  }
+});
+
 it.each(["literal", " ", "\t\n", "{{body.bad", "{{unknown.field}}"])(
   "rejects invalid dedupe template %s",
   (replayKey) => {

@@ -6,8 +6,11 @@ import type {
   SnapShotSource,
 } from "@t3tools/contracts";
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
-import { CircleAlertIcon, ImageIcon, PaperclipIcon, PlayIcon, XIcon } from "lucide-react";
-import { type ComponentProps, useLayoutEffect, useRef } from "react";
+import { CircleAlertIcon, ImageIcon, PaperclipIcon, PlayIcon, PlusIcon, XIcon } from "lucide-react";
+import { type ComponentProps, use, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { BotThreadContext } from "../../bots/context";
+import { t } from "../../i18n";
+import { useMediaQuery } from "../../hooks/useMediaQuery";
 
 import {
   type ComposerFileAttachment,
@@ -32,6 +35,7 @@ import { AttachmentFilePreview } from "../files/AttachmentFilePreview";
 import { AttachmentImage } from "../media/AttachmentImage";
 import { Button } from "../ui/button";
 import { Dialog, DialogPopup, DialogTitle } from "../ui/dialog";
+import { Popover, PopoverPopup } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ComposerImageThumbnail } from "./ComposerImageThumbnail";
 import { composerFloatingLayerProps } from "./composerEventScope";
@@ -41,6 +45,7 @@ import {
   buildExpandedImagePreview,
   type ExpandedImagePreview,
 } from "./ExpandedImagePreview";
+import { openComposerFilePicker } from "./iosFilePickerGuard";
 import { PierreEntryIcon } from "./PierreEntryIcon";
 import {
   SNAP_SHOT_ATTACHMENT_FRAME_CLASS,
@@ -707,6 +712,14 @@ export function ComposerAttachButton({
   readonly focusComposer: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  // Holds worker reloads from opening the picker until the picked files are in the draft.
+  const releasePicker = useRef<(() => void) | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- releases an open picker's reload hold when the button unmounts
+  useEffect(() => () => releasePicker.current?.(), []);
+  const [pickerBlocked, setPickerBlocked] = useState(false);
+  const phone = useMediaQuery("max-md");
+  const botCircle = use(BotThreadContext) && phone;
   return (
     <>
       <input
@@ -720,9 +733,13 @@ export function ComposerAttachButton({
           // Inserting a chip refocuses the editor after the draft renders;
           // focusing synchronously here would report the editor's stale text
           // over the prompt that was just written.
-          void addComposerAttachments(files).then((inserted) => {
-            if (!inserted) focusComposer();
-          });
+          const release = releasePicker.current;
+          releasePicker.current = null;
+          void addComposerAttachments(files)
+            .then((inserted) => {
+              if (!inserted) focusComposer();
+            })
+            .finally(() => release?.());
         }}
       />
       <Tooltip>
@@ -730,19 +747,34 @@ export function ComposerAttachButton({
           render={
             <Button
               type="button"
-              variant="ghost"
-              size="icon-sm"
+              variant={botCircle ? "glass" : "ghost"}
+              size={botCircle ? "icon-xl" : "icon-sm"}
+              ref={buttonRef}
               onPointerDown={(event) => event.preventDefault()}
-              onClick={() => inputRef.current?.click()}
+              onClick={() => {
+                if (!inputRef.current) return;
+                releasePicker.current?.();
+                releasePicker.current = openComposerFilePicker(inputRef.current, {
+                  onBlocked: () => setPickerBlocked(true),
+                  onWorking: () => setPickerBlocked(false),
+                });
+              }}
               aria-label="Attach files"
             />
           }
         >
           {/* The clip's weight sits in its upper loop; 1px down reads as centered on the row. */}
-          <PaperclipIcon className="translate-y-px" />
+          {botCircle ? <PlusIcon /> : <PaperclipIcon className="translate-y-px" />}
         </TooltipTrigger>
         <TooltipPopup>Attach files</TooltipPopup>
       </Tooltip>
+      <Popover open={pickerBlocked} onOpenChange={(open) => !open && setPickerBlocked(false)}>
+        <PopoverPopup anchor={buttonRef} side="top" align="start" width="sm" tooltipStyle>
+          {t(
+            "iOS blocked the file picker. Close and reopen the app to attach files. Paste still works.",
+          )}
+        </PopoverPopup>
+      </Popover>
     </>
   );
 }

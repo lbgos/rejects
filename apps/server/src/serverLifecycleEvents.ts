@@ -23,7 +23,6 @@ export class ServerLifecycleEvents extends Context.Service<
     readonly publish: (event: LifecycleEventInput) => Effect.Effect<ServerLifecycleStreamEvent>;
     readonly snapshot: Effect.Effect<SnapshotState>;
     readonly stream: Stream.Stream<ServerLifecycleStreamEvent>;
-    /** Completes once the first ready event is published. */
     readonly awaitReady: Effect.Effect<void>;
   }
 >()("t3/serverLifecycleEvents") {}

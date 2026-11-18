@@ -1,11 +1,12 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { assert, it } from "@effect/vitest";
+import { assert, expect, it } from "@effect/vitest";
 import { AuthSessionId, ProjectId, RunId, ThreadId } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as NetService from "@t3tools/shared/Net";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as DateTime from "effect/DateTime";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
@@ -17,7 +18,13 @@ import * as TestConsole from "effect/testing/TestConsole";
 import { Command } from "effect/cli";
 import { vi } from "vite-plus/test";
 
+import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
+import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
+import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
+import * as ServerConfig from "../config.ts";
+import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as McpBridge from "../mcp/AcpMcpStdioBridge.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import {
   makePersistedServerRuntimeState,
   persistServerRuntimeState,
@@ -25,11 +32,22 @@ import {
 import {
   readLatestMessages,
   resolveProject,
+  THREAD_CLI_SCOPES,
+  THREAD_CLI_SESSION_TTL,
   threadCommand,
   type ThreadTools,
   titleFromMessage,
   waitForRun,
 } from "./thread.ts";
+
+const layerEnvironmentAuth = EnvironmentAuth.layer.pipe(
+  Layer.provide(ServerSecretStore.layer),
+  Layer.provide(SqlitePersistence.layerMemory),
+  Layer.provide(ServerEnvironment.layerIdentity),
+  Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-thread-cli-test-" })),
+  Layer.provide(ManagedPolicy.layerTest()),
+  Layer.provide(NodeCrypto.layer),
+);
 
 vi.mock("../auth/EnvironmentAuth.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../auth/EnvironmentAuth.ts")>();
@@ -371,6 +389,31 @@ it.effect("--wait reports its run's result when a later run is the one waiting",
   }),
 );
 
+it.layer(NodeServices.layer)("t3 thread CLI session", (it) => {
+  it.effect("issues a short-lived session with only the scopes it uses", () =>
+    Effect.gen(function* () {
+      const environmentAuth = yield* EnvironmentAuth.EnvironmentAuth;
+      const issued = yield* environmentAuth.issueMcpClientSession({
+        label: "t3 thread cli",
+        access: "full-access",
+        scopes: THREAD_CLI_SCOPES,
+        peerLink: false,
+        client: { deviceType: "bot" },
+        ttl: THREAD_CLI_SESSION_TTL,
+      });
+      const lifetime = DateTime.distance(yield* DateTime.now, issued.expiresAt);
+      const stored = (yield* environmentAuth.listSessions()).find(
+        (session) => session.sessionId === issued.sessionId,
+      );
+
+      expect(Duration.toMillis(lifetime)).toBeLessThanOrEqual(
+        Duration.toMillis(THREAD_CLI_SESSION_TTL),
+      );
+      expect(Duration.toMillis(lifetime)).toBeGreaterThan(Duration.toMillis(Duration.minutes(14)));
+      expect(stored?.scopes).toEqual([...THREAD_CLI_SCOPES]);
+    }).pipe(Effect.provide(layerEnvironmentAuth)),
+  );
+});
 /** Serves t3_thread_read pages the way the server does: positions count every item. */
 const timelineTools = (types: ReadonlyArray<string>) => {
   const items = types.map((type, position) => ({ position, itemId: `item-${position}`, type }));

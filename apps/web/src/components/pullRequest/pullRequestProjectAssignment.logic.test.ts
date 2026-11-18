@@ -237,50 +237,6 @@ describe("one server per repository", () => {
     ).toEqual({ "env-2": ["a2"] });
   });
 
-  it("checks the owner's HTTP authority using its own identity in either project order", () => {
-    const projects = [
-      {
-        ...project("a1", "env-1", "forge.example/team/repo"),
-        repositoryIdentity: {
-          canonicalKey: "forge.example/team/repo",
-          provider: SourceControlProviderKind.make("forgejo"),
-          locator: {
-            source: "git-remote",
-            remoteName: "origin",
-            remoteUrl: "https://forge.example:3000/team/repo.git",
-          },
-        },
-      },
-      {
-        ...project("a2", "env-2", "forge.example/team/repo"),
-        repositoryIdentity: {
-          canonicalKey: "forge.example/team/repo",
-          provider: SourceControlProviderKind.make("forgejo"),
-          locator: {
-            source: "git-remote",
-            remoteName: "origin",
-            remoteUrl: "git@forge.example:team/repo.git",
-          },
-        },
-      },
-    ] as const;
-    const availability = new Map([
-      ["env-1" as EnvironmentId, hostAvailability(new Map([["forge.example:3000", false]]))],
-    ]);
-    for (const copies of [projects, projects.toReversed()]) {
-      expect(
-        plain(
-          assignProjectsToEnvironments(
-            copies,
-            envs("env-1", "env-2"),
-            "env-1" as EnvironmentId,
-            availability,
-          ),
-        ),
-      ).toEqual({ "env-2": ["a2"] });
-    }
-  });
-
   it("uses a server-resolved host for SSH without conflating ports on that host", () => {
     const projects = envs("env-1", "env-2").map((environmentId) => ({
       ...project(`a-${environmentId}`, environmentId, "ssh.forge.example/team/repo"),

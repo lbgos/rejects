@@ -12,14 +12,7 @@ import * as OpenCodeServerOwner from "./OpenCodeServerOwner.ts";
 
 const GENERATION_TIMEOUT = "3 minutes";
 
-const OpenCodeTextGenerationOperation = Schema.Literals([
-  "generateCommitMessage",
-  "generatePrContent",
-  "generateBranchName",
-  "generateThreadTitle",
-  "generateReviewGuide",
-  "generateTranscriptionPostProcessing",
-]);
+const OpenCodeTextGenerationOperation = Schema.String;
 
 const openCodeTextGenerationErrorContext = {
   operation: OpenCodeTextGenerationOperation,
@@ -395,6 +388,7 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
     return yield* TextGenerationOperations.decodeJsonReply(input, "OpenCode", rawOutput);
   });
 
+  // The temporary session denies every tool; OpenCode has no OS sandbox for prompts.
   return TextGenerationOperations.fromRunner(
     "OpenCodeTextGeneration",
     TextGenerationOperations.withoutInvestigation("OpenCode", runOpenCodeJson),

@@ -1,4 +1,5 @@
 import {
+  ATTACHMENT_UPLOAD_CHUNK_BYTES,
   AuthOrchestrationOperateScope,
   PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPES,
   type ChatAttachment,
@@ -132,36 +133,61 @@ function deletePendingUpload(environmentId: EnvironmentId, attachmentId: string)
   });
 }
 
+/** Files over one chunk go as `?offset=` requests, each under proxy request-size caps. */
 function uploadBytes(input: {
   readonly url: string;
   readonly file: File;
   readonly mimeType: string;
   readonly onProgress: (progress: number) => void;
 }): { readonly done: Promise<void>; readonly abort: () => void } {
-  const xhr = new XMLHttpRequest();
-  const done = new Promise<void>((resolve, reject) => {
-    xhr.open("POST", input.url, true);
-    xhr.timeout = UPLOAD_TIMEOUT_MS;
-    xhr.setRequestHeader("Content-Type", input.mimeType);
-    xhr.upload.addEventListener("progress", (event) => {
-      if (event.lengthComputable && event.total > 0) {
-        input.onProgress(event.loaded / event.total);
+  const total = input.file.size;
+  const chunked = total > ATTACHMENT_UPLOAD_CHUNK_BYTES;
+  let current: XMLHttpRequest | null = null;
+  let cancelled = false;
+  const sendChunk = (offset: number) =>
+    new Promise<void>((resolve, reject) => {
+      if (cancelled) {
+        reject(new Error("Upload cancelled"));
+        return;
       }
+      const xhr = new XMLHttpRequest();
+      current = xhr;
+      xhr.open("POST", chunked ? `${input.url}?offset=${offset}` : input.url, true);
+      xhr.timeout = UPLOAD_TIMEOUT_MS;
+      xhr.setRequestHeader("Content-Type", input.mimeType);
+      xhr.upload.addEventListener("progress", (event) => {
+        if (event.lengthComputable && total > 0) {
+          input.onProgress((offset + event.loaded) / total);
+        }
+      });
+      xhr.addEventListener("load", () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve();
+        } else {
+          reject(new Error(`Upload rejected (${xhr.status})`));
+        }
+      });
+      xhr.addEventListener("error", () => reject(new Error("Upload failed")));
+      xhr.addEventListener("timeout", () => reject(new Error("Upload timed out")));
+      xhr.addEventListener("abort", () => reject(new Error("Upload cancelled")));
+      xhr.send(
+        chunked ? input.file.slice(offset, offset + ATTACHMENT_UPLOAD_CHUNK_BYTES) : input.file,
+      );
     });
-    xhr.addEventListener("load", () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        resolve();
-      } else {
-        reject(new Error(`Upload rejected (${xhr.status})`));
-      }
-    });
-    xhr.addEventListener("error", () => reject(new Error("Upload failed")));
-    xhr.addEventListener("timeout", () => reject(new Error("Upload timed out")));
-    xhr.addEventListener("abort", () => reject(new Error("Upload cancelled")));
-    xhr.send(input.file);
-  });
+  const done = (async () => {
+    if (!chunked) return sendChunk(0);
+    for (let offset = 0; offset < total; offset += ATTACHMENT_UPLOAD_CHUNK_BYTES) {
+      await sendChunk(offset);
+    }
+  })();
 
-  return { done, abort: () => xhr.abort() };
+  return {
+    done,
+    abort: () => {
+      cancelled = true;
+      current?.abort();
+    },
+  };
 }
 
 async function runUpload(job: UploadJob): Promise<void> {

@@ -362,6 +362,13 @@ export const makeMuseTextGeneration = Effect.fn("makeMuseTextGeneration")(functi
   const generateReviewGuide: ProviderTextGeneration["generateReviewGuide"] = () =>
     Effect.fail(investigationUnsupported("generateReviewGuide", "Muse Code"));
   return {
+    generateStructured: (input) =>
+      Effect.fail(
+        new TextGenerationError({
+          operation: input.operation,
+          detail: "structured generation is not supported by muse",
+        }),
+      ),
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
