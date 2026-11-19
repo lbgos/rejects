@@ -113,6 +113,9 @@ export const layer = Access.toLayer(WebToolkit, {
   ),
   request_login: Access.actsAsCaller((input) =>
     Effect.gen(function* () {
+      const { web, bot } = yield* asBot();
+      // The user signs in on a sheet, and the bot goes on in its tab, not on the text it read.
+      yield* web.forget(bot);
       const scope = yield* Invocation.McpInvocationContext;
       return yield* (yield* Accounts.Accounts).requestLogin(scope, input);
     }),

@@ -31,7 +31,7 @@ const scope: McpInvocationContext.McpInvocationScope = {
 };
 
 it.effect(
-  "web_browse logs which engine read a page and drops a Firecrawl read on an account call",
+  "web_browse logs which engine read a page; an account call or request_login drops a Firecrawl read",
   () =>
     Effect.gen(function* () {
       const forgotten: ThreadId[] = [];
@@ -47,6 +47,7 @@ it.effect(
         }),
         Layer.mock(Accounts.Accounts)({
           browse: () => Effect.succeed({ url: "https://olx.ua/", title: "OLX", snapshot: "Inbox" }),
+          requestLogin: () => Effect.succeed("Sign-in sheet sent."),
         }),
         Layer.mock(BotSecrets.BotSecrets)({
           redactor: () => Effect.succeed((text: string) => text),
@@ -61,9 +62,12 @@ it.effect(
           McpToolAccess.HandlersLayer.layer(WebHandlers.layer).pipe(Layer.provide(dependencies)),
         ),
       );
-      const browse = (input: Parameters<typeof toolkit.handle<"web_browse">>[1]) =>
+      const call = <Name extends "web_browse" | "request_login">(
+        name: Name,
+        input: Parameters<typeof toolkit.handle<Name>>[1],
+      ) =>
         toolkit
-          .handle("web_browse", input)
+          .handle(name, input)
           .pipe(
             Stream.unwrap,
             Stream.runCollect,
@@ -71,10 +75,12 @@ it.effect(
             Effect.provide(dependencies),
           );
 
-      yield* browse({ action: "open", url: STORY });
+      yield* call("web_browse", { action: "open", url: STORY });
       assert.deepEqual(logged, [`${STORY} · ${STORY} · via firecrawl`]);
       assert.deepEqual(forgotten, []);
-      yield* browse({ action: "open", url: "https://olx.ua/", account: "olx.ua" });
+      yield* call("web_browse", { action: "open", url: "https://olx.ua/", account: "olx.ua" });
       assert.deepEqual(forgotten, [BOT]);
+      yield* call("request_login", { site: "olx.ua", reason: "Read the seller's reply" });
+      assert.deepEqual(forgotten, [BOT, BOT]);
     }),
 );
