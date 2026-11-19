@@ -1047,8 +1047,10 @@ it.layer(NodeServices.layer)("effect-acp protocol", (it) => {
           ),
         stderr: () => Sink.drain,
       });
+      const exited = new AcpError.AcpProcessExitedError({ signal: "SIGABRT" });
       const transport = yield* AcpProtocol.makeAcpPatchedProtocol({
         stdio,
+        terminationError: Effect.succeed(exited),
         serverRequestMethods: new Set(),
         onOutgoingResponseFailure: (requestId) => Queue.offer(failures, requestId),
         onTermination: (error) => Deferred.succeed(terminated, error).pipe(Effect.asVoid),
@@ -1068,7 +1070,7 @@ it.layer(NodeServices.layer)("effect-acp protocol", (it) => {
       assert.isUndefined(current.pollUnsafe());
       assert.isUndefined(queued.pollUnsafe());
       yield* Deferred.succeed(releaseFailure, undefined);
-      assert.instanceOf(yield* Deferred.await(terminated), AcpError.AcpTransportError);
+      assert.strictEqual(yield* Deferred.await(terminated), exited);
       yield* Fiber.join(current);
       yield* Fiber.join(queued);
       yield* send("future");

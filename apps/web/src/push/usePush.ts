@@ -79,9 +79,8 @@ export function usePush() {
       setMessage(await change());
     } catch (e) {
       setMessage(e instanceof Error ? e.message : fallback);
-    } finally {
-      release();
     }
+    release();
     setBusy(false);
   };
 
