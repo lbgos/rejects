@@ -73,6 +73,9 @@ const resolveInstance = Effect.fn("TextGeneration.resolveInstance")(function* (
   return instance.textGeneration;
 });
 
+/** The driver a text generator's calls name to the call policy. */
+const TEXT_GENERATOR_DRIVER = "textGenerator";
+
 // Review guides investigate the checkout read-only; the other drivers reject that request.
 const INVESTIGATING_DRIVERS = new Set(["codex", "claudeAgent"]);
 
@@ -98,6 +101,14 @@ export const make = Effect.gen(function* () {
     const textGeneratorCannotRun =
       textGenerator !== undefined && operation === "generateReviewGuide";
     if (textGenerator !== undefined && !textGeneratorCannotRun) {
+      // A text generator is a model like any other, so the call policy decides it too.
+      const refused = yield* (yield* CallPolicy).model({
+        instanceId: selection.instanceId,
+        driver: TEXT_GENERATOR_DRIVER,
+        model: selection.model,
+      });
+      if (Option.isSome(refused))
+        return yield* new TextGenerationError({ operation, detail: refused.value });
       return yield* invoke(
         TextGenerationOperations.fromRunner("TextGenerator", textGenerator),
         selection,

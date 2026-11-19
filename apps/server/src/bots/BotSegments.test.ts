@@ -315,7 +315,10 @@ it.effect.each([
     }).pipe(Effect.provide(layerMemory)),
 );
 
-it.effect("a standalone bot's chat turn carries no notes, shared or its own", () =>
+it.effect.each([
+  { turn: "chat turn", threadId: chat },
+  { turn: "wake", threadId: ThreadId.make("bot-wake:quiz") },
+])("a standalone bot's $turn carries no notes, shared or its own", ({ threadId }) =>
   Effect.gen(function* () {
     const memory = yield* Memory.BotMemoryStore;
     yield* memory.edit("you", () => [legacyNote("Metric units.", "2026-11-01T00:00:00Z")]);
@@ -329,7 +332,7 @@ it.effect("a standalone bot's chat turn carries no notes, shared or its own", ()
       },
     );
     const turnContext = (yield* turns.forTurn({
-      run: run(chat, 2),
+      run: run(threadId, 2),
       providerThreadId: context,
       message: "metric units in rack B?",
     }))!;

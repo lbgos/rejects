@@ -2261,7 +2261,11 @@ export function makeClaudeQueryOptions(input: {
       ].join("\n\n"),
     },
     // A bot chat is named after its bot, so Claude Code's own title call is a wasted request.
-    ...(input.standingInstructions === undefined ? {} : { title: "Bot chat" }),
+    // A bot also reads only its config dir's settings: a project or local settings.json in the
+    // shared bot workspace could set an env (such as ANTHROPIC_BASE_URL) the call policy never sees.
+    ...(input.standingInstructions === undefined
+      ? {}
+      : { title: "Bot chat", settingSources: ["user"] }),
     ...(deviceInstructions
       ? { hooks: { SubagentStart: [{ hooks: [subagentDeviceInstructions] }] } }
       : {}),

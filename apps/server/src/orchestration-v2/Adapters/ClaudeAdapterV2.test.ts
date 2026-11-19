@@ -659,6 +659,9 @@ describe("ClaudeAdapterV2 runtime query policy", () => {
     assert.notInclude(append.append, "pull_request_linking");
     assert.notInclude(append.append, "T3 Code orchestration");
     assert.equal(bot.title, "Bot chat");
+    // A bot loads no project or local settings from its workspace; a coding thread keeps them.
+    assert.deepEqual(bot.settingSources, ["user"]);
+    assert.isUndefined(ClaudeAdapterV2.makeClaudeQueryOptions(base).settingSources);
     const coding = ClaudeAdapterV2.makeClaudeQueryOptions(base).systemPrompt as {
       readonly append: string;
     };

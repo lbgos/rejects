@@ -230,7 +230,9 @@ const make = Effect.gen(function* () {
           commandId: CommandId.make(`bots:pin:${uuid}`),
           threadId: bot.threadId,
         });
-        if (!builtin && (!bot.starters?.length || !bot.description))
+        // A standalone bot's model may sit outside the call policy's allowlist, and its job goes
+        // to no other model: its create call brings its own description and starters.
+        if (!builtin && !bot.standalone && (!bot.starters?.length || !bot.description))
           yield* fillEmptyChat(bot).pipe(Effect.forkDetach);
         return bot;
       }).pipe(
