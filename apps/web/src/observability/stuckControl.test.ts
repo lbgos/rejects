@@ -18,7 +18,13 @@ import {
 
 const decodeReport = Schema.decodeUnknownSync(StuckControlReport);
 
-const idle: TapSnapshot = { route: "/a", focus: null, state: "null|null|null", layers: 0, effects: 0 };
+const idle: TapSnapshot = {
+  route: "/a",
+  focus: null,
+  state: "null|null|null",
+  layers: 0,
+  effects: 0,
+};
 
 function taps(steps: ReadonlyArray<{ control?: string; snapshot?: TapSnapshot; at: number }>) {
   let streak: Streak<string> | null = null;

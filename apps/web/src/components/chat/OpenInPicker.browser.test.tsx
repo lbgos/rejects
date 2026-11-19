@@ -232,7 +232,8 @@ describe("open in editor announcement", () => {
     using _timers = fakeTimers();
     const regions = () => [...document.querySelectorAll('body > [aria-live="polite"]')];
     const spoken = async () => {
-      await act(async () => vi.runAllTimers());
+      // The announcement flush delay; running all timers also fires IndexedDB's open retry timeout.
+      await act(async () => vi.advanceTimersByTime(250));
       return regions()
         .map((region) => region.textContent)
         .join("");
