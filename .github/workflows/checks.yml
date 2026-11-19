@@ -253,6 +253,11 @@ jobs:
         run: node apps/web/node_modules/playwright/cli.js install --with-deps --only-shell chromium
       - name: Test web unit and browser suites
         working-directory: apps/web
+        # Each Chromium page runs over 100 browser test files. Its renderer keeps shared-memory
+        # handles until V8 collects garbage and drops the page's sockets at 16384 of them.
+        # Vitest collects after each file only below this /tmp free-space threshold.
+        env:
+          VITEST_CHROMIUM_GC_DISK_THRESHOLD_GB: "100000"
         run: vp test run --passWithNoTests --project unit --project browser --maxWorkers=2
       - name: Boot the built web client
         run: |
