@@ -24,11 +24,21 @@ export interface CallPolicyShape {
     readonly threadId?: ThreadId | undefined;
   }) => Effect.Effect<Option.Option<string>>;
   readonly outside: (service: OutsideService) => Effect.Effect<Option.Option<string>>;
+  /**
+   * Provider sessions load settings only from their config dir, never from the project they run
+   * in, so a model route comes only from sources a policy can read: the instance's environment,
+   * the server's, and the config dir.
+   */
+  readonly settingsPinned: Effect.Effect<boolean>;
 }
 
 /** A deployment's entry may provide a policy (see `ServerExtension`); the default refuses nothing. */
 export const CallPolicy = Context.Reference<CallPolicyShape>("t3/policy/CallPolicy", {
-  defaultValue: () => ({ model: () => Effect.succeedNone, outside: () => Effect.succeedNone }),
+  defaultValue: () => ({
+    model: () => Effect.succeedNone,
+    outside: () => Effect.succeedNone,
+    settingsPinned: Effect.succeed(false),
+  }),
 });
 
 export class CallPolicyMissing extends Schema.TaggedError<CallPolicyMissing>()(

@@ -116,6 +116,7 @@ import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEve
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import type * as ProviderContinuationRequests from "@t3tools/provider-core/server/ProviderContinuationRequests";
 import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
+import { CallPolicy } from "../../policy/CallPolicy.ts";
 import * as ClaudeAdapterV2 from "./ClaudeAdapterV2.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProviderInstallationGate from "../../provider/ProviderInstallationGate.ts";
@@ -4879,6 +4880,43 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           assert.equal(harness.terminalEvents().at(-1)?.status, "completed");
         }
         assert.equal(notices().length, 1);
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
+        ),
+      ),
+    );
+
+    it.effect.each([
+      { policy: "no call policy", pinned: false, sources: undefined },
+      { policy: "a call policy that pins settings", pinned: true, sources: ["user"] },
+    ])("a coding thread under $policy loads its settings sources as the policy says", ({ pinned, sources }) =>
+      Effect.gen(function* () {
+        const harness = yield* makeWakeHarnessWithOptions();
+        yield* harness.runtime
+          .startTurn(
+            makeClaudeTestTurnInput({
+              threadId: harness.threadId,
+              providerThread: harness.providerThread,
+              now: yield* DateTime.now,
+              attemptId: RunAttemptId.make("attempt-pinned-settings"),
+              text: "Run git status.",
+              attachments: [],
+            }),
+          )
+          .pipe(
+            Effect.provideService(CallPolicy, {
+              ...CallPolicy.defaultValue(),
+              settingsPinned: Effect.succeed(pinned),
+            }),
+          );
+        // A checkout's .claude/settings.json could otherwise set ANTHROPIC_BASE_URL unseen.
+        assert.deepEqual(harness.getOpenedOptions()?.settingSources, sources);
       }).pipe(
         Effect.provide(
           Layer.mergeAll(

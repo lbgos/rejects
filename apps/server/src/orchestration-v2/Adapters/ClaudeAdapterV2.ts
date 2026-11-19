@@ -83,6 +83,7 @@ import {
   mcpAppToolResourceUri,
 } from "@t3tools/shared/mcpApp";
 import * as ProviderProcesses from "../../process/providerProcesses.ts";
+import { CallPolicy } from "../../policy/CallPolicy.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { applyClaudePromptEffortPrefix } from "@t3tools/shared/model";
 import { compareSemverVersions } from "@t3tools/shared/semver";
@@ -2104,6 +2105,8 @@ export function makeClaudeQueryOptions(input: {
   readonly allowDangerouslySkipPermissions?: boolean;
   readonly appendSystemPromptFileText?: string;
   readonly standingInstructions?: string;
+  /** Load only the config dir's settings (see `CallPolicyShape.settingsPinned`). */
+  readonly settingsPinned?: boolean;
   // Flag settings, because a user's settings.json env beats the process env in Claude Code.
   readonly toolSearchOverride?: "true";
 }): ClaudeAgentSdkQueryOptions {
@@ -2261,11 +2264,13 @@ export function makeClaudeQueryOptions(input: {
       ].join("\n\n"),
     },
     // A bot chat is named after its bot, so Claude Code's own title call is a wasted request.
-    // A bot also reads only its config dir's settings: a project or local settings.json in the
-    // shared bot workspace could set an env (such as ANTHROPIC_BASE_URL) the call policy never sees.
-    ...(input.standingInstructions === undefined
-      ? {}
-      : { title: "Bot chat", settingSources: ["user"] }),
+    ...(input.standingInstructions === undefined ? {} : { title: "Bot chat" }),
+    // A bot, and every session under a pinning call policy, reads only its config dir's settings:
+    // a project or local settings.json could set an env (such as ANTHROPIC_BASE_URL) the call
+    // policy never sees, and a bot's workspace is shared.
+    ...(input.standingInstructions !== undefined || input.settingsPinned === true
+      ? { settingSources: ["user"] }
+      : {}),
     ...(deviceInstructions
       ? { hooks: { SubagentStart: [{ hooks: [subagentDeviceInstructions] }] } }
       : {}),
@@ -3464,9 +3469,12 @@ export function claudeEffectiveQueryPolicyKey(
   },
   // A live process keeps the system prompt it opened with.
   standingInstructions?: string,
+  // And the settings sources it loaded.
+  settingsPinned?: boolean,
 ): string {
   return JSON.stringify({
     standingInstructions,
+    settingsPinned,
     runtimePolicy: claudeRuntimeQueryPolicyKey({
       ...queryPolicy,
       ...(mcpOverrides.allowedTools === undefined
@@ -12402,6 +12410,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             readonly resumeSessionAt: string | undefined;
             readonly launchArgSettings: ClaudeSdkSettings | undefined;
             readonly catalog: ClaudeModelCatalog;
+            readonly settingsPinned: boolean;
           },
         ) {
           const { turnInput, nativeThreadId, queryPolicy, mcpSession, mcpOverrides } = options;
@@ -12472,6 +12481,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               ? {}
               : { standingInstructions: turnInput.standingInstructions }),
             ...(toolSearchOverride === undefined ? {} : { toolSearchOverride }),
+            settingsPinned: options.settingsPinned,
           });
         });
 
@@ -12481,10 +12491,13 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           queryPolicy: Effect.Success<ReturnType<typeof queryPolicyForTurn>>,
         ) {
           const plan = yield* queryPlanForTurn(turnInput, queryPolicy);
+          // Read per turn: a policy that starts pinning settings reopens a live process.
+          const settingsPinned = yield* (yield* CallPolicy).settingsPinned;
           const queryPolicyKey = claudeEffectiveQueryPolicyKey(
             queryPolicy,
             plan.mcpOverrides,
             turnInput.standingInstructions,
+            settingsPinned,
           );
           const resumeSessionAt = yield* getNativeConversationHeadId(turnInput.providerThread);
           const existing = yield* Ref.get(queryContext);
@@ -12592,6 +12605,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             resumeSessionAt,
             launchArgSettings,
             catalog,
+            settingsPinned,
           });
           const closedExistingNativeThreadId = existing !== null ? existing.nativeThreadId : null;
           clearedNativeSessions.delete(nativeThreadId);
@@ -13225,6 +13239,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 turnInput.runtimePolicy.cwd,
                 launchArgSettings,
               ),
+              settingsPinned: yield* (yield* CallPolicy).settingsPinned,
             });
             const startedAt = yield* DateTime.now;
             const nativeTurnId = `keepwarm:${turnInput.attemptId}`;
