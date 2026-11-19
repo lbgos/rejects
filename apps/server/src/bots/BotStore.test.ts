@@ -14,6 +14,7 @@ import * as Layer from "effect/Layer";
 import * as TestClock from "effect/testing/TestClock";
 import * as Config from "../config.ts";
 import * as Store from "./BotStore.ts";
+import { writeOwnSkill } from "./skills.ts";
 import { STEWARD_THREAD_ID } from "./steward.ts";
 const bot = (name: string): BotRecord => ({
   name,
@@ -131,6 +132,36 @@ it.effect("adds the music rules to a bot the owner gives the skill", () =>
     const music = (yield* store.persona(ThreadId.make("tunes")))!;
     assert.include(music, "You only download albums");
     assert.notInclude(music, "You have a computer");
+  }).pipe(Effect.provide(layer)),
+);
+it.effect("names in a bot's prompt only the tools it gets", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const { stateDir } = yield* Config.ServerConfig;
+    const store = yield* Store.BotStore;
+    const own = writeOwnSkill(
+      [],
+      { name: "recap", description: "When asked for a recap", body: "1. Sum up." },
+      "2026-11-11T10:00:00.000Z",
+    );
+    if (!own.ok) return assert.fail(own.error);
+    const fable = { ...bot("fable"), standalone: true as const, ownSkills: own.skills };
+    yield* store.put(bot("news"));
+    yield* store.put(bot("ops"));
+    yield* store.put(fable);
+    // A standalone bot holds no read_skill, so its prompt names no skill.
+    assert.notInclude((yield* store.persona(fable.threadId))!, "read_skill");
+    yield* fs.makeDirectory(stateDir, { recursive: true });
+    yield* fs.writeFileString(
+      `${stateDir}/camofox.json`,
+      JSON.stringify({ url: "http://camofox.test", accessKey: "k", bots: ["news"] }),
+    );
+    assert.include((yield* store.persona(ThreadId.make("news")))!, "call web_search first");
+    for (const id of ["ops", "fable"]) {
+      const prompt = (yield* store.persona(ThreadId.make(id)))!;
+      assert.notInclude(prompt, "web_search");
+      assert.notInclude(prompt, "web_browse");
+    }
   }).pipe(Effect.provide(layer)),
 );
 it.effect("keeps notification unread until that version is opened and injects the roster", () =>
