@@ -20,7 +20,8 @@ allowBuilds:
   msgpackr-extract: true
   msw: false
   node-pty: true
-  onnxruntime-node: true
+  # The CPU binaries ship in the package; its install script only downloads the Linux CUDA build.
+  onnxruntime-node: false
   protobufjs: false
   # Ships N-API prebuilds; its install script only rebuilds from source.
   sharp: true
