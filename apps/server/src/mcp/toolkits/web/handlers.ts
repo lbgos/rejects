@@ -90,13 +90,13 @@ export const layer = Access.toLayer(WebToolkit, {
       if (input.account !== undefined) return yield* browseAccount(input, input.account);
       const { web, bot } = yield* asBot();
       const { redact, fail, record } = yield* botActs("web");
-      const { page, challenge } = yield* web
+      const { page, challenge, via } = yield* web
         .browse(bot, input)
         .pipe(Effect.mapError((error) => fail(error.message, error.code)));
       if (acting(input))
         yield* record({
           action: `web_browse ${input.action}`,
-          detail: `${describe(input)} · ${page.url}${page.note ? " · via solver" : ""}`,
+          detail: `${describe(input)} · ${page.url}${via ? ` · via ${via}` : ""}`,
           status: challenge ? "refused" : "ok",
         });
       // The user's own browser has no screen to hand over, so the bot stops and says so.
