@@ -264,12 +264,19 @@ jobs:
           vp run --filter @t3tools/web build
           node apps/web/scripts/verify-built-boot.ts
 
+  # apps/server runs one test file at a time (`fileParallelism: false`): about 37 minutes in total
+  # on a hosted runner, under 7 for the slowest of 8 shards. Shards split the files by recorded
+  # duration (apps/server/src/testUtils/weightedShardSequencer.ts).
   test_server:
-    name: Test Server
+    name: Test Server ${{ matrix.shard }}
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.test_server != 'false' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     permissions:
       contents: read
     steps:
@@ -296,10 +303,10 @@ jobs:
         env:
           T3CODE_TRANSFER_BUDGET_REPORT_PATH: ${{ runner.temp }}/t3code-transfer-budget.md
           T3CODE_TRANSFER_BUDGET_RESULT_PATH: ${{ runner.temp }}/thread-transfer-result.json
-        run: |
-          mapfile -t server_tests < <(git ls-files 'apps/server/**/*.test.*' 'apps/server/**/*.spec.*')
-          vp run test:cached -- --uncached apps/server/integration/transferBudgetV2.integration.test.ts \
-            --verify-hits 1 "${server_tests[@]}" -- --maxWorkers=2
+        run: >-
+          vp run test:cached -- --shard ${{ matrix.shard }}/${{ strategy.job-total }}
+          --uncached apps/server/integration/transferBudgetV2.integration.test.ts
+          --verify-hits 1 apps/server
       - name: Publish transfer budget report
         if: always() && hashFiles(format('{0}/t3code-transfer-budget.md', runner.temp)) != ''
         run: tee -a "$GITHUB_STEP_SUMMARY" < "$RUNNER_TEMP/t3code-transfer-budget.md"
