@@ -458,7 +458,11 @@ const scraped = (markdown: string, metadata: Record<string, unknown> = {}) =>
   );
 
 /** Firecrawl at firecrawl.test when `firecrawlUrl` is set; Camoufox serves the story with one ref. */
-const withReader = (firecrawlUrl: string | undefined, scrape: () => Effect.Effect<Response>) => {
+const withReader = (
+  firecrawlUrl: string | undefined,
+  scrape: () => Effect.Effect<Response>,
+  tabUrl?: string,
+) => {
   const firecrawl: Array<{
     readonly path: string;
     readonly auth: string | undefined;
@@ -480,7 +484,7 @@ const withReader = (firecrawlUrl: string | undefined, scrape: () => Effect.Effec
     const reply = (json: unknown) =>
       Effect.succeed(HttpClientResponse.fromWeb(request, Response.json(json)));
     if (request.method === "GET" && url.pathname === "/tabs")
-      return reply({ tabs: [{ tabId: "tab-1", listItemId: "bot" }] });
+      return reply({ tabs: [{ tabId: "tab-1", listItemId: "bot", url: tabUrl }] });
     if (url.pathname.endsWith("/snapshot"))
       return reply({ url: STORY, snapshot: '- heading "Story"\n- link "Next" [e1]' });
     return reply({ ok: true });
@@ -545,9 +549,14 @@ it.effect("an open reads a public page through Firecrawl; snapshot then opens it
         });
         assert.equal(rest.page.snapshot, text.slice(WebBrowser.WEB_SNAPSHOT_CHARS));
         assert.isUndefined(rest.page.nextOffset);
-        const noRefs = yield* web.browse(bot, { action: "click", ref: "e1" }).pipe(Effect.flip);
-        assert.include(noRefs.message, "Call snapshot");
-        assert.deepEqual(reader.camofox, []);
+        for (const refused of [
+          { action: "click", ref: "e1" },
+          { action: "type", ref: "e1", text: "kernel" },
+        ] as const) {
+          const noRefs = yield* web.browse(bot, refused).pipe(Effect.flip);
+          assert.include(noRefs.message, "Call snapshot");
+        }
+        assert.deepEqual(reader.camofox, ["GET /tabs "]);
 
         const live = yield* web.browse(bot, { action: "snapshot" });
         assert.isUndefined(live.via);
@@ -558,6 +567,15 @@ it.effect("an open reads a public page through Firecrawl; snapshot then opens it
           "POST /tabs/tab-1/click e1",
         ]);
         assert.lengthOf(reader.firecrawl, 1);
+
+        // An account call runs in the vault's browser; the tab and its refs are current again.
+        yield* openStory();
+        yield* web.forget(bot);
+        yield* web.browse(bot, { action: "click", ref: "e1" });
+        assert.lengthOf(
+          reader.camofox.filter((call) => call === "POST /tabs/tab-1/click e1"),
+          2,
+        );
       }),
     );
   }),
@@ -570,10 +588,10 @@ it.effect(
       const fallsBack = (
         firecrawlUrl: string | undefined,
         scrape: () => Effect.Effect<Response>,
-        account?: string,
+        { account, tabUrl }: { readonly account?: string; readonly tabUrl?: string } = {},
       ) =>
         Effect.gen(function* () {
-          const reader = withReader(firecrawlUrl, scrape);
+          const reader = withReader(firecrawlUrl, scrape, tabUrl);
           const { page, via } = yield* reader.run(openStory(account));
           assert.isUndefined(via);
           assert.include(page.snapshot, "[e1]");
@@ -589,25 +607,39 @@ it.effect(
         () => scraped(ARTICLE, { statusCode: 404 }),
         () => Effect.succeed(Response.json({ success: false, error: "boom" })),
         () => Effect.succeed(Response.json({ error: "boom" }, { status: 500 })),
+        () => scraped(ARTICLE, { url: "file:///etc/passwd" }),
       ])
         assert.equal(yield* fallsBack(FIRECRAWL, scrape), 1);
 
       assert.equal(yield* fallsBack(undefined, () => scraped(ARTICLE)), 0);
-      assert.equal(yield* fallsBack(FIRECRAWL, () => scraped(ARTICLE), "olx.ua"), 0);
-
-      const arrived = yield* Deferred.make<void>();
-      const slow = withReader(FIRECRAWL, () =>
-        Deferred.succeed(arrived, undefined).pipe(Effect.andThen(Effect.never)),
+      assert.equal(yield* fallsBack(FIRECRAWL, () => scraped(ARTICLE), { account: "olx.ua" }), 0);
+      assert.equal(
+        yield* fallsBack(FIRECRAWL, () => scraped(ARTICLE), { tabUrl: "https://www.news.test/" }),
+        0,
       );
-      const late = yield* slow.run(
+
+      // A timeout pauses Firecrawl for a minute, so a dead service does not cost every open 30 s.
+      const arrived = yield* Deferred.make<void>();
+      let scrapes = 0;
+      const slow = withReader(FIRECRAWL, () =>
+        scrapes++ === 0
+          ? Deferred.succeed(arrived, undefined).pipe(Effect.andThen(Effect.never))
+          : scraped(ARTICLE),
+      );
+      const [late, paused, resumed] = yield* slow.run(
         Effect.gen(function* () {
           const open = yield* openStory().pipe(Effect.forkChild);
           yield* Deferred.await(arrived);
           yield* TestClock.adjust("30 seconds");
-          return yield* Fiber.join(open);
+          const late = yield* Fiber.join(open);
+          const paused = yield* openStory();
+          yield* TestClock.adjust("60 seconds");
+          return [late, paused, yield* openStory()] as const;
         }),
       );
       assert.isUndefined(late.via);
-      assert.include(slow.camofox, `POST /tabs/tab-1/navigate ${STORY}`);
+      assert.isUndefined(paused.via);
+      assert.equal(resumed.via, "firecrawl");
+      assert.equal(scrapes, 2);
     }),
 );

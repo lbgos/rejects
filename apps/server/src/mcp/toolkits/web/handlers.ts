@@ -27,6 +27,10 @@ const describe = (input: Input) =>
     ? `${input.secretRef === undefined ? `"${input.text ?? ""}"` : `secret ${input.secretRef}`} into ${input.ref}${input.submit ? " + Enter" : ""}`
     : (input.url ?? input.ref ?? input.text ?? "");
 
+/** The owner's action log line; `via` names the engine that read the page when it was not the tab. */
+export const browseDetail = (input: Input, url: string, via: WebBrowser.BrowseVia | undefined) =>
+  `${describe(input)} · ${url}${via ? ` · via ${via}` : ""}`;
+
 const redactPage = (page: typeof WebBrowser.WebPage.Type, redact: BotActs["redact"]) => ({
   ...page,
   url: redact(page.url),
@@ -87,8 +91,11 @@ export const layer = Access.toLayer(WebToolkit, {
   ),
   web_browse: Access.actsAsCaller((input) =>
     Effect.gen(function* () {
-      if (input.account !== undefined) return yield* browseAccount(input, input.account);
       const { web, bot } = yield* asBot();
+      if (input.account !== undefined) {
+        yield* web.forget(bot);
+        return yield* browseAccount(input, input.account);
+      }
       const { redact, fail, record } = yield* botActs("web");
       const { page, challenge, via } = yield* web
         .browse(bot, input)
@@ -96,7 +103,7 @@ export const layer = Access.toLayer(WebToolkit, {
       if (acting(input))
         yield* record({
           action: `web_browse ${input.action}`,
-          detail: `${describe(input)} · ${page.url}${via ? ` · via ${via}` : ""}`,
+          detail: browseDetail(input, page.url, via),
           status: challenge ? "refused" : "ok",
         });
       // The user's own browser has no screen to hand over, so the bot stops and says so.

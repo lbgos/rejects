@@ -1,5 +1,6 @@
 import * as NodeDnsPromises from "node:dns/promises";
-import { OrchestratorMcpFailure, type ThreadId } from "@t3tools/contracts";
+import { OrchestratorMcpFailure, siteOf, type ThreadId } from "@t3tools/contracts";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -74,6 +75,8 @@ export const WEB_SNAPSHOT_CHARS = 12_000;
 const TAB = "bot";
 
 const FIRECRAWL_TIMEOUT = "30 seconds";
+/** After a timeout or a connection error, opens skip Firecrawl this long instead of waiting on it each time. */
+const FIRECRAWL_PAUSE_MS = 60_000;
 /** Less text than this is an empty shell or an error, not the page. */
 const FIRECRAWL_MIN_CHARS = 100;
 const FIRECRAWL_TEXT_CHARS = 200_000;
@@ -85,6 +88,8 @@ export const FIRECRAWL_NOTE =
   "Read by Firecrawl as text, without the browser, so there are no refs. To click or type on this page, call snapshot first: it opens the page in your tab.";
 const NO_REFS =
   "This page was read as text and has no refs yet. Call snapshot to open it in your tab, then use refs from that snapshot.";
+
+export type BrowseVia = "firecrawl" | "solver";
 
 /** A page Firecrawl read; the bot's tab still shows the page before it. */
 interface TextPage {
@@ -310,10 +315,12 @@ export class WebBrowser extends Context.Service<
       {
         readonly page: WebPage;
         readonly challenge?: Challenge | undefined;
-        readonly via?: "firecrawl" | "solver" | undefined;
+        readonly via?: BrowseVia | undefined;
       },
       OrchestratorMcpFailure
     >;
+    /** Drops the page Firecrawl read for this bot: its next action runs in another browser. */
+    readonly forget: (botThreadId: ThreadId) => Effect.Effect<void>;
   }
 >()("t3/bots/WebBrowser") {}
 
@@ -361,6 +368,7 @@ const make = Effect.gen(function* () {
   const shownLinks = new Map<string, ReadonlyMap<string, string>>();
   /** Per bot user: the page Firecrawl last read, until the bot moves on or opens it in the tab. */
   const textPages = new Map<string, TextPage>();
+  let firecrawlPausedUntil = 0;
 
   /** The bot's tab, adopted from Camoufox when it is still open, so restarts keep the page. */
   const tabFor = Effect.fn("WebBrowser.tabFor")(function* (userId: string) {
@@ -509,15 +517,28 @@ const make = Effect.gen(function* () {
 
   /** A public page as Firecrawl reads it; undefined sends the open to the browser. */
   const viaFirecrawl = Effect.fn("WebBrowser.viaFirecrawl")(
-    function* (url: string) {
+    function* (userId: string, url: string) {
       const { firecrawlUrl, firecrawlKey } = yield* readSettings;
       if (firecrawlUrl === undefined) return undefined;
+      if ((yield* Clock.currentTimeMillis) < firecrawlPausedUntil) return undefined;
+      // A tab already on this site may hold its cookies (a cart, a consent); Firecrawl has none.
+      const { tabs } = yield* call(Tabs, "GET", `/tabs?userId=${encodeURIComponent(userId)}`);
+      const shown = tabs.find((tab) => tab.listItemId === TAB)?.url;
+      const site = siteOf(url);
+      if (site !== undefined && shown !== undefined && siteOf(shown) === site) return undefined;
       const post = HttpClientRequest.post(new URL("/v2/scrape", firecrawlUrl).toString());
       const request = yield* HttpClientRequest.bodyJson(
         firecrawlKey === undefined ? post : HttpClientRequest.bearerToken(post, firecrawlKey),
         { url, formats: ["markdown"], onlyMainContent: true, maxAge: 0 },
       );
-      const response = yield* http.execute(request).pipe(Effect.timeout(FIRECRAWL_TIMEOUT));
+      const response = yield* http.execute(request).pipe(
+        Effect.timeout(FIRECRAWL_TIMEOUT),
+        Effect.tapError(() =>
+          Effect.map(Clock.currentTimeMillis, (now) => {
+            firecrawlPausedUntil = now + FIRECRAWL_PAUSE_MS;
+          }),
+        ),
+      );
       if (response.status !== 200) return undefined;
       const { success, data } = yield* decodeFirecrawl(yield* response.json);
       const markdown = data?.markdown?.trim() ?? "";
@@ -528,6 +549,7 @@ const make = Effect.gen(function* () {
         typeof metadata?.title === "string" ? metadata.title : (metadata?.title?.[0] ?? "")
       ).trim();
       const read = metadata?.url ?? metadata?.sourceURL ?? url;
+      if (webInputProblem({ action: "open", url: read })) return undefined;
       if (classifyChallenge({ url: read, title, text: markdown })) return undefined;
       if (markdown.length <= NEEDS_SCRIPT_CHARS && NEEDS_SCRIPT.test(markdown)) return undefined;
       return {
@@ -628,7 +650,7 @@ const make = Effect.gen(function* () {
       textPages.delete(userId);
       // Signed-in pages never reach Firecrawl: account calls run in the vault's browser.
       if (input.action === "open" && input.url && input.account === undefined) {
-        const text = yield* viaFirecrawl(input.url);
+        const text = yield* viaFirecrawl(userId, input.url);
         if (text) {
           textPages.set(userId, text);
           return { page: textPageAt(text, 0), via: "firecrawl" as const };
@@ -649,6 +671,7 @@ const make = Effect.gen(function* () {
           return yield* failure(NO_REFS);
       }
     }, mapFailure),
+    forget: (botThreadId) => Effect.sync(() => void textPages.delete(userFor(botThreadId))),
   });
 });
 
