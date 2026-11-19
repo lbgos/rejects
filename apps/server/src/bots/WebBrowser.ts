@@ -1,5 +1,5 @@
 import * as NodeDnsPromises from "node:dns/promises";
-import { OrchestratorMcpFailure, siteOf, type ThreadId } from "@t3tools/contracts";
+import { OrchestratorMcpFailure, onSite, siteOf, type ThreadId } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -77,6 +77,8 @@ const TAB = "bot";
 const FIRECRAWL_TIMEOUT = "30 seconds";
 /** After a timeout or a connection error, opens skip Firecrawl this long instead of waiting on it each time. */
 const FIRECRAWL_PAUSE_MS = 60_000;
+/** The same-site check is advisory: a tab listing slower than this counts as no tab. */
+const TAB_PROBE_TIMEOUT = "5 seconds";
 /** Less text than this is an empty shell or an error, not the page. */
 const FIRECRAWL_MIN_CHARS = 100;
 const FIRECRAWL_TEXT_CHARS = 200_000;
@@ -89,7 +91,14 @@ export const FIRECRAWL_NOTE =
 const NO_REFS =
   "This page was read as text and has no refs yet. Call snapshot to open it in your tab, then use refs from that snapshot.";
 
-export type BrowseVia = "firecrawl" | "solver";
+type BrowseVia = "firecrawl" | "solver";
+
+/** Either address on the other's site or a subdomain of it, so the two share cookies. */
+const sameSite = (a: string, b: string) => {
+  const siteA = siteOf(a);
+  const siteB = siteOf(b);
+  return siteA !== undefined && siteB !== undefined && (onSite(a, siteB) || onSite(b, siteA));
+};
 
 /** A page Firecrawl read; the bot's tab still shows the page before it. */
 interface TextPage {
@@ -522,10 +531,12 @@ const make = Effect.gen(function* () {
       if (firecrawlUrl === undefined) return undefined;
       if ((yield* Clock.currentTimeMillis) < firecrawlPausedUntil) return undefined;
       // A tab already on this site may hold its cookies (a cart, a consent); Firecrawl has none.
-      const { tabs } = yield* call(Tabs, "GET", `/tabs?userId=${encodeURIComponent(userId)}`);
-      const shown = tabs.find((tab) => tab.listItemId === TAB)?.url;
-      const site = siteOf(url);
-      if (site !== undefined && shown !== undefined && siteOf(shown) === site) return undefined;
+      const shown = yield* call(Tabs, "GET", `/tabs?userId=${encodeURIComponent(userId)}`).pipe(
+        Effect.timeout(TAB_PROBE_TIMEOUT),
+        Effect.map(({ tabs }) => tabs.find((tab) => tab.listItemId === TAB)?.url),
+        Effect.orElseSucceed(() => undefined),
+      );
+      if (shown !== undefined && sameSite(shown, url)) return undefined;
       const post = HttpClientRequest.post(new URL("/v2/scrape", firecrawlUrl).toString());
       const request = yield* HttpClientRequest.bodyJson(
         firecrawlKey === undefined ? post : HttpClientRequest.bearerToken(post, firecrawlKey),

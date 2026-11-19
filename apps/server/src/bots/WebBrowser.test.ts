@@ -461,7 +461,10 @@ const scraped = (markdown: string, metadata: Record<string, unknown> = {}) =>
 const withReader = (
   firecrawlUrl: string | undefined,
   scrape: () => Effect.Effect<Response>,
-  tabUrl?: string,
+  {
+    tabUrl,
+    listing = Effect.void,
+  }: { readonly tabUrl?: string; readonly listing?: Effect.Effect<void> } = {},
 ) => {
   const firecrawl: Array<{
     readonly path: string;
@@ -484,7 +487,9 @@ const withReader = (
     const reply = (json: unknown) =>
       Effect.succeed(HttpClientResponse.fromWeb(request, Response.json(json)));
     if (request.method === "GET" && url.pathname === "/tabs")
-      return reply({ tabs: [{ tabId: "tab-1", listItemId: "bot", url: tabUrl }] });
+      return listing.pipe(
+        Effect.andThen(reply({ tabs: [{ tabId: "tab-1", listItemId: "bot", url: tabUrl }] })),
+      );
     if (url.pathname.endsWith("/snapshot"))
       return reply({ url: STORY, snapshot: '- heading "Story"\n- link "Next" [e1]' });
     return reply({ ok: true });
@@ -591,7 +596,7 @@ it.effect(
         { account, tabUrl }: { readonly account?: string; readonly tabUrl?: string } = {},
       ) =>
         Effect.gen(function* () {
-          const reader = withReader(firecrawlUrl, scrape, tabUrl);
+          const reader = withReader(firecrawlUrl, scrape, tabUrl === undefined ? {} : { tabUrl });
           const { page, via } = yield* reader.run(openStory(account));
           assert.isUndefined(via);
           assert.include(page.snapshot, "[e1]");
@@ -613,10 +618,8 @@ it.effect(
 
       assert.equal(yield* fallsBack(undefined, () => scraped(ARTICLE)), 0);
       assert.equal(yield* fallsBack(FIRECRAWL, () => scraped(ARTICLE), { account: "olx.ua" }), 0);
-      assert.equal(
-        yield* fallsBack(FIRECRAWL, () => scraped(ARTICLE), { tabUrl: "https://www.news.test/" }),
-        0,
-      );
+      for (const tabUrl of ["https://www.news.test/", "https://m.news.test/cart"])
+        assert.equal(yield* fallsBack(FIRECRAWL, () => scraped(ARTICLE), { tabUrl }), 0);
 
       // A timeout pauses Firecrawl for a minute, so a dead service does not cost every open 30 s.
       const arrived = yield* Deferred.make<void>();
@@ -641,5 +644,20 @@ it.effect(
       assert.isUndefined(paused.via);
       assert.equal(resumed.via, "firecrawl");
       assert.equal(scrapes, 2);
+
+      // A hung tab listing costs the read 5 s, not Camoufox's 90 s and the read itself.
+      const listed = yield* Deferred.make<void>();
+      const hung = withReader(FIRECRAWL, () => scraped(ARTICLE), {
+        listing: Deferred.succeed(listed, undefined).pipe(Effect.andThen(Effect.never)),
+      });
+      const read = yield* hung.run(
+        Effect.gen(function* () {
+          const open = yield* openStory().pipe(Effect.forkChild);
+          yield* Deferred.await(listed);
+          yield* TestClock.adjust("5 seconds");
+          return yield* Fiber.join(open);
+        }),
+      );
+      assert.equal(read.via, "firecrawl");
     }),
 );
