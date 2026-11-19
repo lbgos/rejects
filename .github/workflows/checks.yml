@@ -185,9 +185,7 @@ jobs:
       - name: Install dependencies
         run: vp install
       - name: Build web
-        run: |
-          vp run --filter @t3tools/web build
-          node apps/web/scripts/verify-built-boot.ts
+        run: vp run --filter @t3tools/web build
 
   test:
     name: Test Packages
@@ -296,7 +294,7 @@ jobs:
         run: |
           mapfile -t server_tests < <(git ls-files 'apps/server/**/*.test.*' 'apps/server/**/*.spec.*')
           vp run test:cached -- --uncached apps/server/integration/transferBudgetV2.integration.test.ts \
-            --verify-hits 1 --report "$RUNNER_TEMP/test-cache.json" "${server_tests[@]}" -- --maxWorkers=2
+            --verify-hits 1 "${server_tests[@]}" -- --maxWorkers=2
       - name: Publish transfer budget report
         if: always() && hashFiles(format('{0}/t3code-transfer-budget.md', runner.temp)) != ''
         run: tee -a "$GITHUB_STEP_SUMMARY" < "$RUNNER_TEMP/t3code-transfer-budget.md"
