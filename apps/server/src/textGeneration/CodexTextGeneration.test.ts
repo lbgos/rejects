@@ -905,7 +905,10 @@ it.effect("a text generator's title passes the call policy before it runs", () =
           cwd: "/tmp",
           message: "hello",
           linkedContext: "",
-          modelSelection: { instanceId: ProviderInstanceId.make("openrouter"), model: "some/model" },
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("openrouter"),
+            model: "some/model",
+          },
         })
         .pipe(
           Effect.provideService(CallPolicy, {
