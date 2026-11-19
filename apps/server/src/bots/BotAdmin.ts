@@ -287,7 +287,9 @@ const make = Effect.gen(function* () {
     skill: Effect.fn("BotAdmin.skill")(function* (caller) {
       yield* callerMain(caller);
       const providers = yield* configured;
-      const list = yield* bots.list.pipe(Effect.mapError((e) => invalid(e.message)));
+      const list = (yield* bots.list.pipe(Effect.mapError((e) => invalid(e.message)))).filter(
+        (bot) => !bot.standalone,
+      );
       return {
         models: modelsLine(providers),
         icons: Object.entries(BOT_ICON_GROUPS).map(
@@ -344,7 +346,10 @@ const make = Effect.gen(function* () {
     update: Effect.fn("BotAdmin.update")(function* (caller, input) {
       yield* callerMain(caller);
       const wanted = input.bot.trim().toLowerCase();
-      const list = yield* bots.list.pipe(Effect.mapError((e) => invalid(e.message)));
+      // Main never changes a standalone bot: its job is the user's alone.
+      const list = (yield* bots.list.pipe(Effect.mapError((e) => invalid(e.message)))).filter(
+        (bot) => !bot.standalone,
+      );
       const bot = list.find(
         (b) => b.name.toLowerCase() === wanted || b.threadId === input.bot.trim(),
       );

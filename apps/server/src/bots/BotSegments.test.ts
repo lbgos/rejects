@@ -1,6 +1,7 @@
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
+  type BotRecord,
   EventId,
   MessageId,
   ProjectId,
@@ -264,6 +265,7 @@ const typed = (text: string): OrchestrationV2ConversationMessage => ({
 const botTurns = (
   messages: ReadonlyArray<OrchestrationV2ConversationMessage>,
   broken: Partial<Context.Service.Shape<typeof Memory.BotMemoryStore>> = {},
+  bot: BotRecord = homelab,
 ) =>
   Effect.gen(function* () {
     const memory = yield* Memory.BotMemoryStore;
@@ -274,7 +276,7 @@ const botTurns = (
             Layer.mergeAll(
               Layer.succeed(Memory.BotMemoryStore, { ...memory, ...broken }),
               Layer.mock(Store.BotStore)({
-                botFor: () => Effect.succeed(homelab),
+                botFor: () => Effect.succeed(bot),
                 previousWake: () => Effect.undefined,
                 timeZone: Effect.succeed("Europe/Kyiv"),
               }),
@@ -311,6 +313,30 @@ it.effect.each([
       assert.match(turnContext ?? "", /^Now: Sunday, 2026-11-08 \d{2}:\d{2} Europe\/Kyiv /m);
       assert.include(turnContext, "- Metric units.");
     }).pipe(Effect.provide(layerMemory)),
+);
+
+it.effect("a standalone bot's chat turn carries no notes, shared or its own", () =>
+  Effect.gen(function* () {
+    const memory = yield* Memory.BotMemoryStore;
+    yield* memory.edit("you", () => [legacyNote("Metric units.", "2026-11-01T00:00:00Z")]);
+    yield* memory.edit(chat, () => [legacyNote("Hosts are in rack B.", "2026-11-01T00:00:00Z")]);
+    const turns = yield* botTurns(
+      [typed("metric units in rack B?")],
+      {},
+      {
+        ...homelab,
+        standalone: true,
+      },
+    );
+    const turnContext = (yield* turns.forTurn({
+      run: run(chat, 2),
+      providerThreadId: context,
+      message: "metric units in rack B?",
+    }))!;
+    assert.include(turnContext, "Now: ");
+    for (const absent of ["Metric units.", "rack B.", "shared by all bots", "Memory ("])
+      assert.notInclude(turnContext, absent);
+  }).pipe(Effect.provide(layerMemory)),
 );
 
 it.effect("recalls a matching note the core leaves out, once per provider thread", () =>

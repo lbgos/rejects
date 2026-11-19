@@ -6,18 +6,22 @@ import * as Layer from "effect/Layer";
 import type * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
-import type { ProviderInstanceId } from "@t3tools/contracts";
+import type { ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as ServerConfig from "../config.ts";
 
 /** Outside services that would receive the user's content. */
 export type OutsideService = "cloud-speech" | "linked-environment";
 
-/** Each method returns the refusal text, or none to allow the call. */
+/**
+ * Each method returns the refusal text, or none to allow the call. `threadId` names the thread a
+ * provider session runs; calls outside one (titles, structured output, dreaming) pass none.
+ */
 export interface CallPolicyShape {
   readonly model: (input: {
     readonly instanceId: ProviderInstanceId;
     readonly driver: string;
     readonly model: string;
+    readonly threadId?: ThreadId | undefined;
   }) => Effect.Effect<Option.Option<string>>;
   readonly outside: (service: OutsideService) => Effect.Effect<Option.Option<string>>;
 }

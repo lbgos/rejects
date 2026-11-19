@@ -155,6 +155,19 @@ const PEER_TOOL_NAMES = [
   "t3_thread_wait",
 ] as const satisfies readonly BotToolName[];
 
+/** A standalone bot talks and searches: no memory, files, schedules, workers or other bots. */
+const STANDALONE_BOT_TOOL_NAMES = [
+  "web_search",
+  "react",
+  "offer_replies",
+  "status",
+] as const satisfies readonly BotToolName[];
+/** Tools that `camofox.json`'s `bots` list gives only to the bots it names. */
+const CAMOFOX_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "web_search",
+  "web_browse",
+] satisfies BotToolName[]);
+
 /** A bot granted the bridge keeps only tools that bring in nothing from outside, so what it proposes for the user's machines comes from the user and from what it reads there. */
 const BRIDGED_BOT_TOOL_NAMES = [
   "notify_user",
@@ -245,6 +258,8 @@ export const botToolNames = (
     readonly bridge?: BotBridgeAccess | undefined;
     readonly readsAccounts?: boolean | undefined;
     readonly kind?: BotRecord["kind"];
+    /** See `BotRecord.standalone`: only `STANDALONE_BOT_TOOL_NAMES` the tool list keeps. */
+    readonly standalone?: boolean | undefined;
     readonly main?: boolean | undefined;
     /** See `sealedBy`. A sealed bot gets no thread tools; only `false` adds the peer reads. */
     readonly sealed?: boolean | undefined;
@@ -263,6 +278,10 @@ export const botToolNames = (
   const own = (options.ownSkills?.length ?? 0) > 0;
   const withoutUnlinkedTelegram = (set: ReadonlySet<string>): ReadonlySet<string> =>
     options.telegramLinked === false ? new Set([...set].filter((t) => t !== "send_telegram")) : set;
+  if (options.standalone)
+    return new Set(
+      STANDALONE_BOT_TOOL_NAMES.filter((t) => allowed === undefined || allowed.includes(t)),
+    );
   if (options.kind === "music") return withSkills(withoutUnlinkedTelegram(MUSIC_BOT_TOOLS), own);
   const base = readsAccounts
     ? CONNECTED_BOT_TOOLS
@@ -310,7 +329,10 @@ export const botScope = Effect.fn("BotTools.botScope")(function* (
     readonly owner: (
       id: ThreadId,
     ) => Effect.Effect<
-      | Pick<BotRecord, "threadId" | "kind" | "skills" | "tools" | "modelTemplate" | "ownSkills">
+      | Pick<
+          BotRecord,
+          "threadId" | "kind" | "standalone" | "skills" | "tools" | "modelTemplate" | "ownSkills"
+        >
       | undefined
     >;
     readonly mainBot: Effect.Effect<ThreadId | undefined>;
@@ -321,6 +343,8 @@ export const botScope = Effect.fn("BotTools.botScope")(function* (
   connections: Option.Option<Pick<ConnectionStore["Service"], "held" | "grantsOf">>,
   telegramLinked: Effect.Effect<boolean> = Effect.succeed(true),
   labBot: Effect.Effect<string | undefined> = Effect.undefined,
+  /** `camofox.json`'s `bots`: when set, only these bots get the Camoufox tools. */
+  webBots: Effect.Effect<ReadonlyArray<string> | undefined> = Effect.undefined,
 ) {
   const bot = yield* bots.owner(threadId);
   if (!bot) return undefined;
@@ -334,10 +358,11 @@ export const botScope = Effect.fn("BotTools.botScope")(function* (
   const linked = yield* telegramLinked;
   // A thread in the bot's family that is neither its chat nor a wake is a delegated worker.
   const worker = threadId !== bot.threadId && (yield* bots.wake(threadId)) === undefined;
-  const tools = botToolNames({
+  const listed = botToolNames({
     bridge: access,
     readsAccounts,
     kind: bot.kind,
+    standalone: bot.standalone,
     main,
     sealed,
     allowed: bot.tools,
@@ -348,6 +373,11 @@ export const botScope = Effect.fn("BotTools.botScope")(function* (
     mail,
     lab: (yield* labBot) === bot.threadId,
   });
+  const web = yield* webBots;
+  const tools =
+    web === undefined || web.includes(bot.threadId)
+      ? listed
+      : new Set([...listed].filter((tool) => !CAMOFOX_TOOL_NAMES.has(tool)));
   return {
     botThreadId: bot.threadId,
     allowedToolNames: worker

@@ -104,6 +104,22 @@ it.effect("browses as the bot's own Camoufox user with the server's key, reusing
       assert.equal(calls.filter((call) => call.startsWith("POST /tabs t3-bot-research")).length, 1);
       assert.include(calls, "POST /tabs t3-bot-briefing ");
       assert.include(calls, "POST /tabs/tab-2/navigate t3-bot-briefing https://a.test/");
+
+      // With a bots list, only the bots it names reach the browser.
+      yield* fs.writeFileString(
+        path.join(stateDir, "camofox.json"),
+        JSON.stringify({ url: "http://camofox.test", accessKey: key, bots: ["research"] }),
+      );
+      const before = calls.length;
+      const briefing = ThreadId.make("briefing");
+      for (const off of [
+        web.search(briefing, "linux kernel"),
+        web.browse(briefing, { action: "open", url: "https://a.test/" }).pipe(Effect.asVoid),
+      ])
+        assert.include((yield* Effect.flip(off)).message, "off for this bot");
+      assert.equal(calls.length, before);
+      yield* web.search(research, "linux kernel");
+      assert.isAbove(calls.length, before);
     }).pipe(Effect.provide(layer));
   }),
 );

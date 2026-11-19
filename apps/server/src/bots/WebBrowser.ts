@@ -26,6 +26,7 @@ import { htmlTitle, htmlToText, TRAWL_HTML_CHARS, TRAWL_TIMEOUT } from "./trawl.
  * The urls and keys live in `<stateDir>/camofox.json`, read by this server only; none reaches a bot or its processes.
  * Each bot is its own Camoufox user with one tab, so cookies and pages never mix.
  * With `firecrawlUrl`, an open of a public page is read by Firecrawl first and reaches the tab only when it fails.
+ * `bots`, when given, names the bot chat thread ids that may use it; every other bot gets no Camoufox tool.
  */
 const Settings = Schema.Struct({
   url: Schema.String,
@@ -33,7 +34,17 @@ const Settings = Schema.Struct({
   trawlUrl: Schema.optional(Schema.String),
   firecrawlUrl: Schema.optional(Schema.String),
   firecrawlKey: Schema.optional(Schema.String),
+  bots: Schema.optional(Schema.Array(Schema.String)),
 });
+const decodeSettings = Schema.decodeUnknownEffect(Schema.fromJsonString(Settings));
+
+/** The `bots` list of `camofox.json`, or undefined when the file or the list is missing or invalid. */
+export const webBots = (fs: FileSystem.FileSystem, file: string) =>
+  fs.readFileString(file).pipe(
+    Effect.flatMap(decodeSettings),
+    Effect.map((settings) => settings.bots),
+    Effect.orElseSucceed(() => undefined),
+  );
 const Scraped = Schema.Struct({
   url: Schema.String,
   html: Schema.String,
@@ -340,9 +351,14 @@ const make = Effect.gen(function* () {
   const http = yield* HttpClient.HttpClient;
 
   const readSettings = fs.readFileString(path.join(config.stateDir, "camofox.json")).pipe(
-    Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(Settings))),
+    Effect.flatMap(decodeSettings),
     Effect.mapError(() => failure("Web tools are not set up on this server (camofox.json).")),
   );
+  const allowed = Effect.fn("WebBrowser.allowed")(function* (botThreadId: ThreadId) {
+    const { bots } = yield* readSettings;
+    if (bots !== undefined && !bots.includes(botThreadId))
+      return yield* failure("Web tools are off for this bot on this server.");
+  });
 
   const call = Effect.fn("WebBrowser.call")(function* <A>(
     schema: Schema.Codec<A>,
@@ -638,6 +654,7 @@ const make = Effect.gen(function* () {
 
   return WebBrowser.of({
     search: Effect.fn("WebBrowser.search")(function* (botThreadId, query) {
+      yield* allowed(botThreadId);
       const userId = userFor(botThreadId);
       textPages.delete(userId);
       const { tabId } = yield* tabFor(userId);
@@ -656,6 +673,7 @@ const make = Effect.gen(function* () {
     browse: Effect.fn("WebBrowser.browse")(function* (botThreadId, input) {
       const problem = webInputProblem(input);
       if (problem) return yield* failure(problem);
+      yield* allowed(botThreadId);
       const userId = userFor(botThreadId);
       const read = textPages.get(userId);
       textPages.delete(userId);

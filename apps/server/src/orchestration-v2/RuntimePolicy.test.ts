@@ -243,13 +243,15 @@ it.effect(
   () => {
     const inbox = ThreadId.make("bot:inbox");
     const research = ThreadId.make("bot:research");
+    const fable = ThreadId.make("bot:fable");
     const botLayer = Layer.mock(BotStore.BotStore)({
       bridged: () => Effect.succeed(false),
       inherit: () => Effect.void,
       owner: (id) =>
         Effect.succeed(
-          id === inbox || id === research
+          id === inbox || id === research || id === fable
             ? {
+                ...(id === fable ? { standalone: true as const } : {}),
                 name: "Inbox",
                 persona: "Watch mail",
                 modelSelection,
@@ -285,6 +287,8 @@ it.effect(
           .pipe(Effect.map((resolved) => resolved.builtinTools));
       assert.equal(yield* tools(research), "noWeb");
       assert.equal(yield* tools(inbox), "none");
+      // A standalone bot has no shell or files either.
+      assert.equal(yield* tools(fable), "none");
       assert.isUndefined(yield* tools(ThreadId.make("chat")));
       assert.isUndefined(
         yield* tools(research, {

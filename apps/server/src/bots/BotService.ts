@@ -1,4 +1,5 @@
 import {
+  type BotCreateInput,
   BotInput,
   type BotRecord,
   CommandId,
@@ -51,7 +52,7 @@ export class BotService extends Context.Service<
   BotService,
   {
     readonly create: (
-      input: BotInput,
+      input: BotCreateInput,
     ) => Effect.Effect<BotRecord, BotServiceError | Store.BotStoreError>;
     readonly update: (
       input: BotInput & { readonly threadId: ThreadId },
@@ -162,7 +163,7 @@ const make = Effect.gen(function* () {
     },
     Effect.mapError((cause) => (isServiceError(cause) ? cause : new BotServiceError({ cause }))),
   );
-  const save = (raw: BotInput, builtin: boolean) =>
+  const save = (raw: BotCreateInput, builtin: boolean) =>
     lock.withPermit(
       Effect.gen(function* () {
         const input = builtin ? raw : yield* validate(raw);
@@ -215,6 +216,7 @@ const make = Effect.gen(function* () {
             });
         const bot = {
           ...input,
+          ...(raw.standalone ? { standalone: true as const } : {}),
           threadId: created.threadId,
           projectId: project.project.id,
           createdAt: DateTime.formatIso(yield* DateTime.now),

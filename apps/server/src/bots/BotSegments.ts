@@ -223,11 +223,14 @@ export const turnsLayer = Layer.effect(
           language: chatLanguage(records.messages),
           ...clock,
           telegram: isTelegramMessage(run.userMessageId),
-          ...(yield* notes({
-            botThreadId: bot.threadId,
-            providerThreadId,
-            queries: recallQueries(message, lastReply),
-          })),
+          // A standalone bot gets no notes: the shared ones come from the other bots' chats.
+          ...(bot.standalone
+            ? {}
+            : yield* notes({
+                botThreadId: bot.threadId,
+                providerThreadId,
+                queries: recallQueries(message, lastReply),
+              })),
           unseen: unseenMessages({
             runs: records.runs,
             messages: records.messages,

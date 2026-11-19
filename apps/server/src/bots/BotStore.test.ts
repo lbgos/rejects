@@ -153,6 +153,22 @@ it.effect("keeps notification unread until that version is opened and injects th
     assert.isFalse((yield* store.get(news.threadId))?.unread);
     assert.include((yield* store.persona(news.threadId))!, "ops (thread ops): Watches hosts");
     assert.include((yield* store.persona(news.threadId))!, "Report news");
+    // A standalone bot is in no roster, and its prompt has none, nor memory or shared notes.
+    const fable = { ...bot("fable"), standalone: true as const };
+    yield* store.put(fable);
+    assert.notInclude((yield* store.persona(news.threadId))!, "Report fable");
+    const alone = (yield* store.persona(fable.threadId))!;
+    assert.include(alone, "Report fable");
+    assert.include(alone, "call web_search first");
+    for (const other of [
+      "Other bots",
+      "Report news",
+      "Report ops",
+      "update_memory",
+      "memory_search",
+      "hand_off",
+    ])
+      assert.notInclude(alone, other);
     yield* store.markUnread(news.threadId);
     assert.isTrue((yield* store.get(news.threadId))?.unread);
     const stale = (yield* store.get(news.threadId))!;

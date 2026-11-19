@@ -703,7 +703,10 @@ const make = Effect.gen(function* () {
       return botInstructions({
         telegramLinked: linked,
         bot,
-        roster: state.bots.filter((b) => b.threadId !== bot.threadId),
+        // A standalone bot sees no other bot, and none sees it.
+        roster: bot.standalone
+          ? []
+          : state.bots.filter((b) => b.threadId !== bot.threadId && !b.standalone),
         messagesPerHour: MESSAGES_PER_HOUR,
         timeZone: userZone(),
         bridged: bridgedIds.has(bot.threadId),

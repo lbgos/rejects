@@ -3419,6 +3419,7 @@ describe("OrchestratorMcpService provider resolution", () => {
           });
           const self = record(boundThreadId, "Ops");
           const music = record(ThreadId.make("music"), "Music");
+          const fable = { ...record(ThreadId.make("fable"), "Fable"), standalone: true as const };
           const main = yield* Ref.make<ThreadId | undefined>(undefined);
           const said = (id: string, text: string, createdBy: "user" | "agent") => ({
             id: MessageId.make(id),
@@ -3457,12 +3458,12 @@ describe("OrchestratorMcpService provider resolution", () => {
                       botFor: (id) => Effect.succeed(id === boundThreadId ? self : undefined),
                       named: (name) =>
                         Effect.succeed(
-                          [self, music].find(
+                          [self, music, fable].find(
                             (bot) => bot.name.toLowerCase() === name.toLowerCase(),
                           ),
                         ),
                       list: Effect.succeed(
-                        [self, music].map((bot) => ({
+                        [self, music, fable].map((bot) => ({
                           ...bot,
                           tokensToday: 0,
                           usage: [],
@@ -3519,7 +3520,8 @@ describe("OrchestratorMcpService provider resolution", () => {
             assert.equal(result._tag, refused ? "Failure" : "Success", emoji);
           }
           assert.equal((yield* mcp.react(scope, "ok").pipe(Effect.flip)).code, "invalid_request");
-          for (const bot of ["ops", "nobody"]) {
+          // A standalone bot is neither a hand-off target nor named to other bots.
+          for (const bot of ["ops", "nobody", "fable"]) {
             const error = yield* mcp.handOff(scope, { bot, draft: "Play Low" }).pipe(Effect.flip);
             assert.equal(error.code, "invalid_request");
             assert.include(error.message, "Bots: Music.");
