@@ -31,6 +31,7 @@ The host runs `scripts/tools-host.sh <inst>:<vault-ip>:<low>-<high>:<vault-publi
 ## Instance setup
 
 - `camofox.json` in the state dir: `{ "url": "http://<tools-host>:<port>", "accessKey": "<key from /etc/camofox/<inst>.env>" }`, copied file to file.
+- Optional in `camofox.json`: `trawlUrl` for the check-page solver; `firecrawlUrl` (base URL, no `/v2`) and `firecrawlKey`, which make `web_browse` read public pages through Firecrawl first. Without `firecrawlUrl`, every open goes to Camoufox.
 - `T3CODE_MEMORY_EMBED_URL=http://<tools-host>:3982` in the rejects unit.
 - The vault unit: the flags above, `known_hosts` with the host's ed25519 key, the vault's public key given to `tools-host.sh`.
 

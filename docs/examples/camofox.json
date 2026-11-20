@@ -1,5 +1,7 @@
 {
   "url": "http://192.0.2.40:9377",
   "accessKey": "<key from /etc/camofox/<instance>.env>",
-  "trawlUrl": "http://192.0.2.40:9480"
+  "trawlUrl": "http://192.0.2.40:9480",
+  "firecrawlUrl": "http://192.0.2.41:3002",
+  "firecrawlKey": "<Firecrawl gateway key>"
 }

@@ -87,16 +87,19 @@ export const layer = Access.toLayer(WebToolkit, {
   ),
   web_browse: Access.actsAsCaller((input) =>
     Effect.gen(function* () {
-      if (input.account !== undefined) return yield* browseAccount(input, input.account);
       const { web, bot } = yield* asBot();
+      if (input.account !== undefined) {
+        yield* web.forget(bot);
+        return yield* browseAccount(input, input.account);
+      }
       const { redact, fail, record } = yield* botActs("web");
-      const { page, challenge } = yield* web
+      const { page, challenge, via } = yield* web
         .browse(bot, input)
         .pipe(Effect.mapError((error) => fail(error.message, error.code)));
       if (acting(input))
         yield* record({
           action: `web_browse ${input.action}`,
-          detail: `${describe(input)} · ${page.url}${page.note ? " · via solver" : ""}`,
+          detail: `${describe(input)} · ${page.url}${via ? ` · via ${via}` : ""}`,
           status: challenge ? "refused" : "ok",
         });
       // The user's own browser has no screen to hand over, so the bot stops and says so.
@@ -110,6 +113,9 @@ export const layer = Access.toLayer(WebToolkit, {
   ),
   request_login: Access.actsAsCaller((input) =>
     Effect.gen(function* () {
+      const { web, bot } = yield* asBot();
+      // The user signs in on a sheet, and the bot goes on in its tab, not on the text it read.
+      yield* web.forget(bot);
       const scope = yield* Invocation.McpInvocationContext;
       return yield* (yield* Accounts.Accounts).requestLogin(scope, input);
     }),

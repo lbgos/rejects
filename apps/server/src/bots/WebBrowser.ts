@@ -1,5 +1,6 @@
 import * as NodeDnsPromises from "node:dns/promises";
-import { OrchestratorMcpFailure, type ThreadId } from "@t3tools/contracts";
+import { OrchestratorMcpFailure, onSite, siteOf, type ThreadId } from "@t3tools/contracts";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -22,13 +23,16 @@ import { slugFor } from "./computer.ts";
 import { htmlTitle, htmlToText, TRAWL_HTML_CHARS, TRAWL_TIMEOUT } from "./trawl.ts";
 
 /**
- * The url and access key live in `<stateDir>/camofox.json`, read by this server only; neither reaches a bot or its processes.
+ * The urls and keys live in `<stateDir>/camofox.json`, read by this server only; none reaches a bot or its processes.
  * Each bot is its own Camoufox user with one tab, so cookies and pages never mix.
+ * With `firecrawlUrl`, an open of a public page is read by Firecrawl first and reaches the tab only when it fails.
  */
 const Settings = Schema.Struct({
   url: Schema.String,
   accessKey: Schema.String,
   trawlUrl: Schema.optional(Schema.String),
+  firecrawlUrl: Schema.optional(Schema.String),
+  firecrawlKey: Schema.optional(Schema.String),
 });
 const Scraped = Schema.Struct({
   url: Schema.String,
@@ -70,6 +74,48 @@ type WebPage = typeof WebPage.Type;
 export const WEB_SNAPSHOT_CHARS = 12_000;
 const TAB = "bot";
 
+const FIRECRAWL_TIMEOUT = "30 seconds";
+/** After a timeout or a connection error, opens skip Firecrawl this long instead of waiting on it each time. */
+const FIRECRAWL_PAUSE_MS = 60_000;
+/** The same-site check is advisory: a tab listing slower than this counts as no tab. */
+const TAB_PROBE_TIMEOUT = "5 seconds";
+/** Less text than this is an empty shell or an error, not the page. */
+const FIRECRAWL_MIN_CHARS = 100;
+const FIRECRAWL_TEXT_CHARS = 200_000;
+/** Firecrawl runs no browser here, so a script-only page comes back as its notice. */
+const NEEDS_SCRIPT =
+  /\b(?:enable|turn on) javascript\b|\bjavascript is (?:disabled|required|not enabled)\b/i;
+const NEEDS_SCRIPT_CHARS = 2000;
+export const FIRECRAWL_NOTE =
+  "Read by Firecrawl as text, without the browser, so there are no refs. To click or type on this page, call snapshot first: it opens the page in your tab.";
+const NO_REFS =
+  "This page was read as text and has no refs yet. Call snapshot to open it in your tab, then use refs from that snapshot.";
+
+type BrowseVia = "firecrawl" | "solver";
+
+/** Either address on the other's site or a subdomain of it, so the two share cookies. */
+const sameSite = (a: string, b: string) => {
+  const siteA = siteOf(a);
+  const siteB = siteOf(b);
+  return siteA !== undefined && siteB !== undefined && (onSite(a, siteB) || onSite(b, siteA));
+};
+
+/** A page Firecrawl read; the bot's tab still shows the page before it. */
+interface TextPage {
+  readonly url: string;
+  readonly text: string;
+}
+
+const textPageAt = ({ url, text }: TextPage, offset: number) => {
+  const end = offset + WEB_SNAPSHOT_CHARS;
+  return {
+    url,
+    snapshot: text.slice(offset, end),
+    ...(end < text.length ? { nextOffset: end } : {}),
+    note: FIRECRAWL_NOTE,
+  } satisfies WebPage;
+};
+
 const Tabs = Schema.Struct({
   tabs: Schema.Array(
     Schema.Struct({
@@ -93,7 +139,24 @@ const Probed = Schema.Struct({
 });
 /** In production Camoufox hides every 500's message; a stale ref still names the ref. */
 const Refusal = Schema.Struct({ error: Schema.String, ref: Schema.optional(Schema.String) });
+const FirecrawlScrape = Schema.Struct({
+  success: Schema.Boolean,
+  data: Schema.optional(
+    Schema.Struct({
+      markdown: Schema.optional(Schema.String),
+      metadata: Schema.optional(
+        Schema.Struct({
+          title: Schema.optional(Schema.Union([Schema.String, Schema.Array(Schema.String)])),
+          url: Schema.optional(Schema.String),
+          sourceURL: Schema.optional(Schema.String),
+          statusCode: Schema.optional(Schema.Number),
+        }),
+      ),
+    }),
+  ),
+});
 const decodeScraped = Schema.decodeUnknownEffect(Scraped);
+const decodeFirecrawl = Schema.decodeUnknownEffect(FirecrawlScrape);
 const isRefusal = Schema.is(Refusal);
 const isMcpFailure = Schema.is(OrchestratorMcpFailure);
 
@@ -258,9 +321,15 @@ export class WebBrowser extends Context.Service<
       botThreadId: ThreadId,
       input: WebBrowseInput,
     ) => Effect.Effect<
-      { readonly page: WebPage; readonly challenge?: Challenge | undefined },
+      {
+        readonly page: WebPage;
+        readonly challenge?: Challenge | undefined;
+        readonly via?: BrowseVia | undefined;
+      },
       OrchestratorMcpFailure
     >;
+    /** Drops the page Firecrawl read for this bot: its next action runs in another browser. */
+    readonly forget: (botThreadId: ThreadId) => Effect.Effect<void>;
   }
 >()("t3/bots/WebBrowser") {}
 
@@ -306,6 +375,9 @@ const make = Effect.gen(function* () {
   const userFor = (botThreadId: ThreadId) => `t3-bot-${slugFor(botThreadId)}`;
 
   const shownLinks = new Map<string, ReadonlyMap<string, string>>();
+  /** Per bot user: the page Firecrawl last read, until the bot moves on or opens it in the tab. */
+  const textPages = new Map<string, TextPage>();
+  let firecrawlPausedUntil = 0;
 
   /** The bot's tab, adopted from Camoufox when it is still open, so restarts keep the page. */
   const tabFor = Effect.fn("WebBrowser.tabFor")(function* (userId: string) {
@@ -452,6 +524,114 @@ const make = Effect.gen(function* () {
     Effect.orElseSucceed(() => undefined),
   );
 
+  /** A public page as Firecrawl reads it; undefined sends the open to the browser. */
+  const viaFirecrawl = Effect.fn("WebBrowser.viaFirecrawl")(
+    function* (userId: string, url: string) {
+      const { firecrawlUrl, firecrawlKey } = yield* readSettings;
+      if (firecrawlUrl === undefined) return undefined;
+      if ((yield* Clock.currentTimeMillis) < firecrawlPausedUntil) return undefined;
+      // A tab already on this site may hold its cookies (a cart, a consent); Firecrawl has none.
+      const shown = yield* call(Tabs, "GET", `/tabs?userId=${encodeURIComponent(userId)}`).pipe(
+        Effect.timeout(TAB_PROBE_TIMEOUT),
+        Effect.map(({ tabs }) => tabs.find((tab) => tab.listItemId === TAB)?.url),
+        Effect.orElseSucceed(() => undefined),
+      );
+      if (shown !== undefined && sameSite(shown, url)) return undefined;
+      const post = HttpClientRequest.post(new URL("/v2/scrape", firecrawlUrl).toString());
+      const request = yield* HttpClientRequest.bodyJson(
+        firecrawlKey === undefined ? post : HttpClientRequest.bearerToken(post, firecrawlKey),
+        { url, formats: ["markdown"], onlyMainContent: true, maxAge: 0 },
+      );
+      const response = yield* http.execute(request).pipe(
+        Effect.timeout(FIRECRAWL_TIMEOUT),
+        Effect.tapError(() =>
+          Effect.map(Clock.currentTimeMillis, (now) => {
+            firecrawlPausedUntil = now + FIRECRAWL_PAUSE_MS;
+          }),
+        ),
+      );
+      if (response.status !== 200) return undefined;
+      const { success, data } = yield* decodeFirecrawl(yield* response.json);
+      const markdown = data?.markdown?.trim() ?? "";
+      const metadata = data?.metadata;
+      if (!success || (metadata?.statusCode ?? 200) >= 400 || markdown.length < FIRECRAWL_MIN_CHARS)
+        return undefined;
+      const title = (
+        typeof metadata?.title === "string" ? metadata.title : (metadata?.title?.[0] ?? "")
+      ).trim();
+      const read = metadata?.url ?? metadata?.sourceURL ?? url;
+      if (webInputProblem({ action: "open", url: read })) return undefined;
+      if (classifyChallenge({ url: read, title, text: markdown })) return undefined;
+      if (markdown.length <= NEEDS_SCRIPT_CHARS && NEEDS_SCRIPT.test(markdown)) return undefined;
+      return {
+        url: read,
+        text: (title ? `${title}\n\n${markdown}` : markdown).slice(0, FIRECRAWL_TEXT_CHARS),
+      } satisfies TextPage;
+    },
+    Effect.orElseSucceed(() => undefined),
+  );
+
+  const inBrowser = Effect.fn("WebBrowser.inBrowser")(function* (
+    userId: string,
+    input: WebBrowseInput,
+  ) {
+    const tab = yield* tabFor(userId);
+    const { tabId } = tab;
+    // Camoufox gives no navigation events, so the page (text and title) is checked after any
+    // action that may load a page, also one that keeps the address, such as a posted form.
+    const mayLoad =
+      input.action === "open" ||
+      input.action === "back" ||
+      input.action === "click" ||
+      input.action === "press" ||
+      (input.action === "type" && input.submit === true);
+    yield* act(userId, tab, input);
+    let current = yield* page(userId, tabId, input.action === "snapshot" ? (input.offset ?? 0) : 0);
+    if (!mayLoad) return { page: current };
+    const look = (shown: WebPage) =>
+      probe(userId, tabId).pipe(
+        Effect.map(({ title, box, loading, awsWaf }) => ({
+          challenge: classifyChallenge({
+            url: shown.url,
+            title,
+            text: shown.snapshot,
+            awsWaf,
+          }),
+          box,
+          loading,
+        })),
+      );
+    let { challenge, box, loading } = yield* look(current);
+    // A Turnstile checkbox, on a check page or in a form, gets up to two human clicks. A widget
+    // on an ordinary page is waited for only until those clicks are spent, and one still
+    // rendering only for the first polls.
+    let clicks = 0;
+    let shown = 0;
+    for (
+      let poll = 0;
+      (challenge || box || (loading && poll < CHECKBOX_SHOWN_POLLS)) && poll < CHALLENGE_POLLS;
+      poll++
+    ) {
+      shown = box ? shown + 1 : 0;
+      if (box && shown >= CHECKBOX_SHOWN_POLLS) {
+        if (clicks === CHECKBOX_CLICKS && !challenge) break;
+        if (clicks < CHECKBOX_CLICKS) {
+          yield* clickCheckbox(userId, tabId, box);
+          clicks++;
+          shown = 0;
+        }
+      }
+      yield* Effect.sleep(Duration.millis(CHALLENGE_POLL_MS));
+      current = yield* page(userId, tabId);
+      ({ challenge, box, loading } = yield* look(current));
+    }
+    if (challenge && input.action === "open" && input.url) {
+      const solved = yield* viaTrawl(input.url);
+      if (solved) return { page: solved, via: "solver" as const };
+    }
+    return { page: current, challenge };
+  });
+
   const mapFailure = Effect.mapError((error: unknown) =>
     isMcpFailure(error) ? error : failure("The browser is unavailable."),
   );
@@ -459,6 +639,7 @@ const make = Effect.gen(function* () {
   return WebBrowser.of({
     search: Effect.fn("WebBrowser.search")(function* (botThreadId, query) {
       const userId = userFor(botThreadId);
+      textPages.delete(userId);
       const { tabId } = yield* tabFor(userId);
       const google = yield* call(Navigated, "POST", `/tabs/${encodeURIComponent(tabId)}/navigate`, {
         userId,
@@ -476,66 +657,32 @@ const make = Effect.gen(function* () {
       const problem = webInputProblem(input);
       if (problem) return yield* failure(problem);
       const userId = userFor(botThreadId);
-      const tab = yield* tabFor(userId);
-      const { tabId } = tab;
-      // Camoufox gives no navigation events, so the page (text and title) is checked after any
-      // action that may load a page, also one that keeps the address, such as a posted form.
-      const mayLoad =
-        input.action === "open" ||
-        input.action === "back" ||
-        input.action === "click" ||
-        input.action === "press" ||
-        (input.action === "type" && input.submit === true);
-      yield* act(userId, tab, input);
-      let current = yield* page(
-        userId,
-        tabId,
-        input.action === "snapshot" ? (input.offset ?? 0) : 0,
-      );
-      if (!mayLoad) return { page: current };
-      const look = (shown: WebPage) =>
-        probe(userId, tabId).pipe(
-          Effect.map(({ title, box, loading, awsWaf }) => ({
-            challenge: classifyChallenge({
-              url: shown.url,
-              title,
-              text: shown.snapshot,
-              awsWaf,
-            }),
-            box,
-            loading,
-          })),
-        );
-      let { challenge, box, loading } = yield* look(current);
-      // A Turnstile checkbox, on a check page or in a form, gets up to two human clicks. A widget
-      // on an ordinary page is waited for only until those clicks are spent, and one still
-      // rendering only for the first polls.
-      let clicks = 0;
-      let shown = 0;
-      for (
-        let poll = 0;
-        (challenge || box || (loading && poll < CHECKBOX_SHOWN_POLLS)) && poll < CHALLENGE_POLLS;
-        poll++
-      ) {
-        shown = box ? shown + 1 : 0;
-        if (box && shown >= CHECKBOX_SHOWN_POLLS) {
-          if (clicks === CHECKBOX_CLICKS && !challenge) break;
-          if (clicks < CHECKBOX_CLICKS) {
-            yield* clickCheckbox(userId, tabId, box);
-            clicks++;
-            shown = 0;
-          }
+      const read = textPages.get(userId);
+      textPages.delete(userId);
+      // Signed-in pages never reach Firecrawl: account calls run in the vault's browser.
+      if (input.action === "open" && input.url && input.account === undefined) {
+        const text = yield* viaFirecrawl(userId, input.url);
+        if (text) {
+          textPages.set(userId, text);
+          return { page: textPageAt(text, 0), via: "firecrawl" as const };
         }
-        yield* Effect.sleep(Duration.millis(CHALLENGE_POLL_MS));
-        current = yield* page(userId, tabId);
-        ({ challenge, box, loading } = yield* look(current));
       }
-      if (challenge && input.action === "open" && input.url) {
-        const solved = yield* viaTrawl(input.url);
-        if (solved) return { page: solved };
+      if (read === undefined || input.action === "open") return yield* inBrowser(userId, input);
+      switch (input.action) {
+        case "snapshot":
+          if (input.offset) {
+            textPages.set(userId, read);
+            return { page: textPageAt(read, input.offset), via: "firecrawl" as const };
+          }
+          return yield* inBrowser(userId, { action: "open", url: read.url });
+        case "back":
+          return yield* inBrowser(userId, { action: "snapshot" });
+        default:
+          textPages.set(userId, read);
+          return yield* failure(NO_REFS);
       }
-      return { page: current, challenge };
     }, mapFailure),
+    forget: (botThreadId) => Effect.sync(() => void textPages.delete(userFor(botThreadId))),
   });
 });
 
