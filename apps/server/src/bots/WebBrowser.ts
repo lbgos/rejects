@@ -99,6 +99,9 @@ const NEEDS_SCRIPT =
 const NEEDS_SCRIPT_CHARS = 2000;
 export const FIRECRAWL_NOTE =
   "Read by Firecrawl as text, without the browser, so there are no refs. To click or type on this page, call snapshot first: it opens the page in your tab.";
+const FIRECRAWL_SEARCH_RESULTS = 8;
+export const FIRECRAWL_SEARCH_NOTE =
+  "Search results as text, with no page behind them. Read a result's page with web_read.";
 const NO_REFS =
   "This page was read as text and has no refs yet. Call snapshot to open it in your tab, then use refs from that snapshot.";
 
@@ -166,8 +169,25 @@ const FirecrawlScrape = Schema.Struct({
     }),
   ),
 });
+const FirecrawlSearch = Schema.Struct({
+  success: Schema.Boolean,
+  data: Schema.optional(
+    Schema.Struct({
+      web: Schema.optional(
+        Schema.Array(
+          Schema.Struct({
+            url: Schema.String,
+            title: Schema.optional(Schema.String),
+            description: Schema.optional(Schema.String),
+          }),
+        ),
+      ),
+    }),
+  ),
+});
 const decodeScraped = Schema.decodeUnknownEffect(Scraped);
 const decodeFirecrawl = Schema.decodeUnknownEffect(FirecrawlScrape);
+const decodeFirecrawlSearch = Schema.decodeUnknownEffect(FirecrawlSearch);
 const isRefusal = Schema.is(Refusal);
 const isMcpFailure = Schema.is(OrchestratorMcpFailure);
 
@@ -324,9 +344,11 @@ const elementActionFailed =
 export class WebBrowser extends Context.Service<
   WebBrowser,
   {
+    /** With `firecrawl`, the search runs on Firecrawl first and in the tab only when that fails. */
     readonly search: (
       botThreadId: ThreadId,
       query: string,
+      options?: { readonly firecrawl?: boolean },
     ) => Effect.Effect<WebPage, OrchestratorMcpFailure>;
     readonly browse: (
       botThreadId: ThreadId,
@@ -540,12 +562,78 @@ const make = Effect.gen(function* () {
     Effect.orElseSucceed(() => undefined),
   );
 
+  /** Firecrawl's address and key, unless it is unset or paused after a failure. */
+  const firecrawlOn = Effect.gen(function* () {
+    const { firecrawlUrl, firecrawlKey } = yield* readSettings;
+    if (firecrawlUrl === undefined) return undefined;
+    if ((yield* Clock.currentTimeMillis) < firecrawlPausedUntil) return undefined;
+    return { firecrawlUrl, firecrawlKey };
+  });
+
+  /** Firecrawl's JSON answer, or undefined when it is not a 200. */
+  const firecrawlPost = Effect.fn("WebBrowser.firecrawlPost")(function* (
+    {
+      firecrawlUrl,
+      firecrawlKey,
+    }: { readonly firecrawlUrl: string; readonly firecrawlKey?: string | undefined },
+    route: string,
+    body: Readonly<Record<string, unknown>>,
+  ) {
+    const post = HttpClientRequest.post(new URL(route, firecrawlUrl).toString());
+    const request = yield* HttpClientRequest.bodyJson(
+      firecrawlKey === undefined ? post : HttpClientRequest.bearerToken(post, firecrawlKey),
+      body,
+    );
+    const response = yield* http.execute(request).pipe(
+      Effect.timeout(FIRECRAWL_TIMEOUT),
+      Effect.tapError(() =>
+        Effect.map(Clock.currentTimeMillis, (now) => {
+          firecrawlPausedUntil = now + FIRECRAWL_PAUSE_MS;
+        }),
+      ),
+    );
+    if (response.status !== 200) return undefined;
+    return yield* response.json;
+  });
+
+  /** Search results as Firecrawl finds them; undefined sends the search to the browser. */
+  const searchFirecrawl = Effect.fn("WebBrowser.searchFirecrawl")(
+    function* (query: string) {
+      const on = yield* firecrawlOn;
+      if (on === undefined) return undefined;
+      const json = yield* firecrawlPost(on, "/v2/search", {
+        query,
+        limit: FIRECRAWL_SEARCH_RESULTS,
+      });
+      if (json === undefined) return undefined;
+      const { success, data } = yield* decodeFirecrawlSearch(json);
+      const results = (data?.web ?? []).filter(
+        (result) => webInputProblem({ action: "open", url: result.url }) === undefined,
+      );
+      if (!success || results.length === 0) return undefined;
+      const snapshot = results
+        .map((result, at) =>
+          [
+            `${at + 1}. ${result.title?.trim() || result.url}`,
+            `   ${result.url}`,
+            ...(result.description?.trim() ? [`   ${result.description.trim()}`] : []),
+          ].join("\n"),
+        )
+        .join("\n");
+      return {
+        url: "",
+        snapshot: snapshot.slice(0, WEB_SNAPSHOT_CHARS),
+        note: FIRECRAWL_SEARCH_NOTE,
+      } satisfies WebPage;
+    },
+    Effect.orElseSucceed(() => undefined),
+  );
+
   /** A public page as Firecrawl reads it; undefined sends the open to the browser. */
   const viaFirecrawl = Effect.fn("WebBrowser.viaFirecrawl")(
     function* (userId: string, url: string) {
-      const { firecrawlUrl, firecrawlKey } = yield* readSettings;
-      if (firecrawlUrl === undefined) return undefined;
-      if ((yield* Clock.currentTimeMillis) < firecrawlPausedUntil) return undefined;
+      const on = yield* firecrawlOn;
+      if (on === undefined) return undefined;
       // A tab already on this site may hold its cookies (a cart, a consent); Firecrawl has none.
       const shown = yield* call(Tabs, "GET", `/tabs?userId=${encodeURIComponent(userId)}`).pipe(
         Effect.timeout(TAB_PROBE_TIMEOUT),
@@ -553,21 +641,14 @@ const make = Effect.gen(function* () {
         Effect.orElseSucceed(() => undefined),
       );
       if (shown !== undefined && sameSite(shown, url)) return undefined;
-      const post = HttpClientRequest.post(new URL("/v2/scrape", firecrawlUrl).toString());
-      const request = yield* HttpClientRequest.bodyJson(
-        firecrawlKey === undefined ? post : HttpClientRequest.bearerToken(post, firecrawlKey),
-        { url, formats: ["markdown"], onlyMainContent: true, maxAge: 0 },
-      );
-      const response = yield* http.execute(request).pipe(
-        Effect.timeout(FIRECRAWL_TIMEOUT),
-        Effect.tapError(() =>
-          Effect.map(Clock.currentTimeMillis, (now) => {
-            firecrawlPausedUntil = now + FIRECRAWL_PAUSE_MS;
-          }),
-        ),
-      );
-      if (response.status !== 200) return undefined;
-      const { success, data } = yield* decodeFirecrawl(yield* response.json);
+      const json = yield* firecrawlPost(on, "/v2/scrape", {
+        url,
+        formats: ["markdown"],
+        onlyMainContent: true,
+        maxAge: 0,
+      });
+      if (json === undefined) return undefined;
+      const { success, data } = yield* decodeFirecrawl(json);
       const markdown = data?.markdown?.trim() ?? "";
       const metadata = data?.metadata;
       if (!success || (metadata?.statusCode ?? 200) >= 400 || markdown.length < FIRECRAWL_MIN_CHARS)
@@ -653,10 +734,14 @@ const make = Effect.gen(function* () {
   );
 
   return WebBrowser.of({
-    search: Effect.fn("WebBrowser.search")(function* (botThreadId, query) {
+    search: Effect.fn("WebBrowser.search")(function* (botThreadId, query, options) {
       yield* allowed(botThreadId);
       const userId = userFor(botThreadId);
       textPages.delete(userId);
+      if (options?.firecrawl) {
+        const results = yield* searchFirecrawl(query);
+        if (results) return results;
+      }
       const { tabId } = yield* tabFor(userId);
       const google = yield* call(Navigated, "POST", `/tabs/${encodeURIComponent(tabId)}/navigate`, {
         userId,

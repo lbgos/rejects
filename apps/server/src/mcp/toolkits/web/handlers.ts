@@ -83,7 +83,31 @@ const browseAccount = Effect.fn("WebTools.browseAccount")(function* (
 
 export const layer = Access.toLayer(WebToolkit, {
   web_search: Access.readsAsCaller(({ query }) =>
-    asBot().pipe(Effect.flatMap(({ web, bot }) => web.search(bot, query))),
+    Effect.gen(function* () {
+      const { web, bot } = yield* asBot();
+      const scope = yield* Invocation.McpInvocationContext;
+      return yield* web.search(bot, query, { firecrawl: scope.standalone === true });
+    }),
+  ),
+  web_read: Access.readsAsCaller(({ url, offset }) =>
+    Effect.gen(function* () {
+      const { web, bot } = yield* asBot();
+      const { page, challenge } = yield* web.browse(
+        bot,
+        offset === undefined ? { action: "open", url } : { action: "snapshot", offset },
+      );
+      if (challenge)
+        return yield* new OrchestratorMcpFailure({
+          code: "capability_denied",
+          message: challengeStop(challenge.label, siteOf(page.url) ?? page.url, false),
+        });
+      // The notes name web_browse actions a reader does not have.
+      return {
+        url: page.url,
+        snapshot: page.snapshot,
+        ...(page.nextOffset === undefined ? {} : { nextOffset: page.nextOffset }),
+      };
+    }),
   ),
   web_browse: Access.actsAsCaller((input) =>
     Effect.gen(function* () {

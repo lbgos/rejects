@@ -417,7 +417,7 @@ it.effect("wakes and workers act as their bot, with its tools", () =>
                 ...(owners[id] === "fable"
                   ? {
                       standalone: true as const,
-                      tools: ["web_search", "react", "web_browse", "video_transcript"],
+                      tools: ["web_search", "web_read", "react", "web_browse", "video_transcript"],
                     }
                   : {}),
               }
@@ -510,7 +510,7 @@ it.effect("wakes and workers act as their bot, with its tools", () =>
     assert.deepEqual(yield* scope("fable"), {
       botThreadId: ThreadId.make("fable"),
       standalone: true,
-      allowedToolNames: new Set(["web_search", "video_transcript", "react"]),
+      allowedToolNames: new Set(["web_search", "web_read", "video_transcript", "react"]),
     });
     const fable = (yield* bots.owner(ThreadId.make("fable")))!;
     assert.equal(yield* sealedBy(fable, bots, connections), "the standalone seal");
@@ -612,6 +612,10 @@ it.effect("camofox.json's bots list keeps the Camoufox tools to the bots it name
       [...(yield* tools("study", undefined))].filter(
         (tool) => tool !== "web_search" && tool !== "web_browse",
       ),
+    );
+    assert.deepEqual(
+      [...botToolNames({ standalone: true, web: false })],
+      ["video_transcript", "react", "offer_replies", "status"],
     );
   }),
 );

@@ -31,17 +31,27 @@ const scope: McpInvocationContext.McpInvocationScope = {
 };
 
 it.effect(
-  "web_browse logs which engine read a page; an account call or request_login drops a Firecrawl read",
+  "web_browse logs which engine read a page; an account call or request_login drops a Firecrawl read; a standalone bot searches on Firecrawl and reads pages",
   () =>
     Effect.gen(function* () {
       const forgotten: ThreadId[] = [];
       const logged: string[] = [];
+      const browsed: Array<typeof WebBrowser.WebBrowseInput.Type> = [];
+      const searches: Array<boolean | undefined> = [];
       const dependencies = Layer.mergeAll(
         Layer.mock(WebBrowser.WebBrowser)({
           browse: (_bot, input) =>
-            Effect.succeed({
-              page: { url: input.url ?? STORY, snapshot: "Story" },
-              via: "firecrawl" as const,
+            Effect.sync(() => {
+              browsed.push(input);
+              return {
+                page: { url: input.url ?? STORY, snapshot: "Story", nextOffset: 5, note: "refs" },
+                via: "firecrawl" as const,
+              };
+            }),
+          search: (_bot, _query, options) =>
+            Effect.sync(() => {
+              searches.push(options?.firecrawl);
+              return { url: "", snapshot: "1. Story" };
             }),
           forget: (bot) => Effect.sync(() => void forgotten.push(bot)),
         }),
@@ -62,16 +72,17 @@ it.effect(
           McpToolAccess.HandlersLayer.layer(WebHandlers.layer).pipe(Layer.provide(dependencies)),
         ),
       );
-      const call = <Name extends "web_browse" | "request_login">(
+      const call = <Name extends "web_browse" | "web_read" | "web_search" | "request_login">(
         name: Name,
         input: Parameters<typeof toolkit.handle<Name>>[1],
+        as = scope,
       ) =>
         toolkit
           .handle(name, input)
           .pipe(
             Stream.unwrap,
             Stream.runCollect,
-            Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
+            Effect.provideService(McpInvocationContext.McpInvocationContext, as),
             Effect.provide(dependencies),
           );
 
@@ -82,5 +93,20 @@ it.effect(
       assert.deepEqual(forgotten, [BOT]);
       yield* call("request_login", { site: "olx.ua", reason: "Read the seller's reply" });
       assert.deepEqual(forgotten, [BOT, BOT]);
+
+      const standalone = { ...scope, standalone: true as const };
+      yield* call("web_search", { query: "kernel" });
+      yield* call("web_search", { query: "kernel" }, standalone);
+      assert.deepEqual(searches, [false, true]);
+      browsed.length = 0;
+      const logs = logged.length;
+      const [read] = yield* call("web_read", { url: STORY }, standalone);
+      yield* call("web_read", { url: STORY, offset: 5 }, standalone);
+      assert.deepEqual(browsed, [
+        { action: "open", url: STORY },
+        { action: "snapshot", offset: 5 },
+      ]);
+      assert.deepEqual(read?.result, { url: STORY, snapshot: "Story", nextOffset: 5 });
+      assert.lengthOf(logged, logs);
     }),
 );

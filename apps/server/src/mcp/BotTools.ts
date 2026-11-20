@@ -142,6 +142,7 @@ const MAIN_THREAD_TOOLS: ReadonlySet<string> = new Set(MAIN_THREAD_TOOL_NAMES);
 const WEB_TOOL_NAMES = [
   "web_search",
   "web_browse",
+  "web_read",
   "computer_browser",
   "computer_desktop",
 ] as const satisfies readonly BotToolName[];
@@ -155,9 +156,10 @@ const PEER_TOOL_NAMES = [
   "t3_thread_wait",
 ] as const satisfies readonly BotToolName[];
 
-/** A standalone bot talks, searches and reads video links: no memory, files, schedules, workers or other bots. */
+/** A standalone bot talks, searches, reads pages and video links: no memory, files, schedules, workers or other bots. */
 const STANDALONE_BOT_TOOL_NAMES = [
   "web_search",
+  "web_read",
   "video_transcript",
   "react",
   "offer_replies",
@@ -171,6 +173,7 @@ export const webAllowed = (bots: ReadonlyArray<string> | undefined, threadId: st
 const CAMOFOX_TOOL_NAMES: ReadonlySet<string> = new Set([
   "web_search",
   "web_browse",
+  "web_read",
 ] satisfies BotToolName[]);
 
 /** A bot granted the bridge keeps only tools that bring in nothing from outside, so what it proposes for the user's machines comes from the user and from what it reads there. */
@@ -407,6 +410,7 @@ const BOT_ONLY_TOOL_NAMES: ReadonlySet<string> = new Set([
   "status",
   "web_search",
   "web_browse",
+  "web_read",
   "video_transcript",
   "request_login",
   "ask_secret",
