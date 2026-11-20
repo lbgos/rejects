@@ -391,6 +391,7 @@ export const botScope = Effect.fn("BotTools.botScope")(function* (
   });
   return {
     botThreadId: bot.threadId,
+    ...(bot.standalone ? { standalone: true as const } : {}),
     allowedToolNames: worker
       ? new Set([...tools].filter((tool) => !WORKER_DENIED_TOOLS.has(tool)))
       : tools,

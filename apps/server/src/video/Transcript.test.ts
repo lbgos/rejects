@@ -332,6 +332,11 @@ it.effect("answers a second call for the same video from the cache, without a do
     expect(requests).toHaveLength(1);
     yield* transcripts.transcript({ url: reel(), fromMinutes: 1 });
     expect(requests).toHaveLength(2);
+    // A standalone bot's calls neither read the cache nor leave anything in it.
+    yield* transcripts.transcript({ url: reel(), cache: false });
+    yield* transcripts.transcript({ url: reel(), fromMinutes: 2, cache: false });
+    yield* transcripts.transcript({ url: reel(), fromMinutes: 2 });
+    expect(requests).toHaveLength(5);
   }).pipe((effect) =>
     provide(effect, {
       speech: heardChunks,

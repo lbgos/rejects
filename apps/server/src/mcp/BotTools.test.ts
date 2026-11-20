@@ -509,6 +509,7 @@ it.effect("wakes and workers act as their bot, with its tools", () =>
     // is closed both ways: Main and peers are refused it, and it reads no peer.
     assert.deepEqual(yield* scope("fable"), {
       botThreadId: ThreadId.make("fable"),
+      standalone: true,
       allowedToolNames: new Set(["web_search", "video_transcript", "react"]),
     });
     const fable = (yield* bots.owner(ThreadId.make("fable")))!;
