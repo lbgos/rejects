@@ -68,10 +68,14 @@ export const botInstructions = (input: {
     telegramLinked: input.telegramLinked,
     web: input.web,
   });
-  // A standalone bot holds no read_skill, so its own skills stay out of its prompt.
+  // A standalone bot holds no read_skill: its built-in skills are inlined and its own stay out.
   const skills = tools.has("read_skill")
     ? skillIndex([...skillsFor((tool) => tools.has(tool)), ...(input.bot.ownSkills ?? [])])
-    : "";
+    : input.bot.standalone
+      ? skillsFor((tool) => tools.has(tool))
+          .map((skill) => skill.body)
+          .join("\n\n")
+      : "";
   return `You are ${input.bot.name}, the user's personal bot in rejects. Your chat with the user is one ongoing conversation; parts you no longer have arrive as a recap.
 Job:
 ${input.bot.persona}

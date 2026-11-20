@@ -415,7 +415,10 @@ it.effect("wakes and workers act as their bot, with its tools", () =>
                 ...(owners[id] === "music" ? { kind: "music" as const } : {}),
                 ...(owners[id] === "homelab" ? { skills: ["music" as const] } : {}),
                 ...(owners[id] === "fable"
-                  ? { standalone: true as const, tools: ["web_search", "react", "web_browse"] }
+                  ? {
+                      standalone: true as const,
+                      tools: ["web_search", "react", "web_browse", "video_transcript"],
+                    }
                   : {}),
               }
             : undefined,
@@ -506,7 +509,7 @@ it.effect("wakes and workers act as their bot, with its tools", () =>
     // is closed both ways: Main and peers are refused it, and it reads no peer.
     assert.deepEqual(yield* scope("fable"), {
       botThreadId: ThreadId.make("fable"),
-      allowedToolNames: new Set(["web_search", "react"]),
+      allowedToolNames: new Set(["web_search", "video_transcript", "react"]),
     });
     const fable = (yield* bots.owner(ThreadId.make("fable")))!;
     assert.equal(yield* sealedBy(fable, bots, connections), "the standalone seal");

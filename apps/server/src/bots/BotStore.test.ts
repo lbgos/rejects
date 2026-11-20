@@ -149,8 +149,13 @@ it.effect("names in a bot's prompt only the tools it gets", () =>
     yield* store.put(bot("news"));
     yield* store.put(bot("ops"));
     yield* store.put(fable);
-    // A standalone bot holds no read_skill, so its prompt names no skill.
-    assert.notInclude((yield* store.persona(fable.threadId))!, "read_skill");
+    // A standalone bot holds no read_skill: its prompt carries the video skill and no index.
+    const alone = (yield* store.persona(fable.threadId))!;
+    assert.notInclude(alone, "read_skill");
+    assert.include(alone, "Call video_transcript with the link before you answer.");
+    const listed = { ...bot("listed"), standalone: true as const, tools: ["web_search"] };
+    yield* store.put(listed);
+    assert.notInclude((yield* store.persona(listed.threadId))!, "video_transcript");
     yield* fs.makeDirectory(stateDir, { recursive: true });
     yield* fs.writeFileString(
       `${stateDir}/camofox.json`,

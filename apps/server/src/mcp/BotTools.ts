@@ -155,9 +155,10 @@ const PEER_TOOL_NAMES = [
   "t3_thread_wait",
 ] as const satisfies readonly BotToolName[];
 
-/** A standalone bot talks and searches: no memory, files, schedules, workers or other bots. */
+/** A standalone bot talks, searches and reads video links: no memory, files, schedules, workers or other bots. */
 const STANDALONE_BOT_TOOL_NAMES = [
   "web_search",
+  "video_transcript",
   "react",
   "offer_replies",
   "status",
