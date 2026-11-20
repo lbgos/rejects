@@ -163,8 +163,10 @@ export const waitOutChallenge = async (
  * Other routes to what a blocked page held. The block is on this site's pages for this browser: a
  * search, another source, or an API or raw-file URL the site offers for programs are not the page.
  */
-const OTHER_ROUTES =
-  "web_search for the same question, other sources (the maker's site, arXiv, Semantic Scholar, news, other shops), or a public API or raw-file URL the site offers for programs, fetched with computer_shell (a Hugging Face model: huggingface.co/api/models/<id> and huggingface.co/<id>/raw/main/README.md)";
+const otherRoutes = (fetcher: Fetcher) =>
+  `web_search for the same question, other sources (the maker's site, arXiv, Semantic Scholar, news, other shops), or a public API or raw-file URL the site offers for programs, ${fetcher === "web_read" ? "read with web_read" : "fetched with computer_shell (a Hugging Face model: huggingface.co/api/models/<id> and huggingface.co/<id>/raw/main/README.md)"}`;
+/** The tool that fetches another route: a standalone reader has web_read and no shell. */
+type Fetcher = "computer_shell" | "web_read";
 
 /** A request only this site can serve has no other route. */
 const SITE_ONLY =
@@ -173,11 +175,16 @@ const SITE_ONLY =
 const NO_WORKAROUND =
   "Never try to solve, skip or get around it: do not retry, reload or snapshot this page, or fetch its pages with another browser, curl or other headers.";
 
-export const challengeStop = (label: string, host: string, handedOff: boolean) =>
+export const challengeStop = (
+  label: string,
+  host: string,
+  handedOff: boolean,
+  fetcher: Fetcher = "computer_shell",
+) =>
   `Stopped: ${host} shows a ${label} that needs a person. ${NO_WORKAROUND} ${
     handedOff
       ? "The user got a push to pass it on their phone, and you are woken when they are done. End your turn now with one line telling the user the page needs them."
-      : `When ${SITE_ONLY}, tell the user in one line that the page needs them. Otherwise finish the user's request without it first: ${OTHER_ROUTES}. Only when none of that gets the answer, tell the user in one line that the page needs them and what you tried.`
+      : `When ${SITE_ONLY}, tell the user in one line that the page needs them. Otherwise finish the user's request without it first: ${otherRoutes(fetcher)}. Only when none of that gets the answer, tell the user in one line that the page needs them and what you tried.`
   }`;
 
 export const blockedStop = (host: string, browser: "computer" | "account") =>
@@ -185,4 +192,4 @@ export const blockedStop = (host: string, browser: "computer" | "account") =>
     browser === "computer"
       ? "Use web_browse for this site instead of computer_browser or computer_shell."
       : "Do not retry this page or look for a way around it."
-  } If that fails too and ${SITE_ONLY}, tell the user in one line that the site blocks the bot. Otherwise finish the user's request another way first: ${OTHER_ROUTES}. Only when none of that gets the answer, tell the user in one line that the site blocks the bot.`;
+  } If that fails too and ${SITE_ONLY}, tell the user in one line that the site blocks the bot. Otherwise finish the user's request another way first: ${otherRoutes("computer_shell")}. Only when none of that gets the answer, tell the user in one line that the site blocks the bot.`;

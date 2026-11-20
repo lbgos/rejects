@@ -152,6 +152,7 @@ it.effect("names in a bot's prompt only the tools it gets", () =>
     // A standalone bot holds no read_skill: its prompt carries the video skill and no index.
     const alone = (yield* store.persona(fable.threadId))!;
     assert.notInclude(alone, "read_skill");
+    assert.notMatch(alone, /web_browse|computer_shell|\btab\b/u);
     assert.include(alone, "Call video_transcript with the link before you answer.");
     const listed = { ...bot("listed"), standalone: true as const, tools: ["web_search"] };
     yield* store.put(listed);

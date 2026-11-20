@@ -15,6 +15,8 @@ import { WebToolkit } from "./tools.ts";
 
 const BOT = ThreadId.make("bot-reader");
 const STORY = "https://news.test/story";
+const OTHER = "https://other.test/page";
+const CHECKED = "https://checked.test/";
 
 const scope: McpInvocationContext.McpInvocationScope = {
   environmentId: EnvironmentId.make("environment-1"),
@@ -46,6 +48,9 @@ it.effect(
               return {
                 page: { url: input.url ?? STORY, snapshot: "Story", nextOffset: 5, note: "refs" },
                 via: "firecrawl" as const,
+                ...(input.url === CHECKED
+                  ? { challenge: { vendor: "cloudflare" as const, label: "Cloudflare check" } }
+                  : {}),
               };
             }),
           search: (_bot, _query, options) =>
@@ -102,10 +107,17 @@ it.effect(
       const logs = logged.length;
       const [read] = yield* call("web_read", { url: STORY }, standalone);
       yield* call("web_read", { url: STORY, offset: 5 }, standalone);
+      yield* call("web_read", { url: OTHER, offset: 5 }, standalone);
       assert.deepEqual(browsed, [
         { action: "open", url: STORY },
         { action: "snapshot", offset: 5 },
+        { action: "snapshot", offset: 5 },
+        { action: "open", url: OTHER },
+        { action: "snapshot", offset: 5 },
       ]);
+      const stopped = yield* call("web_read", { url: CHECKED }, standalone).pipe(Effect.flip);
+      assert.include(stopped.message, "read with web_read");
+      assert.notInclude(stopped.message, "computer_shell");
       assert.deepEqual(read?.result, { url: STORY, snapshot: "Story", nextOffset: 5 });
       assert.lengthOf(logged, logs);
     }),

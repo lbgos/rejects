@@ -665,6 +665,8 @@ it.effect(
         assert.equal(yield* fallsBack(FIRECRAWL, scrape), 1);
 
       assert.equal(yield* fallsBack(undefined, () => scraped(ARTICLE)), 0);
+      for (const malformed of ["//firecrawl.test:3002", "firecrawl.test:3002"])
+        assert.equal(yield* fallsBack(malformed, () => scraped(ARTICLE)), 0);
 
       const searchFallsBack = (
         firecrawlUrl: string | undefined,
@@ -691,7 +693,8 @@ it.effect(
         () => Effect.succeed(Response.json({ error: "boom" }, { status: 500 })),
       ])
         assert.equal(yield* searchFallsBack(FIRECRAWL, search), 1);
-      assert.equal(yield* searchFallsBack(undefined, () => searched([{ url: STORY }])), 0);
+      for (const off of [undefined, "example.test:3002"])
+        assert.equal(yield* searchFallsBack(off, () => searched([{ url: STORY }])), 0);
       assert.equal(yield* fallsBack(FIRECRAWL, () => scraped(ARTICLE), { account: "olx.ua" }), 0);
       for (const tabUrl of ["https://www.news.test/", "https://m.news.test/cart"])
         assert.equal(yield* fallsBack(FIRECRAWL, () => scraped(ARTICLE), { tabUrl }), 0);

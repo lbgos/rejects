@@ -92,14 +92,19 @@ export const layer = Access.toLayer(WebToolkit, {
   web_read: Access.readsAsCaller(({ url, offset }) =>
     Effect.gen(function* () {
       const { web, bot } = yield* asBot();
-      const { page, challenge } = yield* web.browse(
-        bot,
-        offset === undefined ? { action: "open", url } : { action: "snapshot", offset },
-      );
+      // An offset continues only the page last read; another url is read first.
+      let read =
+        offset === undefined ? undefined : yield* web.browse(bot, { action: "snapshot", offset });
+      if (read?.page.url !== url) {
+        read = yield* web.browse(bot, { action: "open", url });
+        if (offset !== undefined && !read.challenge)
+          read = yield* web.browse(bot, { action: "snapshot", offset });
+      }
+      const { page, challenge } = read;
       if (challenge)
         return yield* new OrchestratorMcpFailure({
           code: "capability_denied",
-          message: challengeStop(challenge.label, siteOf(page.url) ?? page.url, false),
+          message: challengeStop(challenge.label, siteOf(page.url) ?? page.url, false, "web_read"),
         });
       // The notes name web_browse actions a reader does not have.
       return {

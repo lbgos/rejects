@@ -565,7 +565,12 @@ const make = Effect.gen(function* () {
   /** Firecrawl's address and key, unless it is unset or paused after a failure. */
   const firecrawlOn = Effect.gen(function* () {
     const { firecrawlUrl, firecrawlKey } = yield* readSettings;
-    if (firecrawlUrl === undefined) return undefined;
+    // A malformed address is a config error: Camoufox serves the call instead.
+    if (
+      firecrawlUrl === undefined ||
+      !/^https?:$/u.test(URL.parse("/v2/", firecrawlUrl)?.protocol ?? "")
+    )
+      return undefined;
     if ((yield* Clock.currentTimeMillis) < firecrawlPausedUntil) return undefined;
     return { firecrawlUrl, firecrawlKey };
   });

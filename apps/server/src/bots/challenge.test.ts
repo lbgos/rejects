@@ -123,4 +123,7 @@ it("a stop hands the user the page only when the user was asked; otherwise it na
     assert.notMatch(stop, /End your turn/);
     assert.match(stop, /needs this site itself[\s\S]*web_search[\s\S]*raw-file/);
   }
+  const reader = challengeStop("AWS WAF check", "huggingface.co", false, "web_read");
+  assert.include(reader, "read with web_read");
+  assert.notInclude(reader, "computer_shell");
 });
