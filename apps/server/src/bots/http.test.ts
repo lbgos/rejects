@@ -10,7 +10,7 @@ import * as Schema from "effect/Schema";
 import * as HttpRouter from "effect/http/HttpRouter";
 import { describe, expect, it } from "vite-plus/test";
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
-import { route } from "./http.ts";
+import { route, routeWithScopes } from "./http.ts";
 
 const record = Schema.decodeSync(BotRecord)({
   name: "Homelab",
@@ -28,17 +28,21 @@ const record = Schema.decodeSync(BotRecord)({
 const decodeScopes = Schema.decodeUnknownSync(AuthEnvironmentScopes);
 
 const serve = () => {
-  const calls: Array<{ readonly route: string; readonly payload: object }> = [];
+  const calls: Array<{
+    readonly route: string;
+    readonly payload: object;
+    readonly extra?: ReadonlyArray<unknown>;
+  }> = [];
   const routes = Layer.mergeAll(
     route(BOTS_ENDPOINTS.setLocalNetwork, (payload) => {
       calls.push({ route: "setLocalNetwork", payload });
       return Effect.succeed(record);
     }),
-    route(BOTS_ENDPOINTS.update, (payload) => {
-      calls.push({ route: "update", payload });
+    route(BOTS_ENDPOINTS.update, (payload, ...extra: ReadonlyArray<unknown>) => {
+      calls.push({ route: "update", payload, extra });
       return Effect.succeed(record);
     }),
-    route(BOTS_ENDPOINTS.list, (payload, scopes) => {
+    routeWithScopes(BOTS_ENDPOINTS.list, (payload, scopes) => {
       calls.push({ route: "list", payload: { ...payload, scopes } });
       return Effect.succeed([]);
     }),
@@ -106,7 +110,7 @@ describe("Local network access", () => {
 
 describe("Bots list", () => {
   // The list seeds the user's time zone only for a caller that may set preferences.
-  it("hands the handler the caller's scopes", async () => {
+  it("hands the caller's scopes only to a route that asks for them", async () => {
     await using server = serve();
     for (const scopes of ["orchestration:read", "orchestration:read,orchestration:operate"]) {
       const response = await server.post(BOTS_ENDPOINTS.list.path, scopes, {
@@ -124,5 +128,16 @@ describe("Bots list", () => {
         },
       },
     ]);
+
+    // A point-free service method must not get the scopes in an optional parameter.
+    const update = await server.post(BOTS_ENDPOINTS.update.path, "orchestration:operate", {
+      threadId: "bot-1",
+      name: "Homelab",
+      persona: "Watch the homelab.",
+      modelSelection: { instanceId: "opencode", model: "opencode-go/deepseek-v4.1-flash" },
+      dailyTokenCap: 1000,
+    });
+    expect(update.status).toBe(200);
+    expect(server.calls.at(-1)).toMatchObject({ route: "update", extra: [] });
   });
 });
