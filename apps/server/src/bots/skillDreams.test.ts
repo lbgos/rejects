@@ -103,4 +103,14 @@ describe("applySkillDream", () => {
     expect(update.written).toEqual([{ name: "backup-report", created: false }]);
     expect(update.skills[0]?.body).toMatch(/3\. Stop\.$/);
   });
+
+  it("leaves an existing skill alone when only line endings and outer whitespace differ", () => {
+    const own = dream([proposal()]).skills;
+    const body = `\n${proposal().body.replaceAll("\n", "\r\n")}  \n`;
+    const again = dream([proposal({ body, description: ` ${proposal().description}` })], { own });
+    expect(again.written).toEqual([]);
+    expect(again.skills).toBe(own);
+    const indented = dream([proposal({ body: proposal().body.replace("\n", "\n  ") })], { own });
+    expect(indented.written).toEqual([{ name: "backup-report", created: false }]);
+  });
 });

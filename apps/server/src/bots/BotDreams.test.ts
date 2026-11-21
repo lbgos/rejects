@@ -27,7 +27,6 @@ import * as Threads from "../orchestration-v2/ThreadManagementService.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import * as BotDreams from "./BotDreams.ts";
 import * as Memory from "./BotMemoryStore.ts";
-import * as Notifications from "./BotNotifications.ts";
 import * as Store from "./BotStore.ts";
 import { STEWARD_THREAD_ID } from "./steward.ts";
 
@@ -45,20 +44,9 @@ const bot = (threadId: ThreadId, name: string): BotRecord => ({
   lastNotification: null,
   notifiedAt: null,
 });
-// Notifications land on the store, where the tests read them.
-const layerNotifications = Layer.unwrap(
-  Effect.gen(function* () {
-    const bots = yield* Store.BotStore;
-    return Layer.mock(Notifications.BotNotifications)({
-      notify: (id, text) =>
-        bots.notify(id, text).pipe(Effect.as({ delivered: 0, failed: 0, postedInChat: true })),
-    });
-  }),
-);
 const layerStores = (prefix: string) =>
   Layer.effect(Memory.BotMemoryStore, Memory.makeMemoryStore).pipe(
     Layer.provide(NodeSqliteClient.layer({ filename: ":memory:" })),
-    Layer.provideMerge(layerNotifications),
     Layer.provideMerge(Store.layer),
     Layer.provideMerge(Config.layerTest(process.cwd(), { prefix })),
     Layer.provideMerge(NodeServices.layer),
@@ -399,7 +387,7 @@ const runItems = (run: string, at: string, ask: string): ReadonlyArray<Orchestra
 
 it.effect.each([
   { name: "turns work asked for twice into a skill and moves the bot's note on it", saves: true },
-  { name: "reports a skill it could not save in the bot's chat and keeps the note", saves: false },
+  { name: "keeps the note when it cannot save a skill", saves: false },
 ])("$name", ({ saves }) =>
   Effect.gen(function* () {
     const prompts = yield* Ref.make<ReadonlyArray<string>>([]);
@@ -485,10 +473,6 @@ it.effect.each([
     const homelab = yield* store.get(HOMELAB);
     if (!saves) {
       assert.isUndefined(homelab?.ownSkills);
-      assert.equal(
-        homelab?.lastNotification,
-        "Could not save skill backup-report; this bot's skills are unchanged.",
-      );
       assert.deepEqual(
         (yield* memory.notes(HOMELAB)).map((n) => n.id),
         ["n-steps", "n-pref"],
@@ -500,7 +484,6 @@ it.effect.each([
       homelab?.ownSkills?.map((s) => s.name),
       ["backup-report"],
     );
-    assert.match(homelab?.lastNotification ?? "", /^New skill backup-report: When asked/);
     assert.deepEqual(
       (yield* memory.notes(HOMELAB)).map((n) => n.id),
       ["n-pref"],

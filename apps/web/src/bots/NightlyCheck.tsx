@@ -16,7 +16,7 @@ import { Button } from "../components/ui/button";
 import { Switch } from "../components/ui/switch";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { useEnvironmentSettings } from "../hooks/useSettings";
-import { t, type UiText } from "../i18n";
+import { plural, t, type UiText } from "../i18n";
 import { cn } from "../lib/utils";
 import { getCustomModelOptionsByInstance } from "../modelSelection";
 import {
@@ -65,6 +65,14 @@ const runSummary = (lastRun: NonNullable<MemoryDreams["lastRun"]>) => {
   const parts = Object.entries(COUNT_TEXT).flatMap(([key, text]) =>
     counts[key] === undefined ? [] : [t(text, { count: counts[key] })],
   );
+  if (counts.skills !== undefined)
+    parts.push(
+      plural(counts.skills, {
+        en: ["{count} skill written", "{count} skills written"],
+        uk: ["записано навичок: {count}", "записано навичок: {count}", "записано навичок: {count}"],
+        ru: ["записано навыков: {count}", "записано навыков: {count}", "записано навыков: {count}"],
+      }),
+    );
   return parts.length > 0 ? parts.join(", ") : t("No changes");
 };
 
