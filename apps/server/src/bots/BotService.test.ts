@@ -86,12 +86,12 @@ const input: BotInput = {
   dailyTokenCap: 1000,
 };
 
-it.effect("a bot route that passes the caller's scopes still creates a new user bot", () => {
+it.effect("create ignores extra arguments and creates a new user bot", () => {
   const { layer, dispatched, launched } = setup();
   return Effect.gen(function* () {
     const service = yield* Service.BotService;
     const store = yield* Store.BotStore;
-    // `route` in http.ts calls every handler as `handle(payload, scopes)`.
+    // A point-free caller can pass more arguments, as `routeWithScopes` passes scopes.
     const create: (
       input: BotInput,
       scopes: ReadonlyArray<AuthEnvironmentScope>,

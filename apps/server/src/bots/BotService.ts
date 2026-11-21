@@ -282,7 +282,7 @@ const make = Effect.gen(function* () {
       });
   }
   return BotService.of({
-    // Handlers are passed point-free and called with extra arguments, so `builtin` stays internal.
+    // Point-free callers can pass extra arguments; they must never reach `builtin`.
     create: (input) => save(input, false),
     clear: (threadId) =>
       lock.withPermit(
