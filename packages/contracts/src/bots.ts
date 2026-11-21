@@ -364,8 +364,17 @@ export const LocalNetworkEntry = Schema.String.check(
   Schema.makeFilter((text) => parseLocalNetworkEntry(text) === text),
 );
 export const LOCAL_NETWORK_MAX_ENTRIES = 32;
+/**
+ * A standalone bot is sealed for good: no other bot reaches it and it reaches none, it has no
+ * memory, files or schedules, and nothing of the others enters its prompt. Only the user's own
+ * create call sets it; no update or bot tool changes it.
+ */
+export const BotStandalone = Schema.optional(Schema.Literal(true));
+export const BotCreateInput = Schema.Struct({ ...BotInput.fields, standalone: BotStandalone });
+export type BotCreateInput = typeof BotCreateInput.Type;
 export const BotRecord = Schema.Struct({
   ...BotInput.fields,
+  standalone: BotStandalone,
   localNetwork: Schema.optional(Schema.Array(Schema.String)),
   memory: Schema.optional(BotMemory),
   muted: Schema.optional(Schema.Boolean),
@@ -510,7 +519,7 @@ export const BOTS_ENDPOINTS = {
   },
   create: {
     path: "/api/bots/create",
-    payload: BotInput,
+    payload: BotCreateInput,
     success: BotRecord,
     scope: AuthOrchestrationOperateScope,
   },

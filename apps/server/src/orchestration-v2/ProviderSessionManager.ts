@@ -2310,15 +2310,16 @@ export const layerWithOptions = (
         // A live session may outlast a change of the call policy, so every call that gives the
         // model new content is checked: turns, steering and answers, the last two against the model
         // of the thread's latest turn here.
-        const turnModels = new Map<string, ModelSelection>();
+        const turnModels = new Map<ThreadId, ModelSelection>();
         const policyRefusal = Effect.fn("ProviderSessionManager.policyRefusal")(function* (
-          threadId: string,
+          threadId: ThreadId,
           modelSelection: ModelSelection,
         ) {
           const refused = yield* (yield* CallPolicy).model({
             instanceId: modelSelection.instanceId,
             driver: runtime.driver,
             model: modelSelection.model,
+            threadId,
           });
           return Option.map(
             refused,
@@ -3140,6 +3141,7 @@ export const layerWithOptions = (
                 instanceId: input.modelSelection.instanceId,
                 driver: adapter.driver,
                 model: input.modelSelection.model,
+                threadId: input.threadId,
               });
               if (Option.isSome(policyRefused)) {
                 return yield* new ProviderLaunchRefusedError({

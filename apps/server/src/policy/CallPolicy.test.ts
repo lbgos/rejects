@@ -12,6 +12,12 @@ it.effect.each([
   { name: "no zdr.json", contents: undefined, lock: undefined, starts: true },
   { name: "zdr.json off", contents: '{"enabled": false}', lock: undefined, starts: true },
   { name: "zdr.json on", contents: '{"enabled": true}', lock: undefined, starts: false },
+  {
+    name: "zdr.json off with a guard's exceptions",
+    contents: '{"enabled": false, "exceptions": [{"threadId": "t"}]}',
+    lock: undefined,
+    starts: true,
+  },
   { name: "a damaged zdr.json", contents: "{", lock: undefined, starts: false },
   { name: "the DeepSeek-only lock", contents: undefined, lock: "1", starts: false },
 ])("a build without a policy, with $name", ({ contents, lock, starts }) =>

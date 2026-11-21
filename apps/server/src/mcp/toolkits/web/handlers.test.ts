@@ -1,5 +1,10 @@
 import { assert, it } from "@effect/vitest";
-import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  OrchestratorMcpFailure,
+  ProviderInstanceId,
+  ThreadId,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
@@ -15,6 +20,8 @@ import { WebToolkit } from "./tools.ts";
 
 const BOT = ThreadId.make("bot-reader");
 const STORY = "https://news.test/story";
+const OTHER = "https://other.test/page";
+const CHECKED = "https://checked.test/";
 
 const scope: McpInvocationContext.McpInvocationScope = {
   environmentId: EnvironmentId.make("environment-1"),
@@ -31,17 +38,48 @@ const scope: McpInvocationContext.McpInvocationScope = {
 };
 
 it.effect(
-  "web_browse logs which engine read a page; an account call or request_login drops a Firecrawl read",
+  "web_browse logs which engine read a page; an account call or request_login drops a Firecrawl read; a standalone bot searches on Firecrawl and reads pages",
   () =>
     Effect.gen(function* () {
       const forgotten: ThreadId[] = [];
       const logged: string[] = [];
+      const browsed: Array<typeof WebBrowser.WebBrowseInput.Type> = [];
+      const searches: Array<boolean | undefined> = [];
+      // The tab host is down: a snapshot fails unless it pages what an open just read.
+      let tabDown = false;
       const dependencies = Layer.mergeAll(
         Layer.mock(WebBrowser.WebBrowser)({
           browse: (_bot, input) =>
-            Effect.succeed({
-              page: { url: input.url ?? STORY, snapshot: "Story" },
-              via: "firecrawl" as const,
+            tabDown && input.action === "snapshot" && browsed.at(-1)?.action !== "open"
+              ? Effect.sync(() => void browsed.push(input)).pipe(
+                  Effect.andThen(
+                    Effect.fail(
+                      new OrchestratorMcpFailure({
+                        code: "orchestration_error",
+                        message: "The browser is unavailable.",
+                      }),
+                    ),
+                  ),
+                )
+              : Effect.sync(() => {
+                  browsed.push(input);
+                  return {
+                    page: {
+                      url: input.url ?? STORY,
+                      snapshot: "Story",
+                      nextOffset: 5,
+                      note: "refs",
+                    },
+                    via: "firecrawl" as const,
+                    ...(input.url === CHECKED
+                      ? { challenge: { vendor: "cloudflare" as const, label: "Cloudflare check" } }
+                      : {}),
+                  };
+                }),
+          search: (_bot, _query, options) =>
+            Effect.sync(() => {
+              searches.push(options?.firecrawl);
+              return { url: "", snapshot: "1. Story" };
             }),
           forget: (bot) => Effect.sync(() => void forgotten.push(bot)),
         }),
@@ -62,16 +100,17 @@ it.effect(
           McpToolAccess.HandlersLayer.layer(WebHandlers.layer).pipe(Layer.provide(dependencies)),
         ),
       );
-      const call = <Name extends "web_browse" | "request_login">(
+      const call = <Name extends "web_browse" | "web_read" | "web_search" | "request_login">(
         name: Name,
         input: Parameters<typeof toolkit.handle<Name>>[1],
+        as = scope,
       ) =>
         toolkit
           .handle(name, input)
           .pipe(
             Stream.unwrap,
             Stream.runCollect,
-            Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
+            Effect.provideService(McpInvocationContext.McpInvocationContext, as),
             Effect.provide(dependencies),
           );
 
@@ -82,5 +121,37 @@ it.effect(
       assert.deepEqual(forgotten, [BOT]);
       yield* call("request_login", { site: "olx.ua", reason: "Read the seller's reply" });
       assert.deepEqual(forgotten, [BOT, BOT]);
+
+      const standalone = { ...scope, standalone: true as const };
+      yield* call("web_search", { query: "kernel" });
+      yield* call("web_search", { query: "kernel" }, standalone);
+      assert.deepEqual(searches, [false, true]);
+      browsed.length = 0;
+      const logs = logged.length;
+      const [read] = yield* call("web_read", { url: STORY }, standalone);
+      yield* call("web_read", { url: STORY, offset: 5 }, standalone);
+      yield* call("web_read", { url: OTHER, offset: 5 }, standalone);
+      assert.deepEqual(browsed, [
+        { action: "open", url: STORY },
+        { action: "snapshot", offset: 5 },
+        { action: "snapshot", offset: 5 },
+        { action: "open", url: OTHER },
+        { action: "snapshot", offset: 5 },
+      ]);
+      tabDown = true;
+      browsed.length = 0;
+      const [fresh] = yield* call("web_read", { url: OTHER, offset: 5 }, standalone);
+      assert.deepEqual(browsed, [
+        { action: "snapshot", offset: 5 },
+        { action: "open", url: OTHER },
+        { action: "snapshot", offset: 5 },
+      ]);
+      assert.deepEqual(fresh?.result, { url: STORY, snapshot: "Story", nextOffset: 5 });
+      tabDown = false;
+      const stopped = yield* call("web_read", { url: CHECKED }, standalone).pipe(Effect.flip);
+      assert.include(stopped.message, "read with web_read");
+      assert.notInclude(stopped.message, "computer_shell");
+      assert.deepEqual(read?.result, { url: STORY, snapshot: "Story", nextOffset: 5 });
+      assert.lengthOf(logged, logs);
     }),
 );

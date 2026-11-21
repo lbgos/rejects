@@ -14,6 +14,7 @@ import * as Layer from "effect/Layer";
 import * as TestClock from "effect/testing/TestClock";
 import * as Config from "../config.ts";
 import * as Store from "./BotStore.ts";
+import { writeOwnSkill } from "./skills.ts";
 import { STEWARD_THREAD_ID } from "./steward.ts";
 const bot = (name: string): BotRecord => ({
   name,
@@ -133,6 +134,42 @@ it.effect("adds the music rules to a bot the owner gives the skill", () =>
     assert.notInclude(music, "You have a computer");
   }).pipe(Effect.provide(layer)),
 );
+it.effect("names in a bot's prompt only the tools it gets", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const { stateDir } = yield* Config.ServerConfig;
+    const store = yield* Store.BotStore;
+    const own = writeOwnSkill(
+      [],
+      { name: "recap", description: "When asked for a recap", body: "1. Sum up." },
+      "2026-11-11T10:00:00.000Z",
+    );
+    if (!own.ok) return assert.fail(own.error);
+    const fable = { ...bot("fable"), standalone: true as const, ownSkills: own.skills };
+    yield* store.put(bot("news"));
+    yield* store.put(bot("ops"));
+    yield* store.put(fable);
+    // A standalone bot holds no read_skill: its prompt carries the video skill and no index.
+    const alone = (yield* store.persona(fable.threadId))!;
+    assert.notInclude(alone, "read_skill");
+    assert.notMatch(alone, /web_browse|computer_shell|\btab\b/u);
+    assert.include(alone, "Call video_transcript with the link before you answer.");
+    const listed = { ...bot("listed"), standalone: true as const, tools: ["web_search"] };
+    yield* store.put(listed);
+    assert.notInclude((yield* store.persona(listed.threadId))!, "video_transcript");
+    yield* fs.makeDirectory(stateDir, { recursive: true });
+    yield* fs.writeFileString(
+      `${stateDir}/camofox.json`,
+      JSON.stringify({ url: "http://camofox.test", accessKey: "k", bots: ["news"] }),
+    );
+    assert.include((yield* store.persona(ThreadId.make("news")))!, "call web_search first");
+    for (const id of ["ops", "fable"]) {
+      const prompt = (yield* store.persona(ThreadId.make(id)))!;
+      assert.notInclude(prompt, "web_search");
+      assert.notInclude(prompt, "web_browse");
+    }
+  }).pipe(Effect.provide(layer)),
+);
 it.effect("keeps notification unread until that version is opened and injects the roster", () =>
   Effect.gen(function* () {
     const store = yield* Store.BotStore;
@@ -153,6 +190,22 @@ it.effect("keeps notification unread until that version is opened and injects th
     assert.isFalse((yield* store.get(news.threadId))?.unread);
     assert.include((yield* store.persona(news.threadId))!, "ops (thread ops): Watches hosts");
     assert.include((yield* store.persona(news.threadId))!, "Report news");
+    // A standalone bot is in no roster, and its prompt has none, nor memory or shared notes.
+    const fable = { ...bot("fable"), standalone: true as const };
+    yield* store.put(fable);
+    assert.notInclude((yield* store.persona(news.threadId))!, "Report fable");
+    const alone = (yield* store.persona(fable.threadId))!;
+    assert.include(alone, "Report fable");
+    assert.include(alone, "call web_search first");
+    for (const other of [
+      "Other bots",
+      "Report news",
+      "Report ops",
+      "update_memory",
+      "memory_search",
+      "hand_off",
+    ])
+      assert.notInclude(alone, other);
     yield* store.markUnread(news.threadId);
     assert.isTrue((yield* store.get(news.threadId))?.unread);
     const stale = (yield* store.get(news.threadId))!;

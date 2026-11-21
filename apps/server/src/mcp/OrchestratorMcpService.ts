@@ -2504,9 +2504,9 @@ const make = Effect.gen(function* () {
       if (!bot || Option.isNone(bots))
         return yield* failure("invalid_request", "Only a bot can hand off to another bot.");
       const target = yield* bots.value.named(input.bot);
-      if (!target || target.threadId === bot.threadId) {
+      if (!target || target.threadId === bot.threadId || target.standalone) {
         const others = (yield* bots.value.list.pipe(Effect.orElseSucceed(() => [])))
-          .filter((other) => other.threadId !== bot.threadId)
+          .filter((other) => other.threadId !== bot.threadId && !other.standalone)
           .map((other) => other.name);
         return yield* failure(
           "invalid_request",

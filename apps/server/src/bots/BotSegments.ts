@@ -178,6 +178,8 @@ export const turnsLayer = Layer.effect(
         ),
       );
 
+    // A standalone bot gets no notes, in its chat or its wakes: the shared ones come from the
+    // other bots' chats.
     return BotTurns.of({
       forTurn: Effect.fn("BotTurns.forTurn")(function* ({ run, providerThreadId, message }) {
         const bot = yield* bots.botFor(run.threadId);
@@ -192,11 +194,13 @@ export const turnsLayer = Layer.effect(
             // A wake sees no chat, so it takes the language from the bot's chat.
             language: yield* chatLanguageOf(projections, bot.threadId),
             ...clock,
-            ...(yield* notes({
-              botThreadId: bot.threadId,
-              providerThreadId,
-              queries: recallQueries(message, jobLine(bot)),
-            })),
+            ...(bot.standalone
+              ? {}
+              : yield* notes({
+                  botThreadId: bot.threadId,
+                  providerThreadId,
+                  queries: recallQueries(message, jobLine(bot)),
+                })),
             previousWake:
               previous?.result === undefined
                 ? undefined
@@ -223,11 +227,13 @@ export const turnsLayer = Layer.effect(
           language: chatLanguage(records.messages),
           ...clock,
           telegram: isTelegramMessage(run.userMessageId),
-          ...(yield* notes({
-            botThreadId: bot.threadId,
-            providerThreadId,
-            queries: recallQueries(message, lastReply),
-          })),
+          ...(bot.standalone
+            ? {}
+            : yield* notes({
+                botThreadId: bot.threadId,
+                providerThreadId,
+                queries: recallQueries(message, lastReply),
+              })),
           unseen: unseenMessages({
             runs: records.runs,
             messages: records.messages,

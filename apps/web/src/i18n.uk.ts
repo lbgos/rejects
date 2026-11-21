@@ -311,6 +311,8 @@ export const UK = {
   "Turn on": "Увімкнути",
   "On: bots call only {models}. Other models, cloud voice and work on linked machines are refused.":
     "Увімкнено: боти викликають лише {models}. Інші моделі, хмарне розпізнавання голосу та робота на пов’язаних машинах відхиляються.",
+  "Exception: {bot} calls {model} via {route} without zero data retention.":
+    "Виняток: {bot} викликає {model} через {route} без нульового зберігання даних.",
   "{model} is blocked: {reason}": "{model} заблоковано: {reason}",
   "Checked {time}: {summary}": "Перевірено {time}: {summary}",
   "The last check failed {time}: {summary}": "Остання перевірка не вдалася {time}: {summary}",

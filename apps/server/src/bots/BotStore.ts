@@ -25,7 +25,9 @@ import * as Semaphore from "effect/Semaphore";
 import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import * as ServerConfig from "../config.ts";
 import { telegramLinked } from "../telegram/linked.ts";
+import { webAllowed } from "../mcp/BotTools.ts";
 import { botInstructions, workerInstructions } from "./instructions.ts";
+import { webBots } from "./WebBrowser.ts";
 import { setDefaultChatLanguage } from "./language.ts";
 import { STEWARD_THREAD_ID } from "./steward.ts";
 import { scheduleTimeZone } from "../scheduledTasks/Schedule.ts";
@@ -367,6 +369,7 @@ const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const file = path.join(config.stateDir, "bots.json");
   const telegramFile = path.join(config.stateDir, "telegram.json");
+  const camofoxFile = path.join(config.stateDir, "camofox.json");
   const lock = yield* Semaphore.make(1);
   const loadedAt = DateTime.formatIso(yield* DateTime.now);
   let state = yield* fs.readFileString(file).pipe(
@@ -703,7 +706,10 @@ const make = Effect.gen(function* () {
       return botInstructions({
         telegramLinked: linked,
         bot,
-        roster: state.bots.filter((b) => b.threadId !== bot.threadId),
+        // A standalone bot sees no other bot, and none sees it.
+        roster: bot.standalone
+          ? []
+          : state.bots.filter((b) => b.threadId !== bot.threadId && !b.standalone),
         messagesPerHour: MESSAGES_PER_HOUR,
         timeZone: userZone(),
         bridged: bridgedIds.has(bot.threadId),
@@ -711,6 +717,7 @@ const make = Effect.gen(function* () {
         sealed: options?.sealed,
         experience: state.preferences?.experience,
         tour: state.onboarding?.tour === "pending",
+        web: webAllowed(yield* webBots(fs, camofoxFile), bot.threadId),
       });
     }),
     legacyMemory: Effect.sync(() => ({

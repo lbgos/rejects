@@ -142,6 +142,7 @@ const MAIN_THREAD_TOOLS: ReadonlySet<string> = new Set(MAIN_THREAD_TOOL_NAMES);
 const WEB_TOOL_NAMES = [
   "web_search",
   "web_browse",
+  "web_read",
   "computer_browser",
   "computer_desktop",
 ] as const satisfies readonly BotToolName[];
@@ -154,6 +155,26 @@ const PEER_TOOL_NAMES = [
   "t3_thread_send",
   "t3_thread_wait",
 ] as const satisfies readonly BotToolName[];
+
+/** A standalone bot talks, searches, reads pages and video links: no memory, files, schedules, workers or other bots. */
+const STANDALONE_BOT_TOOL_NAMES = [
+  "web_search",
+  "web_read",
+  "video_transcript",
+  "react",
+  "offer_replies",
+  "status",
+] as const satisfies readonly BotToolName[];
+/** Whether `camofox.json`'s `bots` list, when there is one, names this bot. */
+export const webAllowed = (bots: ReadonlyArray<string> | undefined, threadId: string) =>
+  bots === undefined || bots.includes(threadId);
+
+/** Tools that `camofox.json`'s `bots` list gives only to the bots it names. */
+const CAMOFOX_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "web_search",
+  "web_browse",
+  "web_read",
+] satisfies BotToolName[]);
 
 /** A bot granted the bridge keeps only tools that bring in nothing from outside, so what it proposes for the user's machines comes from the user and from what it reads there. */
 const BRIDGED_BOT_TOOL_NAMES = [
@@ -240,29 +261,45 @@ const withSkills = (tools: ReadonlySet<string>, own: boolean): ReadonlySet<strin
     ? new Set([...tools, "read_skill" satisfies BotToolName])
     : tools;
 
-export const botToolNames = (
-  options: {
-    readonly bridge?: BotBridgeAccess | undefined;
-    readonly readsAccounts?: boolean | undefined;
-    readonly kind?: BotRecord["kind"];
-    readonly main?: boolean | undefined;
-    /** See `sealedBy`. A sealed bot gets no thread tools; only `false` adds the peer reads. */
-    readonly sealed?: boolean | undefined;
-    readonly allowed?: ReadonlyArray<string> | undefined;
-    readonly skills?: BotRecord["skills"] | undefined;
-    readonly modelTemplate?: BotRecord["modelTemplate"] | undefined;
-    readonly ownSkills?: BotRecord["ownSkills"] | undefined;
-    readonly telegramLinked?: boolean | undefined;
-    /** The user granted the bot Gmail: it connects and manages its own accounts. */
-    readonly mail?: boolean | undefined;
-    /** `lab.json` names this bot: it holds `lab_shell`. */
-    readonly lab?: boolean | undefined;
-  } = {},
-): ReadonlySet<string> => {
+/** The tools a bot gets. `web: false` (`camofox.json` lists other bots) drops the Camoufox tools last. */
+export const botToolNames = (options: BotToolOptions = {}): ReadonlySet<string> => {
+  const listed = listedToolNames(options);
+  return options.web === false
+    ? new Set([...listed].filter((tool) => !CAMOFOX_TOOL_NAMES.has(tool)))
+    : listed;
+};
+
+interface BotToolOptions {
+  readonly bridge?: BotBridgeAccess | undefined;
+  readonly readsAccounts?: boolean | undefined;
+  readonly kind?: BotRecord["kind"];
+  /** See `BotRecord.standalone`: only `STANDALONE_BOT_TOOL_NAMES` the tool list keeps. */
+  readonly standalone?: boolean | undefined;
+  readonly main?: boolean | undefined;
+  /** See `sealedBy`. A sealed bot gets no thread tools; only `false` adds the peer reads. */
+  readonly sealed?: boolean | undefined;
+  readonly allowed?: ReadonlyArray<string> | undefined;
+  readonly skills?: BotRecord["skills"] | undefined;
+  readonly modelTemplate?: BotRecord["modelTemplate"] | undefined;
+  readonly ownSkills?: BotRecord["ownSkills"] | undefined;
+  readonly telegramLinked?: boolean | undefined;
+  /** The user granted the bot Gmail: it connects and manages its own accounts. */
+  readonly mail?: boolean | undefined;
+  /** `lab.json` names this bot: it holds `lab_shell`. */
+  readonly lab?: boolean | undefined;
+  /** `camofox.json`'s `bots` names this bot, or has no list. */
+  readonly web?: boolean | undefined;
+}
+
+const listedToolNames = (options: BotToolOptions): ReadonlySet<string> => {
   const { bridge, readsAccounts, main, allowed, skills, modelTemplate } = options;
   const own = (options.ownSkills?.length ?? 0) > 0;
   const withoutUnlinkedTelegram = (set: ReadonlySet<string>): ReadonlySet<string> =>
     options.telegramLinked === false ? new Set([...set].filter((t) => t !== "send_telegram")) : set;
+  if (options.standalone)
+    return new Set(
+      STANDALONE_BOT_TOOL_NAMES.filter((t) => allowed === undefined || allowed.includes(t)),
+    );
   if (options.kind === "music") return withSkills(withoutUnlinkedTelegram(MUSIC_BOT_TOOLS), own);
   const base = readsAccounts
     ? CONNECTED_BOT_TOOLS
@@ -310,7 +347,10 @@ export const botScope = Effect.fn("BotTools.botScope")(function* (
     readonly owner: (
       id: ThreadId,
     ) => Effect.Effect<
-      | Pick<BotRecord, "threadId" | "kind" | "skills" | "tools" | "modelTemplate" | "ownSkills">
+      | Pick<
+          BotRecord,
+          "threadId" | "kind" | "standalone" | "skills" | "tools" | "modelTemplate" | "ownSkills"
+        >
       | undefined
     >;
     readonly mainBot: Effect.Effect<ThreadId | undefined>;
@@ -321,6 +361,8 @@ export const botScope = Effect.fn("BotTools.botScope")(function* (
   connections: Option.Option<Pick<ConnectionStore["Service"], "held" | "grantsOf">>,
   telegramLinked: Effect.Effect<boolean> = Effect.succeed(true),
   labBot: Effect.Effect<string | undefined> = Effect.undefined,
+  /** `camofox.json`'s `bots`: when set, only these bots get the Camoufox tools. */
+  webBots: Effect.Effect<ReadonlyArray<string> | undefined> = Effect.undefined,
 ) {
   const bot = yield* bots.owner(threadId);
   if (!bot) return undefined;
@@ -338,6 +380,7 @@ export const botScope = Effect.fn("BotTools.botScope")(function* (
     bridge: access,
     readsAccounts,
     kind: bot.kind,
+    standalone: bot.standalone,
     main,
     sealed,
     allowed: bot.tools,
@@ -347,9 +390,11 @@ export const botScope = Effect.fn("BotTools.botScope")(function* (
     telegramLinked: linked,
     mail,
     lab: (yield* labBot) === bot.threadId,
+    web: webAllowed(yield* webBots, bot.threadId),
   });
   return {
     botThreadId: bot.threadId,
+    ...(bot.standalone ? { standalone: true as const } : {}),
     allowedToolNames: worker
       ? new Set([...tools].filter((tool) => !WORKER_DENIED_TOOLS.has(tool)))
       : tools,
@@ -365,6 +410,7 @@ const BOT_ONLY_TOOL_NAMES: ReadonlySet<string> = new Set([
   "status",
   "web_search",
   "web_browse",
+  "web_read",
   "video_transcript",
   "request_login",
   "ask_secret",

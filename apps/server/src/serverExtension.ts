@@ -14,7 +14,8 @@ type PolicyServices =
   | FileSystem.FileSystem
   | Path.Path
   | ServerConfig.ServerConfig
-  | ServerSettings.ServerSettingsService;
+  | ServerSettings.ServerSettingsService
+  | BotStore.BotStore;
 
 type RouteServices =
   | PolicyServices
@@ -23,7 +24,6 @@ type RouteServices =
   // Route handlers authenticate per request.
   | HttpRouter.Request<"Requires", EnvironmentAuth.EnvironmentAuth>
   | BotNotifications.BotNotifications
-  | BotStore.BotStore
   | ThreadManagement.ThreadManagementService;
 
 /**

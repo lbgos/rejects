@@ -35,6 +35,8 @@ export interface TranscriptInput {
   readonly url: string;
   readonly language?: string | undefined;
   readonly fromMinutes?: number | undefined;
+  /** False for a standalone bot, which keeps nothing: the shared cache is neither read nor written. */
+  readonly cache?: boolean | undefined;
 }
 
 export class Transcript extends Context.Service<
@@ -306,7 +308,8 @@ const make = Effect.gen(function* () {
       const startSeconds = Math.max(0, Math.floor(input.fromMinutes ?? 0)) * 60;
       const captionsKey = `${link.url}|${startSeconds}|captions|${input.language ?? ""}`;
       const speechKey = `${link.url}|${startSeconds}|speech`;
-      for (const key of link.youtubeId ? [captionsKey, speechKey] : [speechKey]) {
+      const cached = input.cache !== false;
+      for (const key of !cached ? [] : link.youtubeId ? [captionsKey, speechKey] : [speechKey]) {
         const cached = yield* cache.get(key);
         if (cached._tag === "Some") return cached.value;
       }
@@ -318,7 +321,7 @@ const make = Effect.gen(function* () {
         );
         if (captions._tag === "Success") {
           const text = render(captions.success);
-          yield* cache.put(captionsKey, text);
+          if (cached) yield* cache.put(captionsKey, text);
           return text;
         }
         if (captions.failure.stage === "range") return yield* captions.failure;
@@ -327,7 +330,7 @@ const make = Effect.gen(function* () {
       const spoken = yield* fromSpeech(link, startSeconds).pipe(Effect.result);
       if (spoken._tag === "Success") {
         const text = render(spoken.success);
-        yield* cache.put(speechKey, text);
+        if (cached) yield* cache.put(speechKey, text);
         return text;
       }
       if (spoken.failure.stage === "range") return yield* spoken.failure;

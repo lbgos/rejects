@@ -206,6 +206,9 @@ function ZdrSetting() {
             ? []
             : [t("{model} is blocked: {reason}", { model: model.name, reason: model.blocked })],
         ),
+        ...state.exceptions.map((exception) =>
+          t("Exception: {bot} calls {model} via {route} without zero data retention.", exception),
+        ),
         check === null
           ? null
           : check.ok

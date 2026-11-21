@@ -871,6 +871,69 @@ it.effect.each([
   }),
 );
 
+it.effect("a text generator's title passes the call policy before it runs", () =>
+  Effect.gen(function* () {
+    const calls: string[] = [];
+    const policed: Array<{ readonly driver: string; readonly model: string }> = [];
+    const service = yield* TextGeneration.make.pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({
+            listInstances: Effect.succeed([]),
+            getInstance: () => Effect.undefined,
+          }),
+          ServerSettings.layerTest({}),
+          Layer.mock(TextGenerators.TextGenerators)({
+            runner: () =>
+              Effect.succeed((request) =>
+                Effect.sync(() => {
+                  calls.push(request.operation);
+                  return { title: "Generated title" } as never;
+                }),
+              ),
+          }),
+          Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+            resolveLink: () => Effect.die("unused"),
+          }),
+          ProviderInstallationGate.layer,
+        ),
+      ),
+    );
+    const title = (refusing: boolean) =>
+      service
+        .generateThreadTitle({
+          cwd: "/tmp",
+          message: "hello",
+          linkedContext: "",
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("openrouter"),
+            model: "some/model",
+          },
+        })
+        .pipe(
+          Effect.provideService(CallPolicy, {
+            ...CallPolicy.defaultValue(),
+            model: (input) =>
+              Effect.sync(() => {
+                policed.push({ driver: input.driver, model: input.model });
+                return refusing ? Option.some("Refused.") : Option.none();
+              }),
+          }),
+          Effect.result,
+        );
+    const refused = yield* title(true);
+    expect(refused._tag === "Failure" ? refused.failure.detail : undefined).toBe("Refused.");
+    expect(calls).toEqual([]);
+    const allowed = yield* title(false);
+    expect(allowed._tag).toBe("Success");
+    expect(calls).toEqual(["generateThreadTitle"]);
+    expect(policed).toEqual([
+      { driver: "textGenerator", model: "some/model" },
+      { driver: "textGenerator", model: "some/model" },
+    ]);
+  }),
+);
+
 it.effect(
   "a review guide aimed at a text generator falls back to an agent that can read the checkout",
   () =>

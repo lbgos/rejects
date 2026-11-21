@@ -104,6 +104,22 @@ it.effect("browses as the bot's own Camoufox user with the server's key, reusing
       assert.equal(calls.filter((call) => call.startsWith("POST /tabs t3-bot-research")).length, 1);
       assert.include(calls, "POST /tabs t3-bot-briefing ");
       assert.include(calls, "POST /tabs/tab-2/navigate t3-bot-briefing https://a.test/");
+
+      // With a bots list, only the bots it names reach the browser.
+      yield* fs.writeFileString(
+        path.join(stateDir, "camofox.json"),
+        JSON.stringify({ url: "http://camofox.test", accessKey: key, bots: ["research"] }),
+      );
+      const before = calls.length;
+      const briefing = ThreadId.make("briefing");
+      for (const off of [
+        web.search(briefing, "linux kernel"),
+        web.browse(briefing, { action: "open", url: "https://a.test/" }).pipe(Effect.asVoid),
+      ])
+        assert.include((yield* Effect.flip(off)).message, "off for this bot");
+      assert.equal(calls.length, before);
+      yield* web.search(research, "linux kernel");
+      assert.isAbove(calls.length, before);
     }).pipe(Effect.provide(layer));
   }),
 );
@@ -341,6 +357,10 @@ it.effect("a check stays a check when trawl is off, fails, or meets it too", () 
     );
     assert.equal(down.challenge?.vendor, "cloudflare");
 
+    const malformed = yield* openBehindWall("example.test:9378", () => Response.json({}));
+    assert.equal(malformed.challenge?.vendor, "cloudflare");
+    assert.lengthOf(malformed.scraped, 0);
+
     const walled = yield* openBehindWall("http://trawl.test:8191", () =>
       Response.json({
         url: "https://shop.test/item",
@@ -457,10 +477,13 @@ const scraped = (markdown: string, metadata: Record<string, unknown> = {}) =>
     }),
   );
 
+const searched = (web: ReadonlyArray<Record<string, string>>) =>
+  Effect.succeed(Response.json({ success: true, data: { web } }));
+
 /** Firecrawl at firecrawl.test when `firecrawlUrl` is set; Camoufox serves the story with one ref. */
 const withReader = (
   firecrawlUrl: string | undefined,
-  scrape: () => Effect.Effect<Response>,
+  scrape: (path: string) => Effect.Effect<Response>,
   {
     tabUrl,
     listing = Effect.void,
@@ -480,7 +503,9 @@ const withReader = (
         : {};
     if (url.hostname === "firecrawl.test") {
       firecrawl.push({ path: url.pathname, auth: request.headers.authorization, body });
-      return scrape().pipe(Effect.map((response) => HttpClientResponse.fromWeb(request, response)));
+      return scrape(url.pathname).pipe(
+        Effect.map((response) => HttpClientResponse.fromWeb(request, response)),
+      );
     }
     const fields = body as { readonly url?: string; readonly ref?: string };
     camofox.push(`${request.method} ${url.pathname} ${fields.url ?? fields.ref ?? ""}`);
@@ -525,65 +550,92 @@ const openStory = (account?: string) =>
     });
   });
 
-it.effect("an open reads a public page through Firecrawl; snapshot then opens it in the tab", () =>
-  Effect.gen(function* () {
-    const reader = withReader(FIRECRAWL, () => scraped(ARTICLE, { title: ["Kernel 7.0"] }));
-    yield* reader.run(
-      Effect.gen(function* () {
-        const web = yield* WebBrowser.WebBrowser;
-        const bot = ThreadId.make("reader");
-        const text = `Kernel 7.0\n\n${ARTICLE.trim()}`;
-        const opened = yield* openStory();
-        assert.deepEqual(reader.firecrawl, [
-          {
-            path: "/v2/scrape",
+it.effect(
+  "an open reads a public page through Firecrawl; snapshot then opens it in the tab; a standalone search runs there too",
+  () =>
+    Effect.gen(function* () {
+      const reader = withReader(FIRECRAWL, (path) =>
+        path === "/v2/search"
+          ? searched([
+              { url: STORY, title: " Kernel 7.0 released ", description: "New drivers." },
+              { url: "file:///etc/passwd", title: "Local" },
+              { url: "https://lwn.net/" },
+            ])
+          : scraped(ARTICLE, { title: ["Kernel 7.0"] }),
+      );
+      yield* reader.run(
+        Effect.gen(function* () {
+          const web = yield* WebBrowser.WebBrowser;
+          const bot = ThreadId.make("reader");
+          const text = `Kernel 7.0\n\n${ARTICLE.trim()}`;
+          const opened = yield* openStory();
+          assert.deepEqual(reader.firecrawl, [
+            {
+              path: "/v2/scrape",
+              auth: "Bearer fc-key",
+              body: { url: STORY, formats: ["markdown"], onlyMainContent: true, maxAge: 0 },
+            },
+          ]);
+          assert.equal(opened.via, "firecrawl");
+          assert.deepEqual(opened.page, {
+            url: STORY,
+            snapshot: text.slice(0, WebBrowser.WEB_SNAPSHOT_CHARS),
+            nextOffset: WebBrowser.WEB_SNAPSHOT_CHARS,
+            note: WebBrowser.FIRECRAWL_NOTE,
+          });
+          const rest = yield* web.browse(bot, {
+            action: "snapshot",
+            offset: WebBrowser.WEB_SNAPSHOT_CHARS,
+          });
+          assert.equal(rest.page.snapshot, text.slice(WebBrowser.WEB_SNAPSHOT_CHARS));
+          assert.isUndefined(rest.page.nextOffset);
+          for (const refused of [
+            { action: "click", ref: "e1" },
+            { action: "type", ref: "e1", text: "kernel" },
+          ] as const) {
+            const noRefs = yield* web.browse(bot, refused).pipe(Effect.flip);
+            assert.include(noRefs.message, "Call snapshot");
+          }
+          assert.deepEqual(reader.camofox, ["GET /tabs "]);
+
+          const live = yield* web.browse(bot, { action: "snapshot" });
+          assert.isUndefined(live.via);
+          assert.include(live.page.snapshot, "[e1]");
+          yield* web.browse(bot, { action: "click", ref: "e1" });
+          assert.includeMembers(reader.camofox, [
+            `POST /tabs/tab-1/navigate ${STORY}`,
+            "POST /tabs/tab-1/click e1",
+          ]);
+          assert.lengthOf(reader.firecrawl, 1);
+
+          // An account call runs in the vault's browser; the tab and its refs are current again.
+          yield* openStory();
+          yield* web.forget(bot);
+          yield* web.browse(bot, { action: "click", ref: "e1" });
+          assert.lengthOf(
+            reader.camofox.filter((call) => call === "POST /tabs/tab-1/click e1"),
+            2,
+          );
+
+          // A standalone bot's search reads Firecrawl's results; any other search runs in the tab.
+          const found = yield* web.search(bot, "kernel 7.0", { firecrawl: true });
+          assert.deepEqual(reader.firecrawl.at(-1), {
+            path: "/v2/search",
             auth: "Bearer fc-key",
-            body: { url: STORY, formats: ["markdown"], onlyMainContent: true, maxAge: 0 },
-          },
-        ]);
-        assert.equal(opened.via, "firecrawl");
-        assert.deepEqual(opened.page, {
-          url: STORY,
-          snapshot: text.slice(0, WebBrowser.WEB_SNAPSHOT_CHARS),
-          nextOffset: WebBrowser.WEB_SNAPSHOT_CHARS,
-          note: WebBrowser.FIRECRAWL_NOTE,
-        });
-        const rest = yield* web.browse(bot, {
-          action: "snapshot",
-          offset: WebBrowser.WEB_SNAPSHOT_CHARS,
-        });
-        assert.equal(rest.page.snapshot, text.slice(WebBrowser.WEB_SNAPSHOT_CHARS));
-        assert.isUndefined(rest.page.nextOffset);
-        for (const refused of [
-          { action: "click", ref: "e1" },
-          { action: "type", ref: "e1", text: "kernel" },
-        ] as const) {
-          const noRefs = yield* web.browse(bot, refused).pipe(Effect.flip);
-          assert.include(noRefs.message, "Call snapshot");
-        }
-        assert.deepEqual(reader.camofox, ["GET /tabs "]);
-
-        const live = yield* web.browse(bot, { action: "snapshot" });
-        assert.isUndefined(live.via);
-        assert.include(live.page.snapshot, "[e1]");
-        yield* web.browse(bot, { action: "click", ref: "e1" });
-        assert.includeMembers(reader.camofox, [
-          `POST /tabs/tab-1/navigate ${STORY}`,
-          "POST /tabs/tab-1/click e1",
-        ]);
-        assert.lengthOf(reader.firecrawl, 1);
-
-        // An account call runs in the vault's browser; the tab and its refs are current again.
-        yield* openStory();
-        yield* web.forget(bot);
-        yield* web.browse(bot, { action: "click", ref: "e1" });
-        assert.lengthOf(
-          reader.camofox.filter((call) => call === "POST /tabs/tab-1/click e1"),
-          2,
-        );
-      }),
-    );
-  }),
+            body: { query: "kernel 7.0", limit: 8 },
+          });
+          assert.deepEqual(found, {
+            url: "",
+            snapshot: `1. Kernel 7.0 released\n   ${STORY}\n   New drivers.\n2. https://lwn.net/\n   https://lwn.net/`,
+            note: WebBrowser.FIRECRAWL_SEARCH_NOTE,
+          });
+          const reads = reader.firecrawl.length;
+          const inTab = yield* web.search(bot, "kernel 7.0");
+          assert.include(inTab.snapshot, "[e1]");
+          assert.lengthOf(reader.firecrawl, reads);
+        }),
+      );
+    }),
 );
 
 it.effect(
@@ -617,6 +669,36 @@ it.effect(
         assert.equal(yield* fallsBack(FIRECRAWL, scrape), 1);
 
       assert.equal(yield* fallsBack(undefined, () => scraped(ARTICLE)), 0);
+      for (const malformed of ["//firecrawl.test:3002", "firecrawl.test:3002"])
+        assert.equal(yield* fallsBack(malformed, () => scraped(ARTICLE)), 0);
+
+      const searchFallsBack = (
+        firecrawlUrl: string | undefined,
+        search: () => Effect.Effect<Response>,
+      ) =>
+        Effect.gen(function* () {
+          const reader = withReader(firecrawlUrl, search);
+          const found = yield* reader.run(
+            Effect.gen(function* () {
+              return yield* (yield* WebBrowser.WebBrowser).search(
+                ThreadId.make("reader"),
+                "kernel",
+                { firecrawl: true },
+              );
+            }),
+          );
+          assert.include(found.snapshot, "[e1]");
+          return reader.firecrawl.length;
+        });
+      for (const search of [
+        () => searched([]),
+        () => searched([{ url: "javascript:alert(1)", title: "Script" }]),
+        () => Effect.succeed(Response.json({ success: false, error: "boom" })),
+        () => Effect.succeed(Response.json({ error: "boom" }, { status: 500 })),
+      ])
+        assert.equal(yield* searchFallsBack(FIRECRAWL, search), 1);
+      for (const off of [undefined, "example.test:3002"])
+        assert.equal(yield* searchFallsBack(off, () => searched([{ url: STORY }])), 0);
       assert.equal(yield* fallsBack(FIRECRAWL, () => scraped(ARTICLE), { account: "olx.ua" }), 0);
       for (const tabUrl of ["https://www.news.test/", "https://m.news.test/cart"])
         assert.equal(yield* fallsBack(FIRECRAWL, () => scraped(ARTICLE), { tabUrl }), 0);

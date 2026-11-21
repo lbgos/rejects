@@ -22,6 +22,7 @@ import {
 import * as TextGeneration from "./TextGeneration.ts";
 import { sanitizeThreadTitle } from "@t3tools/provider-core/server/textGenerationUtils";
 import { makeClaudeTextGeneration } from "./ClaudeTextGeneration.ts";
+import { CallPolicy } from "../policy/CallPolicy.ts";
 import { writeFakeCli } from "@t3tools/provider-testing/fakeCli";
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
 
@@ -130,6 +131,36 @@ it.layer(layerClaudeTextGenerationTest)("ClaudeTextGeneration", (it) => {
           });
           expect(result).toEqual({ count: 2 });
         }),
+    ),
+  );
+
+  it.effect.each([
+    { policy: "no call policy", pinned: false },
+    { policy: "a call policy that pins settings", pinned: true },
+  ])("loads the checkout's settings only without a pin, under $policy", ({ pinned }) =>
+    withFakeClaudeEnv(
+      {
+        output: '{"type":"result","structured_output":{"count":2}}',
+        ...(pinned
+          ? { argsMustContain: "--setting-sources user" }
+          : { argsMustNotContain: "--setting-sources" }),
+      },
+      (generation) =>
+        generation
+          .generateStructured({
+            cwd: process.cwd(),
+            prompt: "Count nodes",
+            operation: "extraction",
+            outputSchema: Schema.Struct({ count: Schema.Int }),
+            modelSelection: { instanceId: ProviderInstanceId.make("claudeAgent"), model: "sonnet" },
+          })
+          .pipe(
+            Effect.provideService(CallPolicy, {
+              ...CallPolicy.defaultValue(),
+              settingsPinned: Effect.succeed(pinned),
+            }),
+            Effect.map((result) => expect(result).toEqual({ count: 2 })),
+          ),
     ),
   );
 

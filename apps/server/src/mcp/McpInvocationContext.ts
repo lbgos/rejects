@@ -138,6 +138,8 @@ export interface McpInvocationScope {
   readonly issuedAt: number;
   readonly allowedToolNames?: ReadonlySet<string>;
   readonly botThreadId?: ThreadId;
+  /** The caller is a standalone bot (`BotRecord.standalone`). */
+  readonly standalone?: true;
   /** Namespaces idempotency keys so two callers reusing a clientRequestId cannot collide. */
   readonly requestNamespace: string;
   readonly thread: McpThreadCaller | undefined;

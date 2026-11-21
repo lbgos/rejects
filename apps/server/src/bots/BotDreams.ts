@@ -362,8 +362,9 @@ const make = Effect.gen(function* () {
       stored.lastRunAt ?? DateTime.formatIso(DateTime.makeUnsafe(nowMs - FIRST_WINDOW_MS));
     const model =
       stored.modelSelection ?? (yield* Store.standingBot(bots))?.modelSelection ?? STEWARD_MODEL;
+    // A standalone bot's chat never reaches notes, its own or the shared ones every bot gets.
     const roster = (yield* bots.list.pipe(Effect.orElseSucceed(() => []))).filter(
-      (bot) => bot.kind !== "music",
+      (bot) => bot.kind !== "music" && !bot.standalone,
     );
     const chats = new Map<ThreadId, ReadonlyArray<DreamMessage>>();
     for (const bot of roster) chats.set(bot.threadId, yield* chatMessages(bot));

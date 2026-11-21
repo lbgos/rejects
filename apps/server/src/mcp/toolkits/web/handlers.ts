@@ -83,7 +83,40 @@ const browseAccount = Effect.fn("WebTools.browseAccount")(function* (
 
 export const layer = Access.toLayer(WebToolkit, {
   web_search: Access.readsAsCaller(({ query }) =>
-    asBot().pipe(Effect.flatMap(({ web, bot }) => web.search(bot, query))),
+    Effect.gen(function* () {
+      const { web, bot } = yield* asBot();
+      const scope = yield* Invocation.McpInvocationContext;
+      return yield* web.search(bot, query, { firecrawl: scope.standalone === true });
+    }),
+  ),
+  web_read: Access.readsAsCaller(({ url, offset }) =>
+    Effect.gen(function* () {
+      const { web, bot } = yield* asBot();
+      // An offset continues only the page last read; another url, or none (the tab may be down), is read first.
+      let read =
+        offset === undefined
+          ? undefined
+          : yield* web
+              .browse(bot, { action: "snapshot", offset })
+              .pipe(Effect.orElseSucceed(() => undefined));
+      if (read?.page.url !== url) {
+        read = yield* web.browse(bot, { action: "open", url });
+        if (offset !== undefined && !read.challenge)
+          read = yield* web.browse(bot, { action: "snapshot", offset });
+      }
+      const { page, challenge } = read;
+      if (challenge)
+        return yield* new OrchestratorMcpFailure({
+          code: "capability_denied",
+          message: challengeStop(challenge.label, siteOf(page.url) ?? page.url, false, "web_read"),
+        });
+      // The notes name web_browse actions a reader does not have.
+      return {
+        url: page.url,
+        snapshot: page.snapshot,
+        ...(page.nextOffset === undefined ? {} : { nextOffset: page.nextOffset }),
+      };
+    }),
   ),
   web_browse: Access.actsAsCaller((input) =>
     Effect.gen(function* () {

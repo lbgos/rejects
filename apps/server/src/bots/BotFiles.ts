@@ -185,7 +185,7 @@ const make = Effect.gen(function* () {
       if (!main) return yield* fail("Only the main bot gives files to other bots.");
       const roster = (yield* bots.list.pipe(
         Effect.mapError((cause) => new BotAttachmentError({ detail: cause.message, cause })),
-      )).filter((bot) => bot.threadId !== main.threadId);
+      )).filter((bot) => bot.threadId !== main.threadId && !bot.standalone);
       const wanted = input.bot.trim().toLowerCase();
       const target = roster.find(
         (bot) => bot.name.toLowerCase() === wanted || bot.threadId === input.bot.trim(),

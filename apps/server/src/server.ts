@@ -1468,7 +1468,9 @@ const layerMakeServer = Layer.unwrap(
           Layer.provide(AgentScopeLive.layer),
         ),
       ),
-      Layer.provideMerge(layerCallPolicy.pipe(Layer.provide(layerServerSettings))),
+      Layer.provideMerge(
+        layerCallPolicy.pipe(Layer.provide(layerServerSettings), Layer.provide(BotStore.layer)),
+      ),
       Layer.provideMerge(layerPlatformServices),
       Layer.provide(Layer.succeed(HostProcess.InvokedAs, invokedAs)),
     );

@@ -12,10 +12,11 @@ import { STEWARD_THREAD_ID } from "./steward.ts";
  * with a bridge grant: it edits and ships this app's code in its sandbox.
  */
 export const sealedBy = Effect.fn("BotSealed.sealedBy")(function* (
-  bot: Pick<BotRecord, "threadId" | "kind">,
+  bot: Pick<BotRecord, "threadId" | "kind" | "standalone">,
   bots: Pick<BotStore["Service"], "bridged" | "mainBot">,
   connections: Option.Option<Pick<ConnectionStore["Service"], "held">>,
 ) {
+  if (bot.standalone === true) return "the standalone seal";
   if ((yield* bots.bridged(bot.threadId)) && (yield* bots.mainBot) !== bot.threadId)
     return "bridge access";
   if (Option.isSome(connections) && (yield* connections.value.held(bot.threadId)))
@@ -31,7 +32,10 @@ export const sealedBy = Effect.fn("BotSealed.sealedBy")(function* (
  * out. A bot without one (paper work) neither leaks its files to readers nor reads web text.
  */
 export const readableByPeers = Effect.fn("BotSealed.readableByPeers")(function* (
-  bot: Pick<BotRecord, "threadId" | "kind" | "tools" | "skills" | "modelTemplate" | "ownSkills">,
+  bot: Pick<
+    BotRecord,
+    "threadId" | "kind" | "standalone" | "tools" | "skills" | "modelTemplate" | "ownSkills"
+  >,
   bots: Pick<BotStore["Service"], "bridged" | "mainBot">,
   connections: Option.Option<Pick<ConnectionStore["Service"], "held">>,
 ) {

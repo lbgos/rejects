@@ -294,6 +294,9 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
   const labBotNow = Option.isSome(serverConfig)
     ? labBot(fileSystem, path.join(serverConfig.value.stateDir, "lab.json"))
     : Effect.undefined;
+  const webBotsNow = Option.isSome(serverConfig)
+    ? WebBrowser.webBots(fileSystem, path.join(serverConfig.value.stateDir, "camofox.json"))
+    : Effect.undefined;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const runtimeModeCeiling = serverSettings.managedPolicy?.limits?.maxRuntimeMode;
   const linksEnabled = serverSettings.getSettings.pipe(
@@ -341,6 +344,7 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
             connections,
             telegramLinkedNow,
             labBotNow,
+            webBotsNow,
           )
         : undefined;
     const origin = Option.getOrUndefined(Option.map(requestUrl(request), (url) => url.origin));

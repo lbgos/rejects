@@ -4,6 +4,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { McpSchema } from "effect/ai";
+import { readableByPeers, sealedBy } from "../bots/sealed.ts";
 import { botScope, botToolNames, withToolVisibility, withWorkerModel } from "./BotTools.ts";
 import * as Invocation from "./McpInvocationContext.ts";
 
@@ -403,6 +404,7 @@ it.effect("wakes and workers act as their bot, with its tools", () =>
       "homelab-wake": "homelab",
       "manager-wake": "manager",
       "main-wake": "main",
+      fable: "fable",
     };
     const bots = {
       owner: (id: ThreadId) =>
@@ -412,6 +414,12 @@ it.effect("wakes and workers act as their bot, with its tools", () =>
                 threadId: ThreadId.make(owners[id]),
                 ...(owners[id] === "music" ? { kind: "music" as const } : {}),
                 ...(owners[id] === "homelab" ? { skills: ["music" as const] } : {}),
+                ...(owners[id] === "fable"
+                  ? {
+                      standalone: true as const,
+                      tools: ["web_search", "web_read", "react", "web_browse", "video_transcript"],
+                    }
+                  : {}),
               }
             : undefined,
         ),
@@ -497,6 +505,16 @@ it.effect("wakes and workers act as their bot, with its tools", () =>
     assert.deepEqual(yield* reads("study-wake"), peerReads);
     for (const sealed of ["inbox-wake", "agents-wake", "music-wake"])
       assert.deepEqual(yield* reads(sealed), []);
+    // A standalone bot keeps only its talking and search tools, even with a web tool listed, and
+    // is closed both ways: Main and peers are refused it, and it reads no peer.
+    assert.deepEqual(yield* scope("fable"), {
+      botThreadId: ThreadId.make("fable"),
+      standalone: true,
+      allowedToolNames: new Set(["web_search", "web_read", "video_transcript", "react"]),
+    });
+    const fable = (yield* bots.owner(ThreadId.make("fable")))!;
+    assert.equal(yield* sealedBy(fable, bots, connections), "the standalone seal");
+    assert.isFalse(yield* readableByPeers(fable, bots, connections));
     assert.isUndefined(yield* scope("someone-else"));
   }),
 );
@@ -562,5 +580,42 @@ it.effect.each([
     assert.isTrue(yield* has("deep"));
     assert.isTrue(yield* has("deep-wake"));
     assert.isFalse(yield* has("deep-worker"));
+  }),
+);
+
+it.effect("camofox.json's bots list keeps the Camoufox tools to the bots it names", () =>
+  Effect.gen(function* () {
+    const bots = {
+      owner: (id: ThreadId) => Effect.succeed({ threadId: id }),
+      mainBot: Effect.undefined,
+      bridged: () => Effect.succeed(false),
+      wake: () => Effect.undefined,
+    };
+    const tools = (id: string, web: ReadonlyArray<string> | undefined) =>
+      botScope(
+        ThreadId.make(id),
+        bots,
+        Option.none(),
+        Option.none(),
+        Effect.succeed(true),
+        Effect.undefined,
+        Effect.succeed(web),
+      ).pipe(Effect.map((scope) => scope!.allowedToolNames));
+    const camofox = (set: ReadonlySet<string>) =>
+      ["web_search", "web_browse"].filter((tool) => set.has(tool));
+    assert.deepEqual(camofox(yield* tools("study", undefined)), ["web_search", "web_browse"]);
+    assert.deepEqual(camofox(yield* tools("study", ["fable"])), []);
+    assert.deepEqual(camofox(yield* tools("fable", ["fable"])), ["web_search", "web_browse"]);
+    // Everything else in the bot's set stays as it was.
+    assert.deepEqual(
+      [...(yield* tools("study", ["fable"]))],
+      [...(yield* tools("study", undefined))].filter(
+        (tool) => tool !== "web_search" && tool !== "web_browse",
+      ),
+    );
+    assert.deepEqual(
+      [...botToolNames({ standalone: true, web: false })],
+      ["video_transcript", "react", "offer_replies", "status"],
+    );
   }),
 );

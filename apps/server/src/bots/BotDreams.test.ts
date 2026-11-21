@@ -113,6 +113,9 @@ it.effect(
       const memory = yield* Memory.BotMemoryStore;
       yield* store.put(bot(STEWARD_THREAD_ID, "Steward"));
       yield* store.put(bot(HOMELAB, "Homelab"));
+      // A standalone bot's chat stays out of every scope, the shared notes included.
+      const fable = ThreadId.make("fable");
+      yield* store.put({ ...bot(fable, "Fable"), standalone: true });
       // A delegated child joins the bot's family; dreaming still reads only the bot's own chat.
       const worker = ThreadId.make("homelab-worker");
       yield* store.inherit({
@@ -163,16 +166,18 @@ it.effect(
                                 "user",
                               ),
                             ]
-                          : threadId === worker
-                            ? [
-                                said(
-                                  "w1",
-                                  "The user lives in Lisbon now",
-                                  "2026-11-07T11:00:00Z",
-                                  "user",
-                                ),
-                              ]
-                            : [],
+                          : threadId === fable
+                            ? [said("f1", "I live in Porto now", "2026-11-07T12:00:00Z", "user")]
+                            : threadId === worker
+                              ? [
+                                  said(
+                                    "w1",
+                                    "The user lives in Lisbon now",
+                                    "2026-11-07T11:00:00Z",
+                                    "user",
+                                  ),
+                                ]
+                              : [],
                     }),
                 }),
                 Layer.mock(TextGeneration.TextGeneration)({
@@ -244,7 +249,15 @@ it.effect(
         yield* fs.readFileString(`${backups}/notes-2026-11-08.json`),
         "Lives in Kyiv.",
       );
-      assert.isTrue(sent.every((p) => !p.prompt.includes("Riga") && !p.prompt.includes("Lisbon")));
+      assert.isTrue(
+        sent.every(
+          (p) =>
+            !p.prompt.includes("Riga") &&
+            !p.prompt.includes("Lisbon") &&
+            !p.prompt.includes("Porto") &&
+            !p.prompt.includes("Fable"),
+        ),
+      );
       assert.deepEqual(yield* store.family(HOMELAB), [HOMELAB, worker]);
       assert.isTrue(sent.some((p) => p.prompt.includes("I moved to Tallinn")));
       assert.deepEqual(

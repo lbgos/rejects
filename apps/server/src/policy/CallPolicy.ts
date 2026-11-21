@@ -6,25 +6,39 @@ import * as Layer from "effect/Layer";
 import type * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
-import type { ProviderInstanceId } from "@t3tools/contracts";
+import type { ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as ServerConfig from "../config.ts";
 
 /** Outside services that would receive the user's content. */
 export type OutsideService = "cloud-speech" | "linked-environment";
 
-/** Each method returns the refusal text, or none to allow the call. */
+/**
+ * Each method returns the refusal text, or none to allow the call. `threadId` names the thread a
+ * provider session runs; calls outside one (titles, structured output, dreaming) pass none.
+ */
 export interface CallPolicyShape {
   readonly model: (input: {
     readonly instanceId: ProviderInstanceId;
     readonly driver: string;
     readonly model: string;
+    readonly threadId?: ThreadId | undefined;
   }) => Effect.Effect<Option.Option<string>>;
   readonly outside: (service: OutsideService) => Effect.Effect<Option.Option<string>>;
+  /**
+   * Provider sessions load settings only from their config dir, never from the project they run
+   * in, so a model route comes only from sources a policy can read: the instance's environment,
+   * the server's, and the config dir.
+   */
+  readonly settingsPinned: Effect.Effect<boolean>;
 }
 
 /** A deployment's entry may provide a policy (see `ServerExtension`); the default refuses nothing. */
 export const CallPolicy = Context.Reference<CallPolicyShape>("t3/policy/CallPolicy", {
-  defaultValue: () => ({ model: () => Effect.succeedNone, outside: () => Effect.succeedNone }),
+  defaultValue: () => ({
+    model: () => Effect.succeedNone,
+    outside: () => Effect.succeedNone,
+    settingsPinned: Effect.succeed(false),
+  }),
 });
 
 export class CallPolicyMissing extends Schema.TaggedError<CallPolicyMissing>()(

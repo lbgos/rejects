@@ -313,6 +313,8 @@ export const RU = {
   "Turn on": "Включить",
   "On: bots call only {models}. Other models, cloud voice and work on linked machines are refused.":
     "Включено: боты вызывают только {models}. Другие модели, облачное распознавание голоса и работа на связанных машинах отклоняются.",
+  "Exception: {bot} calls {model} via {route} without zero data retention.":
+    "Исключение: {bot} вызывает {model} через {route} без нулевого хранения данных.",
   "{model} is blocked: {reason}": "{model} заблокирована: {reason}",
   "Checked {time}: {summary}": "Проверено {time}: {summary}",
   "The last check failed {time}: {summary}": "Последняя проверка не удалась {time}: {summary}",
