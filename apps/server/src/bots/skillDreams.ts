@@ -56,7 +56,7 @@ const clip = (text: string, length: number) =>
 const runLabel = (index: number) => `r${index + 1}`;
 
 const sameText = (a: string, b: string) =>
-  a.replaceAll(/\s+/g, " ").trim() === b.replaceAll(/\s+/g, " ").trim();
+  a.replaceAll("\r\n", "\n").trim() === b.replaceAll("\r\n", "\n").trim();
 
 /** The model overruns the description cap now and then; cut at the last whole word that fits. */
 const fitDescription = (text: string) => {
@@ -142,8 +142,6 @@ export function applySkillDream(input: {
       refused.push(`${proposal.name}: not repeated`);
       continue;
     }
-    // The window keeps a week of runs, so a skill comes back each night from the runs it was learned from.
-    if (existing && !cited.some((run) => run.at > existing.updatedAt)) continue;
     const unverified = unverifiedCommands(proposal.body, [
       ...cited.flatMap((run) => run.calls),
       existing?.body ?? "",

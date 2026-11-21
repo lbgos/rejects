@@ -44,7 +44,7 @@ const OP_LABEL: Record<MemoryChange["op"], UiText> = {
   unpin: "Unpinned",
 };
 
-const COUNT_TEXT: Record<MemoryChange["op"] | "refused", UiText> = {
+const COUNT_TEXT: Record<MemoryChange["op"] | "refused" | "skills", UiText> = {
   confirm: "{count} confirmed",
   rewrite: "{count} corrected",
   merge: "{count} merged",
@@ -56,6 +56,7 @@ const COUNT_TEXT: Record<MemoryChange["op"] | "refused", UiText> = {
   pin: "{count} pinned",
   unpin: "{count} unpinned",
   refused: "{count} refused",
+  skills: "{count} skills written",
 };
 
 /** The last run's result in the UI language; runs from before the server kept counts show its English line. */

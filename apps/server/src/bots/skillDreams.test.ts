@@ -10,10 +10,9 @@ import { SKILL_GUIDELINES } from "./skills.ts";
 
 const NOW = "2026-11-12T03:30:00.000Z";
 const CALLS = ["shell bash homelab/check.sh backups", 'notify_user {"text":"node2 failed"}'];
-const LATER = "2026-11-13T09:00:00.000Z";
-const run = (ordinal: number, at = NOW): SkillDreamRun => ({
+const run = (ordinal: number): SkillDreamRun => ({
   id: `run:thread:c20c38e7-f6c1-49d9-a37d-fcca588baa99:ordinal:${ordinal}`,
-  at,
+  at: NOW,
   request: "backup report",
   calls: CALLS,
 });
@@ -99,23 +98,19 @@ describe("applySkillDream", () => {
     const own = dream([proposal()]).skills;
     const update = dream([proposal({ runs: ["r1"], body: `${proposal().body}\n3. Stop.` })], {
       own,
-      runs: [run(5, LATER)],
+      runs: [run(5)],
     });
     expect(update.written).toEqual([{ name: "backup-report", created: false }]);
     expect(update.skills[0]?.body).toMatch(/3\. Stop\.$/);
   });
 
-  it.each([
-    [
-      "the same content with other whitespace",
-      { runs: ["r1"], body: proposal().body.replace(". ", ".  ") },
-      [run(5, LATER)],
-    ],
-    ["the runs it was learned from", { body: `${proposal().body}\n3. Stop.` }, [run(3), run(4)]],
-  ])("leaves an existing skill alone for %s", (_, fields, runs) => {
+  it("leaves an existing skill alone when only line endings and outer whitespace differ", () => {
     const own = dream([proposal()]).skills;
-    const again = dream([proposal(fields)], { own, runs });
+    const body = `\n${proposal().body.replaceAll("\n", "\r\n")}  \n`;
+    const again = dream([proposal({ body, description: ` ${proposal().description}` })], { own });
     expect(again.written).toEqual([]);
     expect(again.skills).toBe(own);
+    const indented = dream([proposal({ body: proposal().body.replace("\n", "\n  ") })], { own });
+    expect(indented.written).toEqual([{ name: "backup-report", created: false }]);
   });
 });

@@ -27,7 +27,6 @@ import * as Threads from "../orchestration-v2/ThreadManagementService.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import * as BotDreams from "./BotDreams.ts";
 import * as Memory from "./BotMemoryStore.ts";
-import * as Notifications from "./BotNotifications.ts";
 import * as Store from "./BotStore.ts";
 import { STEWARD_THREAD_ID } from "./steward.ts";
 
@@ -45,20 +44,9 @@ const bot = (threadId: ThreadId, name: string): BotRecord => ({
   lastNotification: null,
   notifiedAt: null,
 });
-// Notifications land on the store, where the tests read them.
-const layerNotifications = Layer.unwrap(
-  Effect.gen(function* () {
-    const bots = yield* Store.BotStore;
-    return Layer.mock(Notifications.BotNotifications)({
-      notify: (id, text) =>
-        bots.notify(id, text).pipe(Effect.as({ delivered: 0, failed: 0, postedInChat: true })),
-    });
-  }),
-);
 const layerStores = (prefix: string) =>
   Layer.effect(Memory.BotMemoryStore, Memory.makeMemoryStore).pipe(
     Layer.provide(NodeSqliteClient.layer({ filename: ":memory:" })),
-    Layer.provideMerge(layerNotifications),
     Layer.provideMerge(Store.layer),
     Layer.provideMerge(Config.layerTest(process.cwd(), { prefix })),
     Layer.provideMerge(NodeServices.layer),
@@ -485,7 +473,6 @@ it.effect.each([
     const homelab = yield* store.get(HOMELAB);
     if (!saves) {
       assert.isUndefined(homelab?.ownSkills);
-      assert.isNull(homelab?.lastNotification);
       assert.deepEqual(
         (yield* memory.notes(HOMELAB)).map((n) => n.id),
         ["n-steps", "n-pref"],
@@ -497,8 +484,6 @@ it.effect.each([
       homelab?.ownSkills?.map((s) => s.name),
       ["backup-report"],
     );
-    // Settings lists the skill; the chat stays quiet.
-    assert.isNull(homelab?.lastNotification);
     assert.deepEqual(
       (yield* memory.notes(HOMELAB)).map((n) => n.id),
       ["n-pref"],
