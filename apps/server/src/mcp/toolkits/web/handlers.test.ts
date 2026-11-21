@@ -1,5 +1,10 @@
 import { assert, it } from "@effect/vitest";
-import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  OrchestratorMcpFailure,
+  ProviderInstanceId,
+  ThreadId,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
@@ -40,19 +45,37 @@ it.effect(
       const logged: string[] = [];
       const browsed: Array<typeof WebBrowser.WebBrowseInput.Type> = [];
       const searches: Array<boolean | undefined> = [];
+      // The tab host is down: a snapshot fails unless it pages what an open just read.
+      let tabDown = false;
       const dependencies = Layer.mergeAll(
         Layer.mock(WebBrowser.WebBrowser)({
           browse: (_bot, input) =>
-            Effect.sync(() => {
-              browsed.push(input);
-              return {
-                page: { url: input.url ?? STORY, snapshot: "Story", nextOffset: 5, note: "refs" },
-                via: "firecrawl" as const,
-                ...(input.url === CHECKED
-                  ? { challenge: { vendor: "cloudflare" as const, label: "Cloudflare check" } }
-                  : {}),
-              };
-            }),
+            tabDown && input.action === "snapshot" && browsed.at(-1)?.action !== "open"
+              ? Effect.sync(() => void browsed.push(input)).pipe(
+                  Effect.andThen(
+                    Effect.fail(
+                      new OrchestratorMcpFailure({
+                        code: "orchestration_error",
+                        message: "The browser is unavailable.",
+                      }),
+                    ),
+                  ),
+                )
+              : Effect.sync(() => {
+                  browsed.push(input);
+                  return {
+                    page: {
+                      url: input.url ?? STORY,
+                      snapshot: "Story",
+                      nextOffset: 5,
+                      note: "refs",
+                    },
+                    via: "firecrawl" as const,
+                    ...(input.url === CHECKED
+                      ? { challenge: { vendor: "cloudflare" as const, label: "Cloudflare check" } }
+                      : {}),
+                  };
+                }),
           search: (_bot, _query, options) =>
             Effect.sync(() => {
               searches.push(options?.firecrawl);
@@ -115,6 +138,16 @@ it.effect(
         { action: "open", url: OTHER },
         { action: "snapshot", offset: 5 },
       ]);
+      tabDown = true;
+      browsed.length = 0;
+      const [fresh] = yield* call("web_read", { url: OTHER, offset: 5 }, standalone);
+      assert.deepEqual(browsed, [
+        { action: "snapshot", offset: 5 },
+        { action: "open", url: OTHER },
+        { action: "snapshot", offset: 5 },
+      ]);
+      assert.deepEqual(fresh?.result, { url: STORY, snapshot: "Story", nextOffset: 5 });
+      tabDown = false;
       const stopped = yield* call("web_read", { url: CHECKED }, standalone).pipe(Effect.flip);
       assert.include(stopped.message, "read with web_read");
       assert.notInclude(stopped.message, "computer_shell");

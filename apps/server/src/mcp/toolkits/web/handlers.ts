@@ -92,9 +92,13 @@ export const layer = Access.toLayer(WebToolkit, {
   web_read: Access.readsAsCaller(({ url, offset }) =>
     Effect.gen(function* () {
       const { web, bot } = yield* asBot();
-      // An offset continues only the page last read; another url is read first.
+      // An offset continues only the page last read; another url, or none (the tab may be down), is read first.
       let read =
-        offset === undefined ? undefined : yield* web.browse(bot, { action: "snapshot", offset });
+        offset === undefined
+          ? undefined
+          : yield* web
+              .browse(bot, { action: "snapshot", offset })
+              .pipe(Effect.orElseSucceed(() => undefined));
       if (read?.page.url !== url) {
         read = yield* web.browse(bot, { action: "open", url });
         if (offset !== undefined && !read.challenge)

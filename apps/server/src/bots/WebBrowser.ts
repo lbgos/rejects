@@ -107,6 +107,12 @@ const NO_REFS =
 
 type BrowseVia = "firecrawl" | "solver";
 
+/** `route` on a configured service; undefined when the address is unset or not http(s), a config error. */
+const serviceUrl = (route: string, base: string | undefined) => {
+  const url = base === undefined ? null : URL.parse(route, base);
+  return url !== null && /^https?:$/u.test(url.protocol) ? url.toString() : undefined;
+};
+
 /** Either address on the other's site or a subdomain of it, so the two share cookies. */
 const sameSite = (a: string, b: string) => {
   const siteA = siteOf(a);
@@ -539,9 +545,9 @@ const make = Effect.gen(function* () {
 
   const viaTrawl = Effect.fn("WebBrowser.viaTrawl")(
     function* (url: string) {
-      const { trawlUrl } = yield* readSettings;
-      if (trawlUrl === undefined) return undefined;
-      const request = yield* HttpClientRequest.post(new URL("/scrape", trawlUrl).toString()).pipe(
+      const scrape = serviceUrl("/scrape", (yield* readSettings).trawlUrl);
+      if (scrape === undefined) return undefined;
+      const request = yield* HttpClientRequest.post(scrape).pipe(
         HttpClientRequest.bodyJson({ url, solveEmbeddedCaptchas: true }),
       );
       const response = yield* http.execute(request).pipe(Effect.timeout(TRAWL_TIMEOUT));
@@ -565,11 +571,7 @@ const make = Effect.gen(function* () {
   /** Firecrawl's address and key, unless it is unset or paused after a failure. */
   const firecrawlOn = Effect.gen(function* () {
     const { firecrawlUrl, firecrawlKey } = yield* readSettings;
-    // A malformed address is a config error: Camoufox serves the call instead.
-    if (
-      firecrawlUrl === undefined ||
-      !/^https?:$/u.test(URL.parse("/v2/", firecrawlUrl)?.protocol ?? "")
-    )
+    if (firecrawlUrl === undefined || serviceUrl("/v2/", firecrawlUrl) === undefined)
       return undefined;
     if ((yield* Clock.currentTimeMillis) < firecrawlPausedUntil) return undefined;
     return { firecrawlUrl, firecrawlKey };

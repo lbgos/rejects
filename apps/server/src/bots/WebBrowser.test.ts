@@ -357,6 +357,10 @@ it.effect("a check stays a check when trawl is off, fails, or meets it too", () 
     );
     assert.equal(down.challenge?.vendor, "cloudflare");
 
+    const malformed = yield* openBehindWall("example.test:9378", () => Response.json({}));
+    assert.equal(malformed.challenge?.vendor, "cloudflare");
+    assert.lengthOf(malformed.scraped, 0);
+
     const walled = yield* openBehindWall("http://trawl.test:8191", () =>
       Response.json({
         url: "https://shop.test/item",
