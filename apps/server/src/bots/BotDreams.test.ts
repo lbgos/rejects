@@ -399,7 +399,7 @@ const runItems = (run: string, at: string, ask: string): ReadonlyArray<Orchestra
 
 it.effect.each([
   { name: "turns work asked for twice into a skill and moves the bot's note on it", saves: true },
-  { name: "reports a skill it could not save in the bot's chat and keeps the note", saves: false },
+  { name: "keeps the note when it cannot save a skill", saves: false },
 ])("$name", ({ saves }) =>
   Effect.gen(function* () {
     const prompts = yield* Ref.make<ReadonlyArray<string>>([]);
@@ -485,10 +485,7 @@ it.effect.each([
     const homelab = yield* store.get(HOMELAB);
     if (!saves) {
       assert.isUndefined(homelab?.ownSkills);
-      assert.equal(
-        homelab?.lastNotification,
-        "Could not save skill backup-report; this bot's skills are unchanged.",
-      );
+      assert.isNull(homelab?.lastNotification);
       assert.deepEqual(
         (yield* memory.notes(HOMELAB)).map((n) => n.id),
         ["n-steps", "n-pref"],
@@ -500,7 +497,8 @@ it.effect.each([
       homelab?.ownSkills?.map((s) => s.name),
       ["backup-report"],
     );
-    assert.match(homelab?.lastNotification ?? "", /^New skill backup-report: When asked/);
+    // Settings lists the skill; the chat stays quiet.
+    assert.isNull(homelab?.lastNotification);
     assert.deepEqual(
       (yield* memory.notes(HOMELAB)).map((n) => n.id),
       ["n-pref"],

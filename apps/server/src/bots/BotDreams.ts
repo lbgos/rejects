@@ -31,7 +31,6 @@ import { nextScheduledRunAt, scheduleTimeZone } from "../scheduledTasks/Schedule
 import { forkParked } from "../serverActivation.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import * as Memory from "./BotMemoryStore.ts";
-import * as Notifications from "./BotNotifications.ts";
 import * as Store from "./BotStore.ts";
 import {
   applyDream,
@@ -49,8 +48,6 @@ import {
   type SkillDreamRun,
   SkillDreamOutput,
   skillDreamPrompt,
-  skillLine,
-  unsavedSkillsLine,
 } from "./skillDreams.ts";
 import { STEWARD_MODEL } from "./steward.ts";
 
@@ -199,7 +196,6 @@ const make = Effect.gen(function* () {
         nextScheduledRunAt(NIGHTLY, now, scheduleTimeZone(zone)) ?? DateTime.add(now, { days: 1 }),
     ),
   );
-  const notifications = yield* Notifications.BotNotifications;
   const memory = yield* Memory.BotMemoryStore;
   const threads = yield* Threads.ThreadManagementService;
   const textGeneration = yield* TextGeneration.TextGeneration;
@@ -591,16 +587,7 @@ const make = Effect.gen(function* () {
       if (result === undefined) continue;
       const applied: ReturnType<typeof applySkillDream> = result;
       entry.refused += applied.refused.length;
-      if (!saved) {
-        // Nothing was written, so nothing is announced or moved; the owner hears that instead.
-        if (applied.written.length > 0)
-          yield* notifications
-            .notify(bot.threadId, unsavedSkillsLine(applied.written.map(({ name }) => name)), {
-              quiet: true,
-            })
-            .pipe(Effect.ignore({ log: true }));
-        continue;
-      }
+      if (!saved) continue;
       entry.skills = applied.written.length;
       if (applied.refused.length > 0)
         yield* Effect.logInfo("skill check refused", { bot: bot.name, refused: applied.refused });
@@ -624,21 +611,6 @@ const make = Effect.gen(function* () {
             return current.filter((note) => !moved.has(note.id));
           }),
         ).pipe(Effect.ignore({ log: true }));
-      yield* notifications
-        .notify(
-          bot.threadId,
-          applied.written
-            .map(({ name, created }) =>
-              skillLine(
-                applied.skills.find((s) => s.name === name) ?? { name, description: "" },
-                created,
-              ),
-            )
-            .join("\n"),
-          // Written at night: the chat and the list show it, without waking the user.
-          { quiet: true },
-        )
-        .pipe(Effect.ignore({ log: true }));
     }
     const endedMs = yield* Clock.currentTimeMillis;
     const rows: Array<BotDreamRun> = [];

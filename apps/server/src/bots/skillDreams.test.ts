@@ -10,9 +10,10 @@ import { SKILL_GUIDELINES } from "./skills.ts";
 
 const NOW = "2026-11-12T03:30:00.000Z";
 const CALLS = ["shell bash homelab/check.sh backups", 'notify_user {"text":"node2 failed"}'];
-const run = (ordinal: number): SkillDreamRun => ({
+const LATER = "2026-11-13T09:00:00.000Z";
+const run = (ordinal: number, at = NOW): SkillDreamRun => ({
   id: `run:thread:c20c38e7-f6c1-49d9-a37d-fcca588baa99:ordinal:${ordinal}`,
-  at: NOW,
+  at,
   request: "backup report",
   calls: CALLS,
 });
@@ -98,9 +99,23 @@ describe("applySkillDream", () => {
     const own = dream([proposal()]).skills;
     const update = dream([proposal({ runs: ["r1"], body: `${proposal().body}\n3. Stop.` })], {
       own,
-      runs: [run(5)],
+      runs: [run(5, LATER)],
     });
     expect(update.written).toEqual([{ name: "backup-report", created: false }]);
     expect(update.skills[0]?.body).toMatch(/3\. Stop\.$/);
+  });
+
+  it.each([
+    [
+      "the same content with other whitespace",
+      { runs: ["r1"], body: proposal().body.replace(". ", ".  ") },
+      [run(5, LATER)],
+    ],
+    ["the runs it was learned from", { body: `${proposal().body}\n3. Stop.` }, [run(3), run(4)]],
+  ])("leaves an existing skill alone for %s", (_, fields, runs) => {
+    const own = dream([proposal()]).skills;
+    const again = dream([proposal(fields)], { own, runs });
+    expect(again.written).toEqual([]);
+    expect(again.skills).toBe(own);
   });
 });

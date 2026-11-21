@@ -55,6 +55,9 @@ const clip = (text: string, length: number) =>
 
 const runLabel = (index: number) => `r${index + 1}`;
 
+const sameText = (a: string, b: string) =>
+  a.replaceAll(/\s+/g, " ").trim() === b.replaceAll(/\s+/g, " ").trim();
+
 /** The model overruns the description cap now and then; cut at the last whole word that fits. */
 const fitDescription = (text: string) => {
   const line = text.trim();
@@ -139,6 +142,8 @@ export function applySkillDream(input: {
       refused.push(`${proposal.name}: not repeated`);
       continue;
     }
+    // The window keeps a week of runs, so a skill comes back each night from the runs it was learned from.
+    if (existing && !cited.some((run) => run.at > existing.updatedAt)) continue;
     const unverified = unverifiedCommands(proposal.body, [
       ...cited.flatMap((run) => run.calls),
       existing?.body ?? "",
@@ -156,8 +161,16 @@ export function applySkillDream(input: {
       refused.push(`${proposal.name}: ${result.error}`);
       continue;
     }
-    skills = result.skills;
     const name = proposal.name.trim().toLowerCase();
+    const next = result.skills.find((skill) => skill.name === name);
+    if (
+      existing &&
+      next &&
+      sameText(existing.description, next.description) &&
+      sameText(existing.body, next.body)
+    )
+      continue;
+    skills = result.skills;
     written.push({ name, created: !existing });
     for (const note of notes) {
       moved.add(note.id);
@@ -166,9 +179,3 @@ export function applySkillDream(input: {
   }
   return { skills, written, movedNotes, refused };
 }
-
-export const skillLine = (skill: Pick<BotOwnSkill, "name" | "description">, created: boolean) =>
-  `${created ? "New skill" : "Updated skill"} ${skill.name}: ${skill.description}. Remove it in this bot's settings if it is wrong.`;
-
-export const unsavedSkillsLine = (names: ReadonlyArray<string>) =>
-  `Could not save ${names.length === 1 ? "skill" : "skills"} ${names.join(", ")}; this bot's skills are unchanged.`;
