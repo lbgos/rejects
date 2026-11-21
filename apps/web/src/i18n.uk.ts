@@ -299,7 +299,6 @@ export const UK = {
   "{count} deleted": "видалено: {count}",
   "{count} expired": "прострочено: {count}",
   "{count} refused": "відхилено: {count}",
-  "{count} skills written": "записано навичок: {count}",
 
   Language: "Мова",
   "Browser ({language})": "Як у браузері ({language})",

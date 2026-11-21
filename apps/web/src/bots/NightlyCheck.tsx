@@ -16,7 +16,7 @@ import { Button } from "../components/ui/button";
 import { Switch } from "../components/ui/switch";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { useEnvironmentSettings } from "../hooks/useSettings";
-import { t, type UiText } from "../i18n";
+import { plural, t, type UiText } from "../i18n";
 import { cn } from "../lib/utils";
 import { getCustomModelOptionsByInstance } from "../modelSelection";
 import {
@@ -44,7 +44,7 @@ const OP_LABEL: Record<MemoryChange["op"], UiText> = {
   unpin: "Unpinned",
 };
 
-const COUNT_TEXT: Record<MemoryChange["op"] | "refused" | "skills", UiText> = {
+const COUNT_TEXT: Record<MemoryChange["op"] | "refused", UiText> = {
   confirm: "{count} confirmed",
   rewrite: "{count} corrected",
   merge: "{count} merged",
@@ -56,7 +56,6 @@ const COUNT_TEXT: Record<MemoryChange["op"] | "refused" | "skills", UiText> = {
   pin: "{count} pinned",
   unpin: "{count} unpinned",
   refused: "{count} refused",
-  skills: "{count} skills written",
 };
 
 /** The last run's result in the UI language; runs from before the server kept counts show its English line. */
@@ -66,6 +65,14 @@ const runSummary = (lastRun: NonNullable<MemoryDreams["lastRun"]>) => {
   const parts = Object.entries(COUNT_TEXT).flatMap(([key, text]) =>
     counts[key] === undefined ? [] : [t(text, { count: counts[key] })],
   );
+  if (counts.skills !== undefined)
+    parts.push(
+      plural(counts.skills, {
+        en: ["{count} skill written", "{count} skills written"],
+        uk: ["записано навичок: {count}", "записано навичок: {count}", "записано навичок: {count}"],
+        ru: ["записано навыков: {count}", "записано навыков: {count}", "записано навыков: {count}"],
+      }),
+    );
   return parts.length > 0 ? parts.join(", ") : t("No changes");
 };
 

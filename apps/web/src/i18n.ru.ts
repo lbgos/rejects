@@ -301,7 +301,6 @@ export const RU = {
   "{count} deleted": "удалено: {count}",
   "{count} expired": "просрочено: {count}",
   "{count} refused": "отклонено: {count}",
-  "{count} skills written": "записано навыков: {count}",
 
   Language: "Язык",
   "Browser ({language})": "Как в браузере ({language})",
