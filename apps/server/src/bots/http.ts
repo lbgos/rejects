@@ -44,18 +44,17 @@ import type { HttpClient } from "effect/http";
 const failure = (status: number, message: string) =>
   HttpServerResponse.jsonUnsafe({ error: { message } }, { status });
 
-export const route = <
-  P extends Schema.Top,
-  S extends Schema.Top,
-  E extends { readonly _tag: string; readonly message: string; readonly reason?: string },
->(
-  endpoint: {
-    readonly path: HttpRouter.PathInput;
-    readonly payload: P;
-    readonly success: S;
-    readonly scope: AuthEnvironmentScope;
-  },
-  /** `scopes` are the caller's, for handlers that do more for a client that may write. */
+type Endpoint<P extends Schema.Top, S extends Schema.Top> = {
+  readonly path: HttpRouter.PathInput;
+  readonly payload: P;
+  readonly success: S;
+  readonly scope: AuthEnvironmentScope;
+};
+type RouteError = { readonly _tag: string; readonly message: string; readonly reason?: string };
+
+/** `scopes` are the caller's, for handlers that do more for a client that may write. */
+export const routeWithScopes = <P extends Schema.Top, S extends Schema.Top, E extends RouteError>(
+  endpoint: Endpoint<P, S>,
   handle: (
     payload: P["Type"],
     scopes: ReadonlyArray<AuthEnvironmentScope>,
@@ -89,6 +88,12 @@ export const route = <
     ),
   );
 };
+
+/** Calls `handle` with the payload alone, so a point-free method's optional parameters stay unset. */
+export const route = <P extends Schema.Top, S extends Schema.Top, E extends RouteError>(
+  endpoint: Endpoint<P, S>,
+  handle: (payload: P["Type"]) => Effect.Effect<S["Type"], E>,
+) => routeWithScopes(endpoint, (payload) => handle(payload));
 
 export const layer = Layer.unwrap(
   Effect.gen(function* () {
@@ -137,7 +142,7 @@ export const layer = Layer.unwrap(
         },
         ({ endpoint }) => push.unsubscribe(endpoint).pipe(Effect.as({})),
       ),
-      route(BOTS_ENDPOINTS.list, ({ viewing, left, client = "", timeZone }, scopes) =>
+      routeWithScopes(BOTS_ENDPOINTS.list, ({ viewing, left, client = "", timeZone }, scopes) =>
         Effect.all([
           viewing ? notifications.seen(viewing, true, client) : Effect.void,
           left ? notifications.seen(left, false, client) : Effect.void,

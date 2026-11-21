@@ -162,7 +162,7 @@ const make = Effect.gen(function* () {
     },
     Effect.mapError((cause) => (isServiceError(cause) ? cause : new BotServiceError({ cause }))),
   );
-  const create = (raw: BotInput, builtin = false) =>
+  const save = (raw: BotInput, builtin: boolean) =>
     lock.withPermit(
       Effect.gen(function* () {
         const input = builtin ? raw : yield* validate(raw);
@@ -240,7 +240,7 @@ const make = Effect.gen(function* () {
   // No provider turn starts here. The one shipped schedule is the watch toggle.
   if (!(yield* store.stewardRemoved)) {
     if (!(yield* store.get(STEWARD_THREAD_ID)))
-      yield* create(
+      yield* save(
         {
           name: STEWARD_NAME,
           persona: STEWARD_PERSONA,
@@ -282,7 +282,8 @@ const make = Effect.gen(function* () {
       });
   }
   return BotService.of({
-    create,
+    // Point-free callers can pass extra arguments; they must never reach `builtin`.
+    create: (input) => save(input, false),
     clear: (threadId) =>
       lock.withPermit(
         Effect.gen(function* () {
