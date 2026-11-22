@@ -482,7 +482,7 @@ describe("MessagesTimeline work rows", () => {
     );
     await vi.waitFor(() =>
       expect(screen.container.querySelector("[data-bot-typing]")?.textContent).toMatch(
-        /Working for \d/,
+        /Working\s*·\s*\d/,
       ),
     );
   });
