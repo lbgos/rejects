@@ -9,7 +9,9 @@ import type {
 } from "@t3tools/contracts";
 import { EnvironmentHttpCommonError, PRIMARY_LOCAL_ENVIRONMENT_ID } from "@t3tools/contracts";
 import type { EnvironmentHttpCommonError as EnvironmentHttpCommonErrorType } from "@t3tools/contracts";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { HttpClientError } from "effect/http";
 
@@ -90,6 +92,20 @@ export class PrimaryEnvironmentAuthSessionTimeoutError extends Schema.TaggedErro
     return "Timed out waiting for authenticated session after bootstrap.";
   }
 }
+
+/** The server took the connection and never answered the session check. */
+class PrimaryEnvironmentUnreachableError extends Schema.TaggedError<PrimaryEnvironmentUnreachableError>()(
+  "PrimaryEnvironmentUnreachableError",
+  {
+    timeoutMs: Schema.Number,
+  },
+) {
+  override get message(): string {
+    return "The server did not answer. Check that it is running and reachable, then try again.";
+  }
+}
+
+const isPrimaryEnvironmentUnreachableError = Schema.is(PrimaryEnvironmentUnreachableError);
 
 export class PrimaryEnvironmentPairingCredentialRequiredError extends Schema.TaggedError<PrimaryEnvironmentPairingCredentialRequiredError>()(
   "PrimaryEnvironmentPairingCredentialRequiredError",
@@ -172,15 +188,30 @@ function getDesktopBootstrapCredential(): string | null {
     : null;
 }
 
+// The app waits on this before it draws anything, so a request that never settles would hold the
+// splash for good. Past this, the route's error page offers the retry.
+const SESSION_REQUEST_TIMEOUT_MS = 20_000;
+
 export async function fetchSessionState(): Promise<AuthSessionState> {
   return retryTransientBootstrap(async () => {
     try {
       return await runPrimaryHttp(
         PrimaryEnvironmentHttpClient.pipe(
           Effect.flatMap((client) => client.auth.session({ headers: {} })),
+          Effect.timeoutOption(Duration.millis(SESSION_REQUEST_TIMEOUT_MS)),
+          Effect.flatMap(
+            Option.match({
+              onNone: () =>
+                Effect.fail(
+                  new PrimaryEnvironmentUnreachableError({ timeoutMs: SESSION_REQUEST_TIMEOUT_MS }),
+                ),
+              onSome: (session) => Effect.succeed(session),
+            }),
+          ),
         ),
       );
     } catch (error) {
+      if (isPrimaryEnvironmentUnreachableError(error)) throw error;
       throw PrimaryEnvironmentRequestError.fromCause({
         operation: "fetch-session-state",
         cause: error,
