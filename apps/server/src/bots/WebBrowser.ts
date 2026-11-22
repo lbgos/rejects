@@ -34,6 +34,7 @@ const Settings = Schema.Struct({
   trawlUrl: Schema.optional(Schema.String),
   firecrawlUrl: Schema.optional(Schema.String),
   firecrawlKey: Schema.optional(Schema.String),
+  firecrawlSearch: Schema.optional(Schema.Boolean),
   bots: Schema.optional(Schema.Array(Schema.String)),
 });
 const decodeSettings = Schema.decodeUnknownEffect(Schema.fromJsonString(Settings));
@@ -383,9 +384,10 @@ const make = Effect.gen(function* () {
     Effect.mapError(() => failure("Web tools are not set up on this server (camofox.json).")),
   );
   const allowed = Effect.fn("WebBrowser.allowed")(function* (botThreadId: ThreadId) {
-    const { bots } = yield* readSettings;
-    if (bots !== undefined && !bots.includes(botThreadId))
+    const settings = yield* readSettings;
+    if (settings.bots !== undefined && !settings.bots.includes(botThreadId))
       return yield* failure("Web tools are off for this bot on this server.");
+    return settings;
   });
 
   const call = Effect.fn("WebBrowser.call")(function* <A>(
@@ -742,10 +744,10 @@ const make = Effect.gen(function* () {
 
   return WebBrowser.of({
     search: Effect.fn("WebBrowser.search")(function* (botThreadId, query, options) {
-      yield* allowed(botThreadId);
+      const { firecrawlSearch } = yield* allowed(botThreadId);
       const userId = userFor(botThreadId);
       textPages.delete(userId);
-      if (options?.firecrawl) {
+      if (options?.firecrawl ?? firecrawlSearch) {
         const results = yield* searchFirecrawl(query);
         if (results) return results;
       }

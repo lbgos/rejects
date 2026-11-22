@@ -601,17 +601,17 @@ it.effect("camofox.json's bots list keeps the Camoufox tools to the bots it name
         Effect.undefined,
         Effect.succeed(web),
       ).pipe(Effect.map((scope) => scope!.allowedToolNames));
-    const camofox = (set: ReadonlySet<string>) =>
-      ["web_search", "web_browse"].filter((tool) => set.has(tool));
-    assert.deepEqual(camofox(yield* tools("study", undefined)), ["web_search", "web_browse"]);
+    const webTools = ["web_search", "web_browse", "web_read"];
+    const camofox = (set: ReadonlySet<string>) => webTools.filter((tool) => set.has(tool));
+    const readOnly = botToolNames({ allowed: ["web_search", "web_read"] });
+    assert.deepEqual(camofox(readOnly), ["web_search", "web_read"]);
+    assert.deepEqual(camofox(botToolNames({ allowed: ["web_search"], web: true })), ["web_search"]);
+    assert.deepEqual(camofox(yield* tools("study", undefined)), webTools);
     assert.deepEqual(camofox(yield* tools("study", ["fable"])), []);
-    assert.deepEqual(camofox(yield* tools("fable", ["fable"])), ["web_search", "web_browse"]);
-    // Everything else in the bot's set stays as it was.
+    assert.deepEqual(camofox(yield* tools("fable", ["fable"])), webTools);
     assert.deepEqual(
       [...(yield* tools("study", ["fable"]))],
-      [...(yield* tools("study", undefined))].filter(
-        (tool) => tool !== "web_search" && tool !== "web_browse",
-      ),
+      [...(yield* tools("study", undefined))].filter((tool) => !webTools.includes(tool)),
     );
     assert.deepEqual(
       [...botToolNames({ standalone: true, web: false })],

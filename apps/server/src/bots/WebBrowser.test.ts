@@ -487,7 +487,12 @@ const withReader = (
   {
     tabUrl,
     listing = Effect.void,
-  }: { readonly tabUrl?: string; readonly listing?: Effect.Effect<void> } = {},
+    firecrawlSearch,
+  }: {
+    readonly tabUrl?: string;
+    readonly listing?: Effect.Effect<void>;
+    readonly firecrawlSearch?: boolean;
+  } = {},
 ) => {
   const firecrawl: Array<{
     readonly path: string;
@@ -533,6 +538,7 @@ const withReader = (
           url: "http://camofox.test",
           accessKey: "key",
           firecrawlUrl,
+          firecrawlSearch,
           firecrawlKey: "fc-key",
         }),
       );
@@ -636,6 +642,33 @@ it.effect(
         }),
       );
     }),
+);
+
+it.effect("a configured search prefers Firecrawl unless the caller needs the browser", () =>
+  Effect.gen(function* () {
+    const reader = withReader(
+      FIRECRAWL,
+      () => searched([{ url: STORY, title: "Kernel release" }]),
+      { firecrawlSearch: true },
+    );
+    yield* reader.run(
+      Effect.gen(function* () {
+        const web = yield* WebBrowser.WebBrowser;
+        const bot = ThreadId.make("reader");
+        const found = yield* web.search(bot, "kernel");
+        assert.include(found.snapshot, "1. Kernel release");
+        assert.deepEqual(
+          reader.firecrawl.map((request) => request.path),
+          ["/v2/search"],
+        );
+        assert.deepEqual(reader.camofox, []);
+
+        const inTab = yield* web.search(bot, "kernel", { firecrawl: false });
+        assert.include(inTab.snapshot, "[e1]");
+        assert.lengthOf(reader.firecrawl, 1);
+      }),
+    );
+  }),
 );
 
 it.effect(
