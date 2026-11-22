@@ -657,7 +657,10 @@ it.effect("a configured search prefers Firecrawl unless the caller needs the bro
         const bot = ThreadId.make("reader");
         const found = yield* web.search(bot, "kernel");
         assert.include(found.snapshot, "1. Kernel release");
-        assert.deepEqual(reader.firecrawl.map((request) => request.path), ["/v2/search"]);
+        assert.deepEqual(
+          reader.firecrawl.map((request) => request.path),
+          ["/v2/search"],
+        );
         assert.deepEqual(reader.camofox, []);
 
         const inTab = yield* web.search(bot, "kernel", { firecrawl: false });
