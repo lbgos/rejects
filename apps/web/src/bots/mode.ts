@@ -16,7 +16,9 @@ export function useBotsMode(): { readonly active: boolean; readonly home: boolea
   const bot = useBot(threadRef?.environmentId ?? null, threadRef?.threadId ?? null);
   const active = home || pathname === "/connections" || bot !== undefined;
   const modal = isAppModalPage(pathname);
-  const [underModal, setUnderModal] = useState(active);
+  // A page that loads straight into Settings or Usage has no page under it yet; the app's home
+  // is the bots list, so it is drawn as part of the bots app.
+  const [underModal, setUnderModal] = useState(active || modal);
   if (!modal && underModal !== active) setUnderModal(active);
   return { active: modal ? underModal : active, home };
 }
