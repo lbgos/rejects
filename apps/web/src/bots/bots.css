@@ -1004,6 +1004,7 @@ html[data-bots-app]:has(
     section
     > [data-settings-scroll-target]:not([data-slot]) {
     min-height: 0;
+    margin-block-end: 0;
     padding-inline: 1rem;
   }
   :root[data-bots-app] [data-settings-page-scroll] section > [data-settings-scroll-target] h2 {
