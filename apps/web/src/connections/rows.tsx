@@ -1,6 +1,6 @@
 import { ChevronRightIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import { SHEET_LIST } from "../bots/panelStyles";
+import { SECTION_TITLE, SHEET_LIST } from "../bots/panelStyles";
 import { toastManager } from "../components/ui/toast";
 import { t, uiLocales } from "../i18n";
 import { cn } from "../lib/utils";
@@ -65,14 +65,10 @@ export function Section({
 }) {
   return (
     <section className="pt-5">
-      {title ? (
-        <h2 className="px-4 pb-1 text-xs font-medium text-muted-foreground max-md:px-5 max-md:text-bot-heading max-md:font-bold max-md:text-foreground">
-          {title}
-        </h2>
-      ) : null}
+      {title ? <h2 className={cn("px-4 pb-1.5 max-md:px-9", SECTION_TITLE)}>{title}</h2> : null}
       <ul className={SHEET_LIST}>{children}</ul>
       {footer ? (
-        <p className="px-4 pt-1.5 text-xs break-words text-muted-foreground max-md:px-5 max-md:text-bot-footnote">
+        <p className="px-4 pt-1.5 text-xs break-words text-muted-foreground max-md:px-9 max-md:text-bot-footnote">
           {footer}
         </p>
       ) : null}

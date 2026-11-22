@@ -40,6 +40,7 @@ import {
   ROW_META,
   ROW_TEXT,
   SECTION_HEADER,
+  SECTION_TITLE,
   SHEET_LIST,
 } from "./panelStyles";
 import { BotDialog } from "./BotDialog";
@@ -105,12 +106,13 @@ function BotSheet({ target, panel }: { target: ScopedThreadRef; panel: BotPanel 
         side="bottom"
         aria-label={bot ? `${bot.name}: ${t(PANEL_TITLE[panel])}` : t("Bot panel")}
       >
-        <div className="mt-1 flex h-11 shrink-0 items-center px-3">
-          <Button variant="ghost" size="icon" aria-label={t("Back")} onClick={closeBotPanel}>
+        <div className="mt-1 flex h-11 shrink-0 items-center px-2">
+          <Button variant="ghost" className="max-w-[70%]" onClick={closeBotPanel}>
             <ChevronLeftIcon />
+            <span className="truncate text-bot-body">{bot?.name ?? t("Back")}</span>
           </Button>
         </div>
-        <h2 className="shrink-0 px-5 pt-1 pb-2 text-bot-title font-bold">
+        <h2 className="shrink-0 px-5 pt-1 pb-1 text-bot-title font-bold">
           {t(PANEL_TITLE[panel])}
         </h2>
         <div className="min-h-0 flex-1 overflow-y-auto pb-safe">
@@ -135,16 +137,10 @@ export function BotSidePanel({ target }: { target: ScopedThreadRef }) {
         open === "screen" ? "w-2xl" : "w-md",
       )}
     >
-      <div className="flex flex-col gap-2.5 border-b px-4 pt-3 pb-3">
-        <div className="flex items-center gap-2">
-          <span className="min-w-0 flex-1 truncate text-sm font-medium">{bot.name}</span>
-          <Button size="icon-xs" variant="ghost" aria-label={t("Close")} onClick={closeBotPanel}>
-            <XIcon />
-          </Button>
-        </div>
+      <div className="flex h-(--workspace-topbar-height) shrink-0 items-center gap-2 border-b ps-3 pe-2">
         <ToggleGroup
           aria-label={t("Bot panel")}
-          className="w-full *:flex-1"
+          className="min-w-0 flex-1 *:flex-1"
           value={[open]}
           onValueChange={(values) => {
             const next = PANELS.find((id) => id === values[0]);
@@ -157,6 +153,9 @@ export function BotSidePanel({ target }: { target: ScopedThreadRef }) {
             </Toggle>
           ))}
         </ToggleGroup>
+        <Button size="icon-xs" variant="ghost" aria-label={t("Close")} onClick={closeBotPanel}>
+          <XIcon />
+        </Button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <BotPanelContent target={target} panel={open} />
@@ -374,16 +373,14 @@ function NoteList({
   const searching = query.trim() !== "";
   return (
     <section>
-      <div className="flex items-baseline justify-between gap-3 px-4 pt-3 pb-1.5 max-md:px-5 max-md:pt-4">
-        <h3 className="truncate text-sm font-medium max-md:text-bot-heading max-md:font-bold">
-          {retired ? t("Removed") : title}
-        </h3>
+      <div className="flex items-baseline justify-between gap-3 px-4 pt-3 pb-1.5 max-md:ps-9 max-md:pe-5 max-md:pt-5">
+        <h3 className={SECTION_TITLE}>{retired ? t("Removed") : title}</h3>
         <Button variant="ghost-muted" size="xs" onClick={() => showRetired(!retired)}>
           {retired ? t("Back to notes") : scope}
         </Button>
       </div>
       {total >= SEARCH_FROM || searching ? (
-        <div className="px-4 pb-1.5 max-md:px-5">
+        <div className="px-4 pb-1.5">
           <Input
             type="search"
             size="compact"
@@ -424,7 +421,9 @@ function NoteList({
                   >
                     {note.text}
                   </div>
-                  <div className={cn("line-clamp-2 break-words", ROW_META)}>{noteMeta(note)}</div>
+                  {noteMeta(note) ? (
+                    <div className={cn("line-clamp-2 break-words", ROW_META)}>{noteMeta(note)}</div>
+                  ) : null}
                 </button>
                 {retired ? (
                   <Button

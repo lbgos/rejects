@@ -148,7 +148,6 @@ export const RU = {
   "Skills it wrote": "Навыки, которые бот написал",
   "Remove skill {name}": "Удалить навык {name}",
   Model: "Модель",
-  Models: "Модели",
   Light: "Лёгкий",
   "DeepSeek or GLM, for simple jobs": "DeepSeek или GLM, для простых задач",
   Opus: "Opus",
@@ -165,7 +164,6 @@ export const RU = {
   "{tokens}/day; cache reads at 1/10": "{tokens}/день; чтение из кеша считается как 1/10",
   "Local network access": "Доступ к локальной сети",
   "IPv4 or CIDR with a TCP port, one per line": "IPv4 или CIDR с TCP-портом, по одному в строке",
-  "Not an address: {line}": "Не адрес: {line}",
   "Up to {count} entries": "До {count} записей",
 
   "Bot panel": "Панель бота",
@@ -532,10 +530,17 @@ export const RU = {
   "The bot carries on without it": "Бот продолжает без этого",
   Details: "Подробнее",
   Dismiss: "Закрыть",
+  "Last check": "Последняя проверка",
   "Open settings": "Открыть настройки",
   "{bot} can’t reply: its model is not set up on this server.":
     "{bot} не может ответить: его модель не настроена на этом сервере.",
   "{bot} could not finish this reply.": "{bot} не смог завершить этот ответ.",
+  "Add a port, e.g. {example}": "Добавьте порт, например {example}",
+  "{line} is not a private address with a port, e.g. 192.168.1.10:22":
+    "{line}: это не частный адрес с портом, например 192.168.1.10:22",
+  "Model and limits": "Модель и лимиты",
+  Preset: "Набор",
+  Advanced: "Дополнительно",
   "Not delivered": "Не доставлено",
   "Queued for this turn": "В очереди на этот ход",
   "Offline. Reconnects when the network is back.":

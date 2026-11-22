@@ -13,6 +13,7 @@ import {
 } from "../components/chat/ProviderModelPicker";
 import { SETTINGS_PICKER_TRIGGER_CLASSNAME } from "../components/settings/settingsLayout";
 import { Button } from "../components/ui/button";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../components/ui/collapsible";
 import { Switch } from "../components/ui/switch";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { useEnvironmentSettings } from "../hooks/useSettings";
@@ -27,7 +28,7 @@ import {
 import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../state/server";
 import { usePreparedConnection } from "../state/session";
 import { botRequest } from "./http";
-import { EMPTY_NOTE, ROW_META, ROW_TEXT, SHEET_LIST } from "./panelStyles";
+import { EMPTY_NOTE, ROW_META, ROW_TEXT, SECTION_HEADER, SHEET_LIST } from "./panelStyles";
 import { formatWakeIn, messageTimeLabel } from "./presentation";
 import { notesChanged, readBots, refreshBots } from "./state";
 
@@ -130,6 +131,7 @@ export function NightlyCheck({ environmentId }: { environmentId: EnvironmentId }
       },
     );
   const lastRun = dreams?.lastRun;
+  const errors = lastRun?.errors ?? [];
   const status = running
     ? t("Checking now")
     : [
@@ -172,11 +174,7 @@ export function NightlyCheck({ environmentId }: { environmentId: EnvironmentId }
 
   return (
     <section>
-      <div className="flex items-baseline justify-between gap-3 px-4 pt-3 pb-1.5 max-md:px-5 max-md:pt-4">
-        <h3 className="truncate text-sm font-medium max-md:text-bot-heading max-md:font-bold">
-          {t("Nightly check")}
-        </h3>
-      </div>
+      <h3 className={SECTION_HEADER}>{t("Nightly check")}</h3>
       <ul className={SHEET_LIST}>
         <li className={ROW}>
           <div className="min-w-0 flex-1">
@@ -184,7 +182,7 @@ export function NightlyCheck({ environmentId }: { environmentId: EnvironmentId }
             <div className={cn("line-clamp-2", ROW_META)}>{dreams ? status : t("Loading…")}</div>
           </div>
           <Button
-            variant="outline"
+            variant="ghost"
             size="xs"
             disabled={!dreams || running}
             onClick={() =>
@@ -233,11 +231,45 @@ export function NightlyCheck({ environmentId }: { environmentId: EnvironmentId }
             </div>
           ) : null}
         </li>
-        {(lastRun?.errors ?? []).map((error) => (
-          <li key={error} className={cn(ROW, ROW_META, "text-destructive-foreground")}>
-            {error}
+        {errors.length > 0 ? (
+          <li>
+            {/* One line for the whole run; what failed is a tap away. */}
+            <Collapsible>
+              <CollapsibleTrigger className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-accent max-md:px-5 max-md:py-2.75 max-md:hover:bg-transparent">
+                <span
+                  className={cn(
+                    "min-w-0 flex-1",
+                    ROW_META,
+                    running ? "text-muted-foreground" : "text-destructive-foreground",
+                  )}
+                >
+                  {running ? `${t("Last check")}: ` : null}
+                  {plural(errors.length, {
+                    en: ["{count} check did not finish", "{count} checks did not finish"],
+                    uk: [
+                      "{count} перевірка не завершилася",
+                      "{count} перевірки не завершилися",
+                      "{count} перевірок не завершилося",
+                    ],
+                    ru: [
+                      "{count} проверка не завершилась",
+                      "{count} проверки не завершились",
+                      "{count} проверок не завершилось",
+                    ],
+                  })}
+                </span>
+                <span className={cn("shrink-0", ROW_META)}>{t("Details")}</span>
+              </CollapsibleTrigger>
+              <CollapsiblePanel animate={false}>
+                <ul className={cn("space-y-1 px-4 pb-3 max-md:px-5", ROW_META)}>
+                  {errors.map((error) => (
+                    <li key={error}>{error}</li>
+                  ))}
+                </ul>
+              </CollapsiblePanel>
+            </Collapsible>
           </li>
-        ))}
+        ) : null}
         {dreams?.changes.map((change) => {
           const removed = change.after.length === 0;
           const shown = removed ? change.before : change.after;

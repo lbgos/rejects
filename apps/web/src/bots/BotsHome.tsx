@@ -1,7 +1,7 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { PlusIcon, SearchIcon, SquarePenIcon } from "lucide-react";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "../components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../components/ui/input-group";
 import { useMediaQuery } from "../hooks/useMediaQuery";
@@ -12,30 +12,19 @@ import { usePrimaryEnvironmentId } from "../state/environments";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../workspaceTitlebar";
 import { BotList } from "./BotList";
 import { EnvironmentConnecting } from "./EnvironmentConnecting";
+import { FirstRun, needsFirstRun } from "./FirstRun";
 import { botActivityAt } from "./presentation";
-import { useBots } from "./state";
+import { useBots, useBotsLoaded } from "./state";
 import { openBotDialog } from "./ui";
+import { useOnline } from "./useOnline";
 import { useVisualViewportHeight } from "./useVisualViewportHeight";
-
-const subscribeOnline = (notify: () => void) => {
-  window.addEventListener("online", notify);
-  window.addEventListener("offline", notify);
-  return () => {
-    window.removeEventListener("online", notify);
-    window.removeEventListener("offline", notify);
-  };
-};
 
 export function BotsHome({ thread }: { thread?: string | undefined }) {
   const environmentId = usePrimaryEnvironmentId();
   const bots = useBots(environmentId);
   const navigate = useNavigate();
   const phone = useMediaQuery("max-md");
-  const online = useSyncExternalStore(
-    subscribeOnline,
-    () => navigator.onLine,
-    () => true,
-  );
+  const online = useOnline();
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
   // While searching, the page fits above the keyboard so the last results can scroll into view.
@@ -48,8 +37,10 @@ export function BotsHome({ thread }: { thread?: string | undefined }) {
         ?.source,
     );
   const requested = bots.find((b) => b.threadId === thread);
+  // Until setup has made the main bot, the home page is setup: nothing is opened in its place.
+  const setup = useBotsLoaded(environmentId) && needsFirstRun(bots);
   const target =
-    requested || phone
+    requested || phone || setup
       ? requested
       : bots.toSorted((a, b) => lastMessageAt(b) - lastMessageAt(a))[0];
   const targetThreadId = target?.threadId;
@@ -63,6 +54,7 @@ export function BotsHome({ thread }: { thread?: string | undefined }) {
       });
   }, [environmentId, navigate, targetThreadId]);
   if (!environmentId) return <EnvironmentConnecting />;
+  if (setup && !requested) return <FirstRun environmentId={environmentId} />;
   if (!phone) return target ? null : <NoBots environmentId={environmentId} />;
   return (
     <div
@@ -97,7 +89,7 @@ export function BotsHome({ thread }: { thread?: string | undefined }) {
       <div data-pull-area className="relative flex min-h-0 flex-1 flex-col">
         {/* Offline shares the title's line, so losing the network never moves the list. */}
         {searching ? null : (
-          <div className="flex shrink-0 items-baseline justify-between px-5 pt-1 pb-2">
+          <div className="flex shrink-0 items-baseline justify-between px-5 pt-5 pb-2">
             <h1 className="text-bot-title font-bold">{t("Bots")}</h1>
             {online ? null : (
               <p className="text-bot-footnote text-muted-foreground">{t("Offline")}</p>

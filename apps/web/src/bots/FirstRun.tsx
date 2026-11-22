@@ -10,7 +10,8 @@ import {
 } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigate } from "@tanstack/react-router";
-import { type ReactNode, useState } from "react";
+import { ChevronLeftIcon } from "lucide-react";
+import { type ComponentProps, type ReactNode, useState } from "react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { toastManager } from "../components/ui/toast";
@@ -42,6 +43,7 @@ type Blocker = NonNullable<ProviderChoice["blocker"]>;
 
 const COPY = {
   uk: {
+    step: "Крок {n} з {of}",
     model: "Модель для ботів",
     endpointRow: "Ключ API та адреса",
     noSandbox: "На цій машині немає пісочниці: боти працюють без терміналу.",
@@ -79,6 +81,7 @@ const COPY = {
     failed: "Не вдалося налаштувати. Спробуйте ще раз.",
   },
   ru: {
+    step: "Шаг {n} из {of}",
     model: "Модель для ботов",
     endpointRow: "Ключ API и адрес",
     noSandbox: "На этой машине нет песочницы: боты работают без терминала.",
@@ -116,6 +119,7 @@ const COPY = {
     failed: "Не удалось настроить. Попробуйте ещё раз.",
   },
   en: {
+    step: "Step {n} of {of}",
     model: "Model for your bots",
     endpointRow: "API key and endpoint",
     noSandbox: "No sandbox on this machine: bots run without a shell.",
@@ -163,6 +167,76 @@ export const needsFirstRun = (bots: ReadonlyArray<BotSummary>) =>
 
 type Step = "model" | "endpoint" | "telegram" | "cortex" | "experience";
 
+/** The endpoint form is part of choosing a model, so both count as the second step. */
+const STEP_NUMBER: Record<Step, number> = {
+  model: 2,
+  endpoint: 2,
+  telegram: 3,
+  cortex: 4,
+  experience: 5,
+};
+const STEP_COUNT = 5;
+
+/**
+ * One step of setup on its own screen: Back and the step count in the bar, the step's question as
+ * the title, its rows in a group. A phone gives it the whole Bots tab; wider screens centre it in
+ * the main pane.
+ */
+function StepPage({
+  title,
+  step,
+  stepLine,
+  backLabel,
+  onBack,
+  children,
+}: {
+  title: string;
+  step: number;
+  stepLine: string;
+  backLabel?: string;
+  onBack?: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      data-bots-setup
+      data-bot-page
+      className="flex h-full min-h-0 flex-col pt-safe text-foreground"
+    >
+      <div className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col md:justify-center md:pb-24">
+        <div className="mt-1 flex h-11 shrink-0 items-center justify-between ps-2 pe-5 md:px-2">
+          {onBack ? (
+            <Button variant="ghost" onClick={onBack}>
+              <ChevronLeftIcon />
+              <span className="max-md:text-bot-body">{backLabel}</span>
+            </Button>
+          ) : (
+            <span />
+          )}
+          <span className="text-xs text-muted-foreground tabular-nums max-md:text-bot-footnote">
+            {stepLine.replace("{n}", String(step)).replace("{of}", String(STEP_COUNT))}
+          </span>
+        </div>
+        <h1 className="shrink-0 px-4 pt-1 text-lg font-semibold text-balance max-md:px-5 max-md:text-bot-heading max-md:font-bold">
+          {title}
+        </h1>
+        <div className="min-h-0 overflow-y-auto pb-safe md:flex-none">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+/** A step's way forward: one full-width button under its group. */
+function StepAction({ children, ...props }: ComponentProps<typeof Button>) {
+  return (
+    <div className="px-4 pt-4">
+      <Button className="w-full" size="pill" {...props}>
+        {children}
+      </Button>
+    </div>
+  );
+}
+
 /** Language, then the model, an optional Telegram bot and Cortex, then the main bot. */
 export function FirstRun({ environmentId }: { environmentId: EnvironmentId }) {
   const [language, setLanguage] = useState<UiLanguage | null>(null);
@@ -170,6 +244,7 @@ export function FirstRun({ environmentId }: { environmentId: EnvironmentId }) {
   const [readiness, setReadiness] = useState<BotReadiness | null>(null);
   const [selection, setSelection] = useState<ModelSelection | undefined>(undefined);
   const [busy, setBusy] = useState<BotPreferences["experience"] | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
   const navigate = useNavigate();
 
   const pickLanguage = (picked: UiLanguage) => {
@@ -184,6 +259,7 @@ export function FirstRun({ environmentId }: { environmentId: EnvironmentId }) {
   const start = async (picked: UiLanguage, experience: (typeof EXPERIENCES)[number]) => {
     if (busy) return;
     setBusy(experience);
+    setFailure(null);
     try {
       const main = await botRequest(environmentId, BOTS_ENDPOINTS.setup, {
         language: picked,
@@ -205,34 +281,41 @@ export function FirstRun({ environmentId }: { environmentId: EnvironmentId }) {
       // The reload keeps the chat's address and draws it in the picked language.
       if (picked !== uiLanguage) setUiLanguageChoice(picked);
     } catch {
-      toastManager.add({ type: "error", title: COPY[picked].failed });
+      // The failure stays beside the choice that caused it, where the retry is.
+      setFailure(COPY[picked].failed);
       setBusy(null);
     }
   };
 
   if (language === null)
     return (
-      <Section title="Мова · Язык · Language">
-        {LANGUAGES.map(({ id, label }) => (
-          <li key={id}>
-            <Row title={label} value="" onClick={() => pickLanguage(id)} />
-          </li>
-        ))}
-      </Section>
+      <StepPage title="Мова · Язык · Language" step={1} stepLine="{n} / {of}">
+        <Section>
+          {LANGUAGES.map(({ id, label }) => (
+            <li key={id}>
+              <Row title={label} value="" onClick={() => pickLanguage(id)} />
+            </li>
+          ))}
+        </Section>
+      </StepPage>
     );
   const copy = COPY[language];
-  const back = (to: Step | null) => (
-    <li>
-      <Row
-        title={to === null ? copy.backToLanguages : copy.back}
-        value=""
-        onClick={() => (to === null ? setLanguage(null) : setStep(to))}
-      />
-    </li>
+  const page = (title: string, back: Step | null, children: ReactNode) => (
+    <StepPage
+      title={title}
+      step={STEP_NUMBER[step]}
+      stepLine={copy.step}
+      backLabel={copy.back}
+      onBack={() => (back === null ? setLanguage(null) : setStep(back))}
+    >
+      {children}
+    </StepPage>
   );
   switch (step) {
     case "model":
-      return (
+      return page(
+        copy.model,
+        null,
         <ModelStep
           environmentId={environmentId}
           copy={copy}
@@ -242,11 +325,12 @@ export function FirstRun({ environmentId }: { environmentId: EnvironmentId }) {
             setStep("telegram");
           }}
           onEndpoint={() => setStep("endpoint")}
-          back={back(null)}
-        />
+        />,
       );
     case "endpoint":
-      return (
+      return page(
+        copy.endpoint,
+        "model",
         <EndpointStep
           environmentId={environmentId}
           copy={copy}
@@ -254,50 +338,55 @@ export function FirstRun({ environmentId }: { environmentId: EnvironmentId }) {
             setSelection(picked);
             setStep("telegram");
           }}
-          back={back("model")}
-        />
+        />,
       );
     case "telegram":
-      return (
-        <TelegramStep
-          environmentId={environmentId}
-          copy={copy}
-          onNext={() => setStep("cortex")}
-          back={back("model")}
-        />
+      return page(
+        copy.telegram,
+        "model",
+        <TelegramStep environmentId={environmentId} copy={copy} onNext={() => setStep("cortex")} />,
       );
     case "cortex": {
       const on = readiness?.checks.some((check) => check.id === "cortex" && check.state === "ok");
-      return (
-        <Section title={copy.cortex} footer={copy.cortexFooter}>
-          {on ? (
-            <li className={FIELD_ROW}>
-              <span>Cortex</span>
-              <span className="text-muted-foreground">{copy.cortexOn}</span>
-            </li>
-          ) : (
-            <li>
-              <Row
-                title={copy.cortexSetUp}
-                value=""
-                onClick={() => window.open(CORTEX_DOC, "_blank", "noopener,noreferrer")}
-              />
-            </li>
-          )}
-          <li>
-            <Row
-              title={on ? copy.next : copy.skip}
-              value=""
-              onClick={() => setStep("experience")}
-            />
-          </li>
-          {back("telegram")}
-        </Section>
+      return page(
+        copy.cortex,
+        "telegram",
+        <>
+          <Section footer={copy.cortexFooter}>
+            {on ? (
+              <li className={FIELD_ROW}>
+                <span>Cortex</span>
+                <span className="text-muted-foreground">{copy.cortexOn}</span>
+              </li>
+            ) : (
+              <li>
+                <Row
+                  title={copy.cortexSetUp}
+                  value=""
+                  onClick={() => window.open(CORTEX_DOC, "_blank", "noopener,noreferrer")}
+                />
+              </li>
+            )}
+          </Section>
+          <StepAction onClick={() => setStep("experience")}>
+            {on ? copy.next : copy.skip}
+          </StepAction>
+        </>,
       );
     }
     case "experience":
-      return (
-        <Section title={copy.question}>
+      return page(
+        copy.question,
+        "cortex",
+        <Section
+          footer={
+            failure ? (
+              <span role="alert" className="text-destructive-foreground">
+                {failure}
+              </span>
+            ) : undefined
+          }
+        >
           {EXPERIENCES.map((experience) => (
             <li key={experience}>
               <Row
@@ -307,8 +396,7 @@ export function FirstRun({ environmentId }: { environmentId: EnvironmentId }) {
               />
             </li>
           ))}
-          {back("cortex")}
-        </Section>
+        </Section>,
       );
   }
 }
@@ -321,14 +409,12 @@ function ModelStep({
   readiness,
   onPick,
   onEndpoint,
-  back,
 }: {
   environmentId: EnvironmentId;
   copy: Copy;
   readiness: BotReadiness | null;
   onPick: (selection: ModelSelection) => void;
   onEndpoint: () => void;
-  back: ReactNode;
 }) {
   const providers = useAtomValue(serverEnvironment.providersValueAtom(environmentId));
   const choices =
@@ -340,7 +426,7 @@ function ModelStep({
         ? copy.brokenSandbox
         : undefined;
   return (
-    <Section title={copy.model} footer={footer}>
+    <Section footer={footer}>
       {choices === null ? (
         <li className={FIELD_ROW}>
           <span className="text-muted-foreground">{copy.blockers.checking}</span>
@@ -368,7 +454,6 @@ function ModelStep({
       <li>
         <Row title={copy.endpointRow} value="" onClick={onEndpoint} />
       </li>
-      {back}
     </Section>
   );
 }
@@ -377,22 +462,22 @@ function EndpointStep({
   environmentId,
   copy,
   onSaved,
-  back,
 }: {
   environmentId: EnvironmentId;
   copy: Copy;
   onSaved: (selection: ModelSelection) => void;
-  back: ReactNode;
 }) {
   const persist = usePersistEnvironmentProviderInstanceMutation(environmentId);
   const [url, setUrl] = useState("");
   const [key, setKey] = useState("");
   const [model, setModel] = useState("");
   const [saving, setSaving] = useState(false);
+  const [failed, setFailed] = useState(false);
   const ready = key.trim() !== "" && model.trim() !== "";
+  // Label over field: an address or a key needs the row's whole width to be read.
   const field = (label: string, input: ReactNode) => (
-    <li className={FIELD_ROW}>
-      <span className="w-20 shrink-0">{label}</span>
+    <li className="flex flex-col gap-1.5 px-4 py-2.5 text-sm max-md:px-5 max-md:text-bot-callout">
+      <span className="text-muted-foreground">{label}</span>
       {input}
     </li>
   );
@@ -402,21 +487,29 @@ function EndpointStep({
         event.preventDefault();
         if (!ready || saving) return;
         setSaving(true);
+        setFailed(false);
         void persist(endpointInstance({ url, key, model })).then((result) => {
           setSaving(false);
           if (result._tag === "Success")
             onSaved({ instanceId: ENDPOINT_INSTANCE_ID, model: model.trim() });
-          else toastManager.add({ type: "error", title: copy.failed });
+          else setFailed(true);
         });
       }}
     >
-      <Section title={copy.endpoint}>
+      <Section
+        footer={
+          failed ? (
+            <span role="alert" className="text-destructive-foreground">
+              {copy.failed}
+            </span>
+          ) : undefined
+        }
+      >
         {field(
           copy.url,
           <Input
             aria-label={copy.url}
             placeholder="https://api.anthropic.com"
-            className="min-w-0 flex-1"
             value={url}
             onChange={(event) => setUrl(event.target.value)}
           />,
@@ -427,7 +520,6 @@ function EndpointStep({
             type="password"
             autoComplete="off"
             aria-label={copy.key}
-            className="min-w-0 flex-1"
             value={key}
             onChange={(event) => setKey(event.target.value)}
           />,
@@ -437,19 +529,14 @@ function EndpointStep({
           <Input
             aria-label={copy.modelName}
             placeholder="claude-sonnet-5-5"
-            className="min-w-0 flex-1"
             value={model}
             onChange={(event) => setModel(event.target.value)}
           />,
         )}
-        <li className={FIELD_ROW}>
-          <span />
-          <Button size="sm" type="submit" disabled={!ready || saving}>
-            {copy.save}
-          </Button>
-        </li>
-        {back}
       </Section>
+      <StepAction type="submit" disabled={!ready || saving}>
+        {copy.save}
+      </StepAction>
     </form>
   );
 }
@@ -458,43 +545,43 @@ function TelegramStep({
   environmentId,
   copy,
   onNext,
-  back,
 }: {
   environmentId: EnvironmentId;
   copy: Copy;
   onNext: () => void;
-  back: ReactNode;
 }) {
   const [claim, setClaim] = useState<TelegramClaim | null>(null);
   return (
-    <Section title={copy.telegram} footer={claim ? undefined : copy.telegramFooter}>
-      {claim ? (
-        <li className={FIELD_ROW}>
-          <code className="truncate font-mono">/start {claim.code}</code>
-          <Button
-            size="sm"
-            variant="outline"
-            render={<a href={claim.link} target="_blank" rel="noreferrer noopener" />}
-          >
-            {copy.openTelegram}
-          </Button>
-        </li>
-      ) : (
-        <li>
-          <TokenField
-            connected={false}
-            onConnect={(token) =>
-              botRequest(environmentId, TELEGRAM_ENDPOINTS.connect, { token }).then(setClaim, () =>
-                toastManager.add({ type: "error", title: copy.failed }),
-              )
-            }
-          />
-        </li>
-      )}
-      <li>
-        <Row title={claim ? copy.next : copy.skip} value="" onClick={onNext} />
-      </li>
-      {back}
-    </Section>
+    <>
+      <Section footer={claim ? undefined : copy.telegramFooter}>
+        {claim ? (
+          <li className={FIELD_ROW}>
+            <code className="truncate font-mono">/start {claim.code}</code>
+            <Button
+              size="sm"
+              variant="outline"
+              render={<a href={claim.link} target="_blank" rel="noreferrer noopener" />}
+            >
+              {copy.openTelegram}
+            </Button>
+          </li>
+        ) : (
+          <li>
+            <TokenField
+              connected={false}
+              onConnect={(token) =>
+                botRequest(environmentId, TELEGRAM_ENDPOINTS.connect, { token }).then(
+                  setClaim,
+                  () => toastManager.add({ type: "error", title: copy.failed }),
+                )
+              }
+            />
+          </li>
+        )}
+      </Section>
+      <StepAction variant={claim ? "default" : "secondary"} onClick={onNext}>
+        {claim ? copy.next : copy.skip}
+      </StepAction>
+    </>
   );
 }

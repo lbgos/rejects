@@ -146,7 +146,6 @@ export const UK = {
   "Skills it wrote": "Навички, які бот написав",
   "Remove skill {name}": "Видалити навичку {name}",
   Model: "Модель",
-  Models: "Моделі",
   Light: "Легкий",
   "DeepSeek or GLM, for simple jobs": "DeepSeek або GLM, для простих завдань",
   Opus: "Opus",
@@ -163,7 +162,6 @@ export const UK = {
   "{tokens}/day; cache reads at 1/10": "{tokens}/день; читання з кешу рахуються як 1/10",
   "Local network access": "Доступ до локальної мережі",
   "IPv4 or CIDR with a TCP port, one per line": "IPv4 або CIDR з TCP-портом, по одному в рядку",
-  "Not an address: {line}": "Не адреса: {line}",
   "Up to {count} entries": "До {count} записів",
 
   "Bot panel": "Панель бота",
@@ -532,10 +530,17 @@ export const UK = {
   "The bot carries on without it": "Бот продовжує без цього",
   Details: "Докладніше",
   Dismiss: "Закрити",
+  "Last check": "Остання перевірка",
   "Open settings": "Відкрити налаштування",
   "{bot} can’t reply: its model is not set up on this server.":
     "{bot} не може відповісти: його модель не налаштована на цьому сервері.",
   "{bot} could not finish this reply.": "{bot} не зміг завершити цю відповідь.",
+  "Add a port, e.g. {example}": "Додайте порт, наприклад {example}",
+  "{line} is not a private address with a port, e.g. 192.168.1.10:22":
+    "{line}: це не приватна адреса з портом, наприклад 192.168.1.10:22",
+  "Model and limits": "Модель і ліміти",
+  Preset: "Набір",
+  Advanced: "Додатково",
   "Not delivered": "Не доставлено",
   "Queued for this turn": "У черзі на цей хід",
   "Offline. Reconnects when the network is back.":

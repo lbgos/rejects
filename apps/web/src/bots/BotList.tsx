@@ -1,4 +1,3 @@
-import { FirstRun, needsFirstRun } from "./FirstRun";
 import type { BotSummary, EnvironmentId } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { markdownPreview } from "@t3tools/shared/markdownPreview";
@@ -23,7 +22,7 @@ import { PushPrompt } from "../push/PushPrompt";
 import {
   botActivityAt,
   formatListTime,
-  formatWakeIn,
+  isFailureNotice,
   resolveBotState,
   searchBots,
   sortBotRows,
@@ -45,7 +44,7 @@ import { placeGesture, useHorizontalDrag } from "./useHorizontalDrag";
 import { useLongPress } from "./useLongPress";
 import { usePullToRefresh } from "./usePullToRefresh";
 import { openBotDialog } from "./ui";
-import { nextWakeAt, useScheduledTasks } from "./useBotTasks";
+import { useScheduledTasks } from "./useBotTasks";
 
 const SWIPE_TINT: Partial<Record<BotActionId, string>> = {
   delete: "var(--color-bot-delete)",
@@ -58,6 +57,24 @@ const SWIPE_TINT: Partial<Record<BotActionId, string>> = {
 const isFresh = (createdAt: string) => Date.now() - Date.parse(createdAt) < 3000;
 
 const PULL_TICKS = Array.from({ length: 8 }, (_, i) => i);
+
+/** The list's shape while the first load is on its way: still blocks where rows will be. */
+const LOADING_ROWS = (
+  <li role="status" aria-label={t("Loading…")} data-bot-list-loading>
+    {[52, 68, 44, 60, 36].map((width) => (
+      <div
+        key={width}
+        className="flex items-center gap-2.5 py-2 ps-4 pe-2 max-md:h-19 max-md:gap-3.25 max-md:py-0 max-md:ps-5 max-md:pe-5"
+      >
+        <span className="size-8 shrink-0 rounded-full bg-foreground/8 max-md:size-11" />
+        <span className="flex min-w-0 flex-1 flex-col gap-2">
+          <span className="h-3 w-24 rounded-full bg-foreground/10" />
+          <span className="h-2.5 rounded-full bg-foreground/6" style={{ width: `${width}%` }} />
+        </span>
+      </div>
+    ))}
+  </li>
+);
 
 export function BotList({
   environmentId,
@@ -103,8 +120,15 @@ export function BotList({
         bot,
         schedules,
       );
-      const next = state === "capped" ? null : nextWakeAt(schedules);
-      return { bot, schedules, state, text, at, next, empty: !text && !wroteSinceClear };
+      return {
+        bot,
+        schedules,
+        state,
+        // The state word already says a run failed; the server's failure line is for the chat.
+        text: state === "failed" && isFailureNotice(text) ? "" : text,
+        at,
+        empty: !text && !wroteSinceClear,
+      };
     }),
   );
   const shown = searchBots(
@@ -114,7 +138,6 @@ export function BotList({
     // oxlint-disable-next-line react/purity -- recency ranking samples the clock per render, as T3's sidebar search does
     Date.now(),
   );
-  const firstRun = loaded && !query.trim() && needsFirstRun(bots);
   const notice = (title: string, body?: string, action?: { label: string; run: () => void }) => (
     <li className="flex flex-col items-center gap-1 px-6 pt-16 text-center max-md:h-full max-md:justify-center max-md:pt-0 max-md:pb-24">
       <span className="text-sm font-medium max-md:text-bot-heading max-md:font-bold">{title}</span>
@@ -183,12 +206,7 @@ export function BotList({
               setOpenRow(null);
           }}
         >
-          {firstRun ? (
-            <li>
-              <FirstRun environmentId={environmentId} />
-            </li>
-          ) : null}
-          {shown.length > 0 || firstRun
+          {shown.length > 0
             ? null
             : !loaded && failed
               ? notice(t("Can’t load bots"), t("The server did not answer."), {
@@ -196,7 +214,7 @@ export function BotList({
                   run: () => void refreshBots(environmentId).catch(() => undefined),
                 })
               : !loaded
-                ? notice(t("Loading…"))
+                ? LOADING_ROWS
                 : bots.length === 0
                   ? notice(t("No bots"), t("Bots you create show up here."), {
                       label: t("New bot"),
@@ -243,7 +261,6 @@ function BotRow({
   state,
   text,
   at,
-  next,
   empty,
   selected,
   open,
@@ -258,7 +275,6 @@ function BotRow({
   state: ReturnType<typeof resolveBotState>;
   text: string;
   at: number;
-  next: ReturnType<typeof nextWakeAt>;
   empty: boolean;
   selected: boolean;
   open: RowSide | null;
@@ -443,7 +459,7 @@ function BotRow({
           onMenu({ x: rect.left, y: rect.bottom });
         }}
         data-bot-row-content
-        className="relative flex cursor-pointer touch-pan-y items-center gap-2.5 py-2 ps-4 pe-2 outline-none select-none [-webkit-touch-callout:none] hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset aria-[current=page]:bg-sidebar-row-selected max-md:h-21 max-md:gap-3.25 max-md:py-0 max-md:ps-5 max-md:pe-0 pointer-coarse:bg-background pointer-coarse:hover:bg-background pointer-coarse:data-[pressed=true]:bg-bot-fill"
+        className="relative flex cursor-pointer touch-pan-y items-center gap-2.5 py-2 ps-4 pe-2 outline-none select-none [-webkit-touch-callout:none] hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset aria-[current=page]:bg-sidebar-row-selected max-md:h-19 max-md:gap-3.25 max-md:py-0 max-md:ps-5 max-md:pe-0 pointer-coarse:bg-background pointer-coarse:hover:bg-background pointer-coarse:data-[pressed=true]:bg-bot-fill"
       >
         {bot.unread ? (
           <span
@@ -452,7 +468,7 @@ function BotRow({
             className="absolute start-1 top-1/2 size-2 -translate-y-1/2 rounded-full bg-bot-unread max-md:start-1.25 max-md:size-2.5"
           />
         ) : null}
-        <BotAvatar bot={bot} className="size-8 max-md:size-12" />
+        <BotAvatar bot={bot} className="size-8 max-md:size-11" />
         <span
           data-bot-row-text
           className="relative flex min-w-0 flex-1 flex-col justify-center self-stretch max-md:pe-4 max-md:after:absolute max-md:after:inset-x-0 max-md:after:bottom-0 max-md:after:h-px max-md:after:bg-bot-hairline max-md:group-last/row:after:hidden"
@@ -489,11 +505,6 @@ function BotRow({
               />
             ) : null}
             <span className="min-w-0 flex-1 truncate">{empty ? t("No messages yet") : text}</span>
-            {next ? (
-              <span className="shrink-0 tabular-nums max-md:hidden">
-                {t("next {time}", { time: formatWakeIn(next) })}
-              </span>
-            ) : null}
           </span>
         </span>
       </div>
