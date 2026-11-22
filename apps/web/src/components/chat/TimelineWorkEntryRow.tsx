@@ -1,3 +1,5 @@
+import { BotChromeContext } from "../../bots/context";
+import { t } from "../../i18n";
 import { TimelinePendingApprovalRow } from "./TimelinePendingApprovalRow";
 import { WorkLogDetails, WorkLogRow } from "./WorkLog";
 import {
@@ -222,6 +224,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
       ? notificationChildThreadId(workEntry.projectedItem.item.source)
       : undefined;
   const groupView = use(WorkGroupViewCtx);
+  const botName = use(BotChromeContext)?.title ?? null;
   const [expanded, setExpanded] = useState(
     () => groupView?.state.expandedEntries.has(workEntry.id) ?? false,
   );
@@ -264,6 +267,53 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
       failureItem.failure.code === ORCHESTRATION_V2_WORKSPACE_PREPARATION_FAILURE_CODE
         ? failureItem.runId
         : null;
+    // A bot chat says it once, in plain words, with the way out beside it; the provider's own
+    // wording stays one tap away.
+    if (botName !== null && !warning) {
+      const retryText = ctx.botRetryEntryId === workEntry.id ? ctx.botRetryText : null;
+      const onSend = ctx.onSendAppMessage;
+      return (
+        <WorkLogRow
+          data-v2-item-type="error"
+          data-v2-item-visibility={workEntry.projectedItem?.visibility}
+          wrapLabel
+          icon={<CircleAlertIcon className="size-4 text-destructive" />}
+          label={
+            <span className="text-sm font-medium text-foreground max-md:text-bot-callout">
+              {t("{bot} could not finish this reply.", { bot: botName })}
+            </span>
+          }
+        >
+          <div className="ms-6 flex flex-wrap items-center gap-x-1.5 gap-y-1 pt-0.5 pb-1">
+            {retryText !== null && onSend ? (
+              <Button
+                type="button"
+                size="xs"
+                variant="outline"
+                onClick={() => void onSend(retryText)}
+              >
+                <RotateCcwIcon aria-hidden />
+                {t("Try again")}
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost-muted"
+              aria-expanded={expanded}
+              onClick={toggleExpanded}
+            >
+              {t("Details")}
+            </Button>
+          </div>
+          {expanded ? (
+            <p className="ms-7 pb-1 text-xs leading-relaxed wrap-anywhere whitespace-pre-wrap text-muted-foreground select-text max-md:text-bot-footnote">
+              {failureItem.failure.message}
+            </p>
+          ) : null}
+        </WorkLogRow>
+      );
+    }
     return (
       <WorkLogRow
         data-v2-item-type="error"

@@ -11,6 +11,7 @@ import {
   botReactions,
   botStatusLine,
   botToolActivity,
+  botTurnHasText,
   botTurnOffers,
   botUiTips,
   messageLinks,
@@ -213,7 +214,17 @@ describe("visibleBotEntries", () => {
     },
   });
 
-  it("hides upkeep runs, compactions, context handoffs, the first-run prompt and what came before the chat was cleared", () => {
+  const plan = (id: string, runId: string, createdAt: string): TimelineEntry => ({
+    id,
+    kind: "work",
+    createdAt,
+    entry: {
+      runId: RunId.make(runId),
+      projectedItem: { item: { type: "todo_list", runId: RunId.make(runId) } },
+    } as never,
+  });
+
+  it("hides upkeep runs, compactions, context handoffs, the first-run prompt, earlier plan updates and what came before the chat was cleared", () => {
     const entries: TimelineEntry[] = [
       message("old", "run:1", "2026-11-05T10:00:00.000Z"),
       message("bots:flush:run:1", "run:2", "2026-11-05T11:00:00.000Z"),
@@ -235,17 +246,30 @@ describe("visibleBotEntries", () => {
       message("new", "run:3", "2026-11-05T13:00:00.000Z"),
       message("bots:kickoff:main", "run:5", "2026-11-05T14:00:00.000Z"),
       message("greeting", "run:5", "2026-11-05T14:00:01.000Z"),
+      plan("plan:first", "run:6", "2026-11-05T15:00:00.000Z"),
+      {
+        id: "plan-tool",
+        kind: "work",
+        createdAt: "2026-11-05T15:00:01.000Z",
+        entry: {
+          runId: RunId.make("run:6"),
+          structuredPayload: { type: "dynamic_tool", toolName: "TodoWrite" },
+        } as never,
+      },
+      plan("plan:latest", "run:6", "2026-11-05T15:00:02.000Z"),
     ];
     expect(visibleBotEntries(entries, undefined).map((e) => e.id)).toEqual([
       "old",
       "bots:wake-result:w",
       "new",
       "greeting",
+      "plan:latest",
     ]);
     expect(visibleBotEntries(entries, "2026-11-05T11:30:00.000Z").map((e) => e.id)).toEqual([
       "bots:wake-result:w",
       "new",
       "greeting",
+      "plan:latest",
     ]);
   });
 });
@@ -544,6 +568,13 @@ describe("botAwaitsAnswer", () => {
       botAwaitsAnswer([said("user"), reasoning, said("assistant", true), placeholder, working]),
     ).toBe(false);
     expect(botAwaitsAnswer([said("user"), said("assistant"), tool, working])).toBe(true);
+  });
+  it("keeps the dots for a turn with nothing to read yet, per turn", () => {
+    expect(botTurnHasText([said("user"), reasoning, tool, working])).toBe(false);
+    expect(botTurnHasText([said("user"), said("assistant"), tool, working])).toBe(true);
+    expect(botTurnHasText([said("user"), said("assistant"), said("user"), tool, working])).toBe(
+      false,
+    );
   });
   it("stays gone after a text-only ending while the run settles", () => {
     expect(

@@ -85,8 +85,6 @@ export const RU = {
   "Could not copy the message": "Не удалось скопировать сообщение",
   "Cancel reply": "Отменить ответ",
   Working: "Работает",
-  "Working for": "Работает",
-  "Working…": "Работает…",
   "Open {bot}": "Открыть {bot}",
   "No preview": "Без предпросмотра",
   "Load the preview again": "Загрузить предпросмотр снова",
@@ -529,4 +527,17 @@ export const RU = {
   Run: "Выполнить",
   "Running…": "Выполнение…",
   "Don’t run": "Не выполнять",
+  "Approval declined": "Запрос отклонён",
+  "Question skipped": "Вопрос пропущен",
+  "The bot carries on without it": "Бот продолжает без этого",
+  Details: "Подробнее",
+  Dismiss: "Закрыть",
+  "Open settings": "Открыть настройки",
+  "{bot} can’t reply: its model is not set up on this server.":
+    "{bot} не может ответить: его модель не настроена на этом сервере.",
+  "{bot} could not finish this reply.": "{bot} не смог завершить этот ответ.",
+  "Not delivered": "Не доставлено",
+  "Queued for this turn": "В очереди на этот ход",
+  "Offline. Reconnects when the network is back.":
+    "Нет сети. Соединение восстановится, когда она вернётся.",
 } as const satisfies Record<UiText, string>;

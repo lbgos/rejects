@@ -1,5 +1,6 @@
 import { BotGestures } from "../../bots/BotGestures";
 import { BotThreadContext } from "../../bots/context";
+import { t } from "../../i18n";
 import { APP_BASE_NAME } from "~/branding";
 import { InlineAudioPreview } from "../files/InlineAudioPreview";
 import { filePreviewKind } from "@t3tools/shared/filePreview";
@@ -417,6 +418,7 @@ export function FoldedMessageHeader(props: {
 }
 
 function UserMessageProjectedStatus({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
+  const bot = useContext(BotThreadContext);
   const status = row.projectedItem?.item.status;
   if (
     status === undefined ||
@@ -425,6 +427,13 @@ function UserMessageProjectedStatus({ row }: { row: Extract<TimelineRow, { kind:
     status === "waiting"
   )
     return null;
+  // A bot chat says what happened to the message in plain words, as text under it.
+  if (bot)
+    return (
+      <p className="me-1 text-xs text-destructive-foreground max-md:text-bot-footnote">
+        {t("Not delivered")}
+      </p>
+    );
   return (
     <div className="me-1 flex items-center gap-1.5">
       <span className="rounded-full border border-destructive/25 bg-destructive/8 px-1.5 py-0.5 text-3xs font-medium text-destructive">
@@ -1098,6 +1107,17 @@ function UserMessageIntentMarker({
   readonly intent: "steer" | "promoted_queued_to_steer";
   readonly unread: boolean;
 }) {
+  const bot = useContext(BotThreadContext);
+  // A bot chat only says that a message sent mid-turn is still waiting; once read, it is a message.
+  if (bot)
+    return unread ? (
+      <p
+        className="me-1 text-xs text-muted-foreground max-md:text-bot-footnote"
+        data-user-message-intent={intent}
+      >
+        {t("Queued for this turn")}
+      </p>
+    ) : null;
   return (
     <Tooltip>
       <TooltipTrigger

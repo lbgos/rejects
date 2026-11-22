@@ -411,6 +411,15 @@ export const isTelegramMessage = (messageId: string) =>
 export const BOT_KICKOFF_MESSAGE_PREFIX = "bots:kickoff:";
 export const isBotKickoffMessage = (messageId: string) =>
   messageId.startsWith(BOT_KICKOFF_MESSAGE_PREFIX);
+/**
+ * The server's follow-up after it declines a bot's question or approval for the user,
+ * `bots:redirect:request:<id>`. Its text starts `[Declined <kind> <request id>]` and is for the bot.
+ */
+export const BOT_REDIRECT_MESSAGE_PREFIX = "bots:redirect:";
+export const isBotRedirectMessage = (messageId: string) =>
+  messageId.startsWith(BOT_REDIRECT_MESSAGE_PREFIX);
+export const botRedirectKind = (text: string): "question" | "approval" =>
+  text.startsWith("[Declined user_input ") ? "question" : "approval";
 /** The example a new bot answers right after the main bot creates it; its answer pushes. */
 export const BOT_EXAMPLE_MESSAGE_PREFIX = "bots:example:";
 export const isBotExampleMessage = (messageId: string) =>

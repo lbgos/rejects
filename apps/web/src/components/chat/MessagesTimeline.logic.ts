@@ -1046,6 +1046,10 @@ const isButtonsCall = (entry: TimelineEntry) => {
   return tool === "offer_replies" || tool === "propose_bots";
 };
 
+/** A bot chat reads a turn's time in whole seconds. */
+const formatWholeSeconds = (durationMs: number) =>
+  durationMs < 1_000 ? "<1s" : formatDuration(Math.round(durationMs / 1_000) * 1_000);
+
 function deriveTurnFolds(input: {
   timelineEntries: ReadonlyArray<TimelineEntry>;
   terminalAssistantMessageIds: ReadonlySet<string>;
@@ -1230,7 +1234,8 @@ function deriveTurnFolds(input: {
             maxIsoTimestamp(group.terminalEntry?.message.updatedAt ?? null, lastEntryEnd) ??
               lastEntryEnd,
           );
-    const duration = elapsedMs !== null ? formatDuration(elapsedMs) : null;
+    const formatTurnDuration = input.collapseScheduledWakes ? formatWholeSeconds : formatDuration;
+    const duration = elapsedMs !== null ? formatTurnDuration(elapsedMs) : null;
     const label = isLatestInterruptedTurn
       ? duration
         ? `You stopped after ${duration}`
@@ -1268,7 +1273,7 @@ function deriveTurnFolds(input: {
         createdAt: steer.createdAt,
         hiddenEntryIds: segmentHiddenIds(entries),
         entryIds: new Set(entries.map((entry) => entry.id)),
-        label: segmentMs !== null ? `Continued for ${formatDuration(segmentMs)}` : "Continued",
+        label: segmentMs !== null ? `Continued for ${formatTurnDuration(segmentMs)}` : "Continued",
       });
     }
   }

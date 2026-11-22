@@ -107,6 +107,9 @@ export interface TimelineRowSharedState {
   botTimeLabels: ReadonlyMap<string, string> | null;
   botRunContinues: ReadonlySet<string> | null;
   botLiveWork: ReadonlySet<string> | null;
+  /** The failed last turn of a bot chat and the message that started it (`botRetryTarget`). */
+  botRetryEntryId: string | null;
+  botRetryText: string | null;
 }
 
 export interface TimelineRowActivityState {

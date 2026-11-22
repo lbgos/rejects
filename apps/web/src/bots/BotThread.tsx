@@ -7,7 +7,7 @@ import {
 } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { EllipsisIcon, PauseIcon } from "lucide-react";
+import { EllipsisIcon, PauseIcon, WifiOffIcon } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { resolveSidebarThreadStatus } from "../components/Sidebar.logic";
 import type { ComposerBannerStackItem } from "../components/chat/ComposerBannerStack";
@@ -40,6 +40,7 @@ import { setViewingBot, useBot, useBots, useReadOnOpen } from "./state";
 import { openBotDialog, openBotPanel, setBotReply } from "./ui";
 import { nextWakeAt, useScheduledTasks } from "./useBotTasks";
 import { useBotPreferences } from "./preferences";
+import { useOnline } from "./useOnline";
 import { QuickStart } from "./QuickStart";
 import { menuCollisionPadding } from "../safeArea";
 import { plural, t } from "../i18n";
@@ -130,7 +131,16 @@ export function BotThread({ target, children }: { target: ScopedThreadRef; child
       ) : null}
     </div>
   );
+  const online = useOnline();
   const banner = ((): ComposerBannerStackItem | null => {
+    // Losing the network is said at once, where the next message would be typed.
+    if (!online)
+      return {
+        id: "bot-offline",
+        variant: "default",
+        icon: <WifiOffIcon />,
+        title: t("Offline. Reconnects when the network is back."),
+      };
     if (!stopped) return null;
     return {
       id: `bot-paused:${threadId}`,

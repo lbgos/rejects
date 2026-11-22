@@ -72,6 +72,9 @@ export function botActivityAt(
 export const botNoticeKey = (bot: Pick<BotSummary, "notifiedAt" | "previewAt">) =>
   bot.previewAt ?? bot.notifiedAt ?? "";
 
+/** The server's notice for a failed run (`BotNotifications.failed`); the list shows the state instead. */
+export const isFailureNotice = (text: string) => text.startsWith("Run failed");
+
 export function sortBotRows<
   T extends { readonly bot: Pick<BotSummary, "main">; readonly at: number },
 >(rows: ReadonlyArray<T>): T[] {
@@ -269,10 +272,21 @@ const freshSpan = () => ({
   emoji: undefined as { id: string } | undefined,
 });
 
+const planRunOf = (entry: TimelineEntry) => {
+  const item = entry.kind === "work" ? entry.entry.projectedItem?.item : undefined;
+  return item?.type === "todo_list" ? (item.runId ?? "") : null;
+};
+
 export function visibleBotEntries(
   entries: ReadonlyArray<TimelineEntry>,
   historyFrom: string | undefined,
 ): ReadonlyArray<TimelineEntry> {
+  // A turn's plan is one row: its newest update says where the plan stands.
+  const latestPlan = new Map<string, string>();
+  for (const entry of entries) {
+    const run = planRunOf(entry);
+    if (run !== null) latestPlan.set(run, entry.id);
+  }
   const upkeepRuns = new Set(
     entries.flatMap((entry) =>
       entry.kind === "message" && entry.message.runId && isBotUpkeepMessage(entry.message.id)
@@ -315,6 +329,9 @@ export function visibleBotEntries(
       (historyFrom === undefined || entry.createdAt >= historyFrom) &&
       !(entry.kind === "event" && entry.projectedItem.item.type === "handoff") &&
       !isCallOf(entry, "react") &&
+      // The plan row stands for the provider's own plan tool call.
+      !isNativeCall(entry, "TodoWrite") &&
+      !(planRunOf(entry) !== null && latestPlan.get(planRunOf(entry)!) !== entry.id) &&
       !echoes.has(entry.id) &&
       !quiet.has(entry.id)
     );
@@ -328,16 +345,18 @@ export function noteMeta(note: MemoryNote, now = Date.now()): string {
       : [
           `${note.status === "stale" ? t("Stale") : t("Contradicted")}${note.reason ? `: ${note.reason}` : ""}`,
         ];
-  const by = note.source.by === "user" ? t("You") : note.source.by;
   const quote = note.source.quote ? [`“${note.source.quote}”`] : [];
   const until = note.until ? [t("until {date}", { date: note.until })] : [];
   const removed = note.retiredAt
     ? [t("removed {time}", { time: formatListTime(Date.parse(note.retiredAt), now) })]
     : [];
+  const told = [...removed, ...status, ...until, ...quote];
+  // A note you wrote yourself and nothing has touched says only its text.
+  if (note.source.by === "user" && told.length === 0) return "";
   return [
     ...removed,
     ...status,
-    by,
+    note.source.by === "user" ? t("You") : note.source.by,
     formatListTime(Date.parse(note.source.at), now),
     ...until,
     ...quote,
@@ -353,6 +372,12 @@ const isCallOf = (entry: TimelineEntry, name: string) => {
   return (
     item?.type === "dynamic_tool" && !!item.toolName && resolveT3McpToolName(item.toolName) === name
   );
+};
+
+/** A provider's built-in tool, named as the provider names it. */
+const isNativeCall = (entry: TimelineEntry, name: string) => {
+  const item = entry.kind === "work" ? entry.entry.structuredPayload : undefined;
+  return item?.type === "dynamic_tool" && item.toolName === name;
 };
 
 const isCompletedCall = (entry: TimelineEntry, name: string) => {
@@ -477,6 +502,37 @@ export function botAwaitsAnswer(rows: ReadonlyArray<BotTypingRow>): boolean {
   if (!rows.some((row) => row.kind === "working")) return false;
   const last = rows.findLast((row) => row.kind !== "working" && row.kind !== "thinking");
   return !(last?.kind === "message" && last.message.role === "assistant");
+}
+
+/**
+ * The failed last turn that a tap can send again: its error row and the text that started it.
+ * Only a plain message the user wrote qualifies; attachments and the server's own messages do not
+ * survive a resend.
+ */
+export function botRetryTarget(
+  entries: ReadonlyArray<TimelineEntry>,
+): { readonly entryId: string; readonly text: string } | null {
+  const start = entries.findLastIndex(
+    (entry) => entry.kind === "message" && entry.message.role === "user",
+  );
+  const asked = entries[start];
+  if (asked?.kind !== "message") return null;
+  const { message } = asked;
+  if (message.createdBy !== undefined && message.createdBy !== "user") return null;
+  if ((message.attachments?.length ?? 0) > 0 || !message.text.trim()) return null;
+  const failure = entries.slice(start + 1).findLast((entry) => {
+    const item = entry.kind === "work" ? entry.entry.projectedItem?.item : undefined;
+    return item?.type === "error" && item.status === "failed";
+  });
+  return failure ? { entryId: failure.id, text: message.text } : null;
+}
+
+/** The dots stand for "nothing to read yet": once the turn has answer text, the status line is the only sign of work. */
+export function botTurnHasText(rows: ReadonlyArray<BotTypingRow>): boolean {
+  const start = rows.findLastIndex((row) => row.kind === "message" && row.message.role === "user");
+  return rows
+    .slice(start + 1)
+    .some((row) => row.kind === "message" && row.message.role === "assistant");
 }
 
 export interface StatusSwapState {

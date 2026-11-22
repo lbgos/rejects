@@ -83,8 +83,6 @@ export const UK = {
   "Could not copy the message": "Не вдалося скопіювати повідомлення",
   "Cancel reply": "Скасувати відповідь",
   Working: "Працює",
-  "Working for": "Працює",
-  "Working…": "Працює…",
   "Open {bot}": "Відкрити {bot}",
   "No preview": "Без попереднього перегляду",
   "Load the preview again": "Завантажити попередній перегляд знову",
@@ -529,4 +527,17 @@ export const UK = {
   Run: "Виконати",
   "Running…": "Виконання…",
   "Don’t run": "Не виконувати",
+  "Approval declined": "Запит відхилено",
+  "Question skipped": "Питання пропущено",
+  "The bot carries on without it": "Бот продовжує без цього",
+  Details: "Докладніше",
+  Dismiss: "Закрити",
+  "Open settings": "Відкрити налаштування",
+  "{bot} can’t reply: its model is not set up on this server.":
+    "{bot} не може відповісти: його модель не налаштована на цьому сервері.",
+  "{bot} could not finish this reply.": "{bot} не зміг завершити цю відповідь.",
+  "Not delivered": "Не доставлено",
+  "Queued for this turn": "У черзі на цей хід",
+  "Offline. Reconnects when the network is back.":
+    "Немає мережі. З’єднання відновиться, коли вона повернеться.",
 } as const satisfies Record<string, string>;

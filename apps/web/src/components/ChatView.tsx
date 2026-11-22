@@ -1,4 +1,5 @@
 import { BotChromeContext } from "../bots/context";
+import { botProviderNotice } from "../bots/providerNotice";
 import { botPanelOn, useBotUi } from "../bots/ui";
 import { isBotProject, useBotProjectKeys } from "../bots/state";
 import { ChildThreadApprovals } from "./chat/ChildThreadApprovals";
@@ -127,6 +128,7 @@ import { resolveThreadReferenceCopyTarget } from "@t3tools/client-runtime/thread
 import { resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
 import { useAtomValue } from "@effect/atom-react";
 import {
+  type CSSProperties,
   type MouseEvent as ReactMouseEvent,
   type SetStateAction,
   use,
@@ -321,6 +323,7 @@ import {
 } from "./BranchToolbar.logic";
 import {
   getProviderStatusDismissalKey,
+  dismissProviderStatusBannerForSession,
   shouldShowProviderStatusBanner,
   useProviderStatusBannerDismissed,
 } from "./chat/ProviderStatusBanner";
@@ -2625,6 +2628,13 @@ export default function ChatView(props: ChatViewProps) {
           },
         })
       : null;
+  const botProviderItem = botChrome
+    ? botProviderNotice({
+        botName: botChrome.title,
+        status: visibleProviderStatus,
+        onDismiss: () => dismissProviderStatusBannerForSession(providerStatusDismissalKey),
+      })
+    : null;
   const composerBannerItems = (() => {
     const fallbackSelection = draftFallback?.selection;
     const defaultSelection =
@@ -2693,6 +2703,7 @@ export default function ChatView(props: ChatViewProps) {
         ...projectCloneItems,
         ...freshSessionItems,
         ...systemComposerBannerItems,
+        ...(botProviderItem ? [botProviderItem] : []),
         ...(botChrome?.banner ? [botChrome.banner] : []),
       ];
     }
@@ -3450,11 +3461,13 @@ export default function ChatView(props: ChatViewProps) {
             {isWorkspaceFileDragActive ? <WorkspaceFileDropOverlay /> : null}
             <ChatBannerLane
               environmentId={activeThread.environmentId}
-              providerStatus={visibleProviderStatus}
+              providerStatus={botChrome ? null : visibleProviderStatus}
               providerStatusDismissalKey={providerStatusDismissalKey}
               onOpenProviderSetup={openProviderSetupStable}
               threadId={activeThread.id}
-              threadError={timelineThreadError}
+              threadError={
+                botChrome && threadErrorIsServerRuntimeError ? null : timelineThreadError
+              }
               threadErrorClass={
                 threadErrorIsServerRuntimeError ? (serverRuntime?.lastErrorClass ?? null) : null
               }
@@ -3483,13 +3496,16 @@ export default function ChatView(props: ChatViewProps) {
                     }
                   : undefined
               }
-              // Keep the overlay's transparent margins clear of transcript paint and hit targets; a
-              // bot chat's transcript scrolls visibly under its floating composer. Preserve the
-              // list's geometry and end inset for anchoring and scroll-to-end.
+              // Keep the overlay's transparent margins clear of transcript paint and hit targets. A
+              // bot chat's transcript fades out as it reaches the composer instead (bots.css reads
+              // the height). Preserve the list's geometry and end inset for anchoring and
+              // scroll-to-end.
               style={
-                isDraftHeroState || botChrome
+                isDraftHeroState
                   ? undefined
-                  : { clipPath: `inset(0 0 ${composerOverlayHeight}px 0)` }
+                  : botChrome
+                    ? ({ "--bot-composer-height": `${composerOverlayHeight}px` } as CSSProperties)
+                    : { clipPath: `inset(0 0 ${composerOverlayHeight}px 0)` }
               }
             >
               <WorkspaceMutationIdContext value={workspaceMutationId}>
