@@ -125,7 +125,12 @@ it.effect(
       const standalone = { ...scope, standalone: true as const };
       yield* call("web_search", { query: "kernel" });
       yield* call("web_search", { query: "kernel" }, standalone);
-      assert.deepEqual(searches, [false, true]);
+      yield* call(
+        "web_search",
+        { query: "kernel" },
+        { ...scope, allowedToolNames: new Set(["web_search", "web_read"]) },
+      );
+      assert.deepEqual(searches, [false, true, undefined]);
       browsed.length = 0;
       const logs = logged.length;
       const [read] = yield* call("web_read", { url: STORY }, standalone);

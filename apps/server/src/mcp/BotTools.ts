@@ -79,6 +79,7 @@ const BOT_TOOL_NAMES = [
   "cortex_add_source",
   "web_search",
   "web_browse",
+  "web_read",
   "video_transcript",
   "request_login",
   "ask_secret",

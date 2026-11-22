@@ -86,7 +86,8 @@ export const layer = Access.toLayer(WebToolkit, {
     Effect.gen(function* () {
       const { web, bot } = yield* asBot();
       const scope = yield* Invocation.McpInvocationContext;
-      return yield* web.search(bot, query, { firecrawl: scope.standalone === true });
+      const options = scope.allowedToolNames?.has("web_read") ? undefined : { firecrawl: false };
+      return yield* web.search(bot, query, scope.standalone ? { firecrawl: true } : options);
     }),
   ),
   web_read: Access.readsAsCaller(({ url, offset }) =>
