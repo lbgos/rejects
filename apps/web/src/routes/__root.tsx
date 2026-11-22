@@ -86,7 +86,7 @@ function RootRouteNotFoundView() {
         <p className="text-sm text-muted-foreground">
           This link doesn't point to a page in {APP_DISPLAY_NAME}.
         </p>
-        <Button render={<Link to="/" replace />}>Go home</Button>
+        <Button render={<Link to="/" replace />}>Back to bots</Button>
       </div>
     </main>
   );
