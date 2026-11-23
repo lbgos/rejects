@@ -337,6 +337,20 @@ function likeness(a: SearchWord, b: SearchWord): number {
 
 export const MIN_MATCH = 0.25;
 
+/**
+ * A list's search field, where a person reads every result: each typed word is in the note, as
+ * part of a word or a typo away from one. Recall for a bot's turn is looser.
+ */
+const TYPED_MATCH = 0.6;
+export function matchesTyped(text: string, query: string): boolean {
+  const words = searchWords(text).map(searchWord);
+  return queryWords(query)
+    .map(searchWord)
+    .every((term) =>
+      words.some((word) => word.word.includes(term.word) || likeness(term, word) >= TYPED_MATCH),
+    );
+}
+
 const RECENCY_WEIGHT = 0.1;
 const USAGE_WEIGHT = 0.05;
 const RECENCY_DAYS = 180;

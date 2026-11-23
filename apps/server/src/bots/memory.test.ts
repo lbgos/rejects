@@ -13,6 +13,7 @@ import {
   quotes,
   looksSecret,
   RECALL_MIN,
+  matchesTyped,
   rankNotes,
   recallQueries,
 } from "./memory.ts";
@@ -221,6 +222,18 @@ describe("rankNotes", () => {
       memorySearchResult(ranked).notes.map((note) => note.text),
       expected,
     );
+  });
+
+  it.each([
+    ["a whole word", "Ada", "Ada eats no mushrooms", true],
+    ["the start of a word", "mush", "Leo does not eat mushrooms", true],
+    ["a typo", "mushroms", "Leo does not eat mushrooms", true],
+    ["another ending", "Оксани", "Дружина Оксана, день народження 12 травня.", true],
+    ["a word that only shares letters", "Ada", "Packed lunches on school days", false],
+    ["repeated letters", "zzzz", "Friday is pizza night.", false],
+    ["one word of two", "Ada pizza", "Ada eats no mushrooms", false],
+  ])("a typed search matches %s: %s", (_name, query, text, expected) => {
+    assert.equal(matchesTyped(text, query), expected);
   });
 
   it("lifts a recent, often-used note among equal matches", () => {
