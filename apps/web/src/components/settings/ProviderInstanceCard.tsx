@@ -3,6 +3,7 @@ import { Spinner } from "~/components/ui/spinner";
 import {
   AlertTriangleIcon,
   CheckIcon,
+  ChevronRightIcon,
   ArrowUpCircleIcon,
   CopyIcon,
   DownloadIcon,
@@ -16,7 +17,7 @@ import {
 } from "lucide-react";
 import * as Arr from "effect/Array";
 import * as Result from "effect/Result";
-import { Fragment, useState, type ReactElement, type ReactNode } from "react";
+import { Fragment, use, useState, type ReactElement, type ReactNode } from "react";
 import {
   isProviderDriverKind,
   resolveProviderInstanceEnabled,
@@ -43,6 +44,7 @@ import { useStableCallback } from "../../hooks/useStableCallback";
 import { normalizeProviderAccentColor } from "../../providerInstances";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { DraftInput } from "../ui/draft-input";
 import { SecretSourceInput, type SecretSource } from "./SecretSourceInput";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
@@ -66,7 +68,12 @@ import { ProviderModelsSection } from "./ProviderModelsSection";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { ProviderAccentColorPicker } from "./ProviderAccentColorPicker";
 import { RedactedSensitiveText } from "./RedactedSensitiveText";
-import { SettingResetButton, SettingsRow, SettingsSection } from "./settingsLayout";
+import {
+  SettingResetButton,
+  SettingsPhoneBarContext,
+  SettingsRow,
+  SettingsSection,
+} from "./settingsLayout";
 import { AcpSessionManagementSection } from "./AcpSessionManagementSection";
 import { FoldedSettingsSection } from "./FoldedSettingsSection";
 import { readCodexSetupMode } from "./CodexSetupSection.logic";
@@ -75,7 +82,9 @@ import {
   getProviderVersionAdvisoryPresentation,
   PROVIDER_STATUS_STYLES,
   getProviderStatusKey,
+  getProviderAccount,
   getProviderSummary,
+  isProviderAwaitingInstall,
   getProviderVersionLabel,
 } from "./providerStatus";
 
@@ -711,6 +720,36 @@ const EMPTY_ACP_PROJECTS: NonNullable<ProviderInstanceCardProps["acpProjects"]> 
 const NO_SECRET_SOURCES: ReadonlyArray<SecretSource> = [];
 const NO_CUSTOM_MODELS: ReadonlyArray<CustomModelDefinition> = [];
 
+function ProviderAdvancedFold({
+  defaultOpen,
+  children,
+}: {
+  readonly defaultOpen: boolean;
+  readonly children: ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger
+        data-provider-advanced
+        className="flex min-h-9 items-center gap-1.5 rounded-md px-3 text-sm font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-4"
+      >
+        <ChevronRightIcon
+          aria-hidden
+          className={cn(
+            "size-4 shrink-0 transition-transform duration-150 motion-reduce:transition-none",
+            open && "rotate-90",
+          )}
+        />
+        Advanced
+      </CollapsibleTrigger>
+      <CollapsiblePanel>
+        <div className="space-y-6 pt-4">{children}</div>
+      </CollapsiblePanel>
+    </Collapsible>
+  );
+}
+
 /** Unknown drivers stay read-only to preserve fork config. projectOverride switches affect only the
  * project, not instance.enabled. */
 export function ProviderInstanceCard({
@@ -744,6 +783,7 @@ export function ProviderInstanceCard({
   secretSources = NO_SECRET_SOURCES,
   projectOverride,
 }: ProviderInstanceCardProps) {
+  const phonePage = use(SettingsPhoneBarContext) !== null;
   const enabled = projectOverride?.effectiveEnabled ?? resolveProviderInstanceEnabled(instance);
   const effectiveProvider = liveProvider && { ...liveProvider, enabled };
   const compatibility = enabled ? liveProvider?.compatibilityAdvisory : undefined;
@@ -752,12 +792,11 @@ export function ProviderInstanceCard({
   const summary = enabled
     ? getProviderSummary(effectiveProvider)
     : { headline: "Disabled", detail: null };
-  const authEmail = liveProvider?.auth.email?.trim();
   const isAuthenticated = enabled && liveProvider?.auth.status === "authenticated";
-  const authLabel =
-    enabled && liveProvider?.auth.status === "authenticated"
-      ? (liveProvider.auth.label ?? liveProvider.auth.type ?? null)
-      : null;
+  const account = getProviderAccount(enabled ? liveProvider : undefined);
+  const authEmail = account.email;
+  const authLabel = account.label;
+  const awaitingInstall = isProviderAwaitingInstall(effectiveProvider);
   const versionLabel = getProviderVersionLabel(liveProvider?.version);
   const versionAdvisory = getProviderVersionAdvisoryPresentation(
     liveProvider?.versionAdvisory,
@@ -958,7 +997,10 @@ export function ProviderInstanceCard({
       : compatibility?.status === "unsupported"
         ? "Unsupported"
         : "Limited support"
-    : summary.detail;
+    : awaitingInstall
+      ? // The probe's own wording names paths and commands; what to do is one sentence.
+        "Install its command-line tool on the server, or set where it is under Advanced."
+      : summary.detail;
   const editorStatusNode =
     isAuthenticated && authEmail ? (
       <>
@@ -1108,7 +1150,7 @@ export function ProviderInstanceCard({
         <div
           className={cn(
             "pointer-events-none flex min-w-0 flex-1 items-start gap-3 rounded-md text-left transition-opacity",
-            !enabled && !selected && "opacity-60 group-hover:opacity-100",
+            (!enabled || awaitingInstall) && !selected && "opacity-60 group-hover:opacity-100",
           )}
         >
           <button
@@ -1165,11 +1207,15 @@ export function ProviderInstanceCard({
           ) : null}
           {/* The policy refuses switching it on; switching it off stays the user's call. */}
           <ManagedControl reason={enabled ? undefined : managedDriverReason}>
+            {/* With no CLI to run there is nothing to switch on: the switch reads off, and
+                pressing it opens what setting the provider up takes. */}
             <Switch
-              checked={enabled}
+              checked={enabled && !awaitingInstall}
               disabled={readOnly || (projectOverride !== undefined && !canWriteSettings)}
-              onCheckedChange={(checked) => updateEnabled(Boolean(checked))}
-              aria-label={`Enable ${displayName}`}
+              onCheckedChange={(checked) =>
+                awaitingInstall ? onSelect?.() : updateEnabled(Boolean(checked))
+              }
+              aria-label={awaitingInstall ? `Set up ${displayName}` : `Enable ${displayName}`}
             />
           </ManagedControl>
         </span>
@@ -1275,8 +1321,18 @@ export function ProviderInstanceCard({
 
   return (
     <>
-      <SettingsSection title={displayName} icon={titleIconNode} headerAction={editorHeaderAction}>
-        <SettingsRow title="Status" status={statusContent} />
+      {/* A phone's bar already names the provider, so its version and actions join Status. */}
+      <SettingsSection
+        title={displayName}
+        icon={titleIconNode}
+        hideTitle={phonePage}
+        headerAction={editorHeaderAction}
+      >
+        <SettingsRow
+          title="Status"
+          status={statusContent}
+          control={phonePage ? editorHeaderAction : undefined}
+        />
         <SettingsRow
           title="Display name"
           control={
@@ -1341,56 +1397,6 @@ export function ProviderInstanceCard({
         </SettingsSection>
       ) : null}
 
-      {instance.driver === "codex" && readCodexSetupMode(instance.config) === "managed" ? (
-        <div
-          inert={readOnly}
-          aria-disabled={readOnly || undefined}
-          className={readOnly ? "opacity-50 select-none" : undefined}
-        >
-          <FoldedSettingsSection
-            key={instanceId}
-            id={`provider-instance-${instanceId}-runtime`}
-            title="Runtime"
-            headerPlacement="outside"
-          >
-            {runtime ?? runtimeFields}
-          </FoldedSettingsSection>
-        </div>
-      ) : !driverOption || deriveProviderSettingsFields(driverOption).length > 0 ? (
-        <SettingsSection
-          title="Runtime"
-          inert={readOnly}
-          aria-disabled={readOnly || undefined}
-          className={readOnly ? "opacity-50 select-none" : undefined}
-        >
-          {runtimeFields}
-        </SettingsSection>
-      ) : null}
-
-      <SettingsSection
-        title="Environment"
-        inert={readOnly || instanceLocks?.wholeEnvironment}
-        aria-disabled={readOnly || instanceLocks?.wholeEnvironment || undefined}
-        className={readOnly ? "opacity-50 select-none" : undefined}
-      >
-        {instanceLocks?.wholeEnvironment ? (
-          <ManagedNotice>{instanceLocks.reason}</ManagedNotice>
-        ) : null}
-        <div className={instanceLocks?.wholeEnvironment ? "opacity-50" : undefined}>
-          <ProviderEnvironmentSection
-            environment={genericEnvironment}
-            onChange={updateGenericEnvironment}
-            secretSources={secretSources}
-            environmentId={environmentId}
-            managed={
-              instanceLocks && {
-                names: instanceLocks.environmentNames,
-                reason: instanceLocks.reason,
-              }
-            }
-          />
-        </div>
-      </SettingsSection>
       {environmentId !== undefined && liveProvider?.driver === "acpRegistry" ? (
         <AcpSessionManagementSection
           environmentId={environmentId}
@@ -1427,6 +1433,61 @@ export function ProviderInstanceCard({
           </div>
         </SettingsSection>
       ) : null}
+
+      {/* How the provider's CLI is started is for whoever runs the server: it stays folded unless
+          it is what stands between this provider and working. */}
+      <ProviderAdvancedFold key={instanceId} defaultOpen={awaitingInstall}>
+        {instance.driver === "codex" && readCodexSetupMode(instance.config) === "managed" ? (
+          <div
+            inert={readOnly}
+            aria-disabled={readOnly || undefined}
+            className={readOnly ? "opacity-50 select-none" : undefined}
+          >
+            <FoldedSettingsSection
+              key={instanceId}
+              id={`provider-instance-${instanceId}-runtime`}
+              title="Runtime"
+              headerPlacement="outside"
+            >
+              {runtime ?? runtimeFields}
+            </FoldedSettingsSection>
+          </div>
+        ) : !driverOption || deriveProviderSettingsFields(driverOption).length > 0 ? (
+          <SettingsSection
+            title="Runtime"
+            inert={readOnly}
+            aria-disabled={readOnly || undefined}
+            className={readOnly ? "opacity-50 select-none" : undefined}
+          >
+            {runtimeFields}
+          </SettingsSection>
+        ) : null}
+
+        <SettingsSection
+          title="Environment"
+          inert={readOnly || instanceLocks?.wholeEnvironment}
+          aria-disabled={readOnly || instanceLocks?.wholeEnvironment || undefined}
+          className={readOnly ? "opacity-50 select-none" : undefined}
+        >
+          {instanceLocks?.wholeEnvironment ? (
+            <ManagedNotice>{instanceLocks.reason}</ManagedNotice>
+          ) : null}
+          <div className={instanceLocks?.wholeEnvironment ? "opacity-50" : undefined}>
+            <ProviderEnvironmentSection
+              environment={genericEnvironment}
+              onChange={updateGenericEnvironment}
+              secretSources={secretSources}
+              environmentId={environmentId}
+              managed={
+                instanceLocks && {
+                  names: instanceLocks.environmentNames,
+                  reason: instanceLocks.reason,
+                }
+              }
+            />
+          </div>
+        </SettingsSection>
+      </ProviderAdvancedFold>
     </>
   );
 }

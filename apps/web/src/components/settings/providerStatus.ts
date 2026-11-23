@@ -41,8 +41,43 @@ function isAntigravitySignInUnchecked(provider: ServerProvider): boolean {
 
 export function getProviderStatusKey(provider: ServerProvider | undefined): ProviderStatusKey {
   if (provider && !provider.enabled) return "disabled";
+  // Nothing is wrong with a provider nobody installed; it is simply not in use.
+  if (provider && !provider.installed) return "neutral";
   if (provider && isAntigravitySignInUnchecked(provider)) return "neutral";
   return provider?.status ?? "warning";
+}
+
+/** Switched on in settings, but with no CLI on the server to run: the switch has nothing to turn on. */
+export function isProviderAwaitingInstall(
+  provider: Pick<ServerProvider, "enabled" | "installed"> | undefined,
+): boolean {
+  return provider !== undefined && provider.enabled && !provider.installed;
+}
+
+/** The host a custom endpoint's requests go to, such as `api.example.com`. */
+function endpointHost(endpoint: string | undefined): string | null {
+  if (!endpoint) return null;
+  try {
+    return new URL(endpoint).host || endpoint;
+  } catch {
+    return endpoint;
+  }
+}
+
+/**
+ * Who the provider answers as. An instance pointed at another endpoint is named by that endpoint:
+ * the CLI's own account (its email, its plan) is not what its requests are billed to.
+ */
+export function getProviderAccount(provider: ServerProvider | undefined): {
+  readonly email: string | null;
+  readonly label: string | null;
+} {
+  if (provider?.auth.status !== "authenticated") return { email: null, label: null };
+  const { auth } = provider;
+  if (auth.type === "customEndpoint") {
+    return { email: null, label: endpointHost(auth.endpoint) ?? auth.label ?? null };
+  }
+  return { email: auth.email?.trim() || null, label: auth.label ?? auth.type ?? null };
 }
 
 export function getProviderSummary(provider: ServerProvider | undefined) {
@@ -62,7 +97,7 @@ export function getProviderSummary(provider: ServerProvider | undefined) {
   }
   if (!provider.installed) {
     return {
-      headline: "Not found",
+      headline: "Not installed",
       detail: provider.message ?? "CLI not detected on PATH.",
     };
   }
@@ -93,9 +128,14 @@ export function getProviderSummary(provider: ServerProvider | undefined) {
     };
   }
   if (provider.auth.status === "authenticated") {
-    const authLabel = provider.auth.label ?? provider.auth.type;
+    const { label } = getProviderAccount(provider);
     return {
-      headline: authLabel ? `Authenticated · ${authLabel}` : "Authenticated",
+      headline:
+        provider.auth.type === "customEndpoint"
+          ? `Connected · ${label}`
+          : label
+            ? `Authenticated · ${label}`
+            : "Authenticated",
       detail: provider.message ?? null,
     };
   }
