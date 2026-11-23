@@ -508,6 +508,7 @@ export function BotDialog({
                     autoFocus={focus !== "cap"}
                     onFocus={(e) => focus === "name" && e.currentTarget.select()}
                     maxLength={60}
+                    placeholder={t("Such as Kitchen")}
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                   />
@@ -519,12 +520,15 @@ export function BotDialog({
                   />
                 </Field>
                 <Field label={t("Description")} htmlFor="bot-description">
-                  <Input
+                  {/* One sentence, shown whole: it wraps in the field and holds no line break. */}
+                  <Textarea
                     id="bot-description"
+                    data-bot-one-line
+                    rows={1}
                     maxLength={200}
                     placeholder={t("One line: what this bot does")}
                     value={description}
-                    onChange={(e) => setDescription(e.target.value)}
+                    onChange={(e) => setDescription(e.target.value.replace(/\s*\n\s*/g, " "))}
                   />
                 </Field>
               </FieldGroup>
@@ -544,10 +548,11 @@ export function BotDialog({
                 <Field
                   label={t("Starters")}
                   htmlFor="bot-starters"
-                  hint={t("Shown in an empty chat. One per line, up to 4.")}
+                  hint={t("Shown in an empty chat.")}
                 >
                   <Textarea
                     id="bot-starters"
+                    placeholder={t("One per line, up to 4")}
                     className="max-h-32 overflow-y-auto"
                     value={startersText}
                     onChange={(e) => setStartersText(e.target.value)}

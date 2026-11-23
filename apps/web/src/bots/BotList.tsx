@@ -132,8 +132,10 @@ export function BotList({
       };
     }),
   );
+  // Until setup has made the main bot the main pane runs setup, and the list waits empty.
+  const settingUp = loaded && !phone && needsFirstRun(bots);
   const shown = searchBots(
-    rows,
+    settingUp ? [] : rows,
     query,
     search.matches.flatMap((m) => (m.environmentId === environmentId ? [m.threadId] : [])),
     // oxlint-disable-next-line react/purity -- recency ranking samples the clock per render, as T3's sidebar search does
@@ -216,15 +218,14 @@ export function BotList({
                 })
               : !loaded
                 ? LOADING_ROWS
-                : bots.length === 0
-                  ? // Before setup has made the main bot, the main pane runs setup and the list waits.
-                    needsFirstRun(bots) && !phone
-                    ? null
-                    : notice(t("No bots"), t("Bots you create show up here."), {
+                : settingUp
+                  ? null
+                  : bots.length === 0
+                    ? notice(t("No bots"), t("Bots you create show up here."), {
                         label: t("New bot"),
                         run: () => openBotDialog({ environmentId, threadId: null, focus: null }),
                       })
-                  : notice(t("No results for “{query}”", { query: query.trim() }))}
+                    : notice(t("No results for “{query}”", { query: query.trim() }))}
           {shown.map((row) => (
             <li
               key={row.bot.threadId}

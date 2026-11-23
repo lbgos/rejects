@@ -541,8 +541,6 @@ export const RU = {
   "Daily limit": "Дневной лимит",
   "Notifications are off": "Уведомления выключены",
   "Schedule and memory": "Расписание и память",
-  "Shown in an empty chat. One per line, up to 4.":
-    "Показываются в пустом чате. По одному в строке, до 4.",
   "Sign-ins are unavailable: the account vault is not answering.":
     "Входы недоступны: хранилище аккаунтов не отвечает.",
   "Tokens a day, such as 500k or 2M": "Токенов в день, например 500k или 2M",
@@ -573,4 +571,10 @@ export const RU = {
   "Paused, resumes {resume}": "Приостановлено, продолжит {resume}",
   "Message {name}": "Сообщение для {name}",
   "Reply stopped": "Ответ остановлен",
+  "Search bots and actions": "Поиск ботов и действий",
+  "Such as Kitchen": "Например, Кухня",
+  "Shown in an empty chat.": "Показываются в пустом чате.",
+  "One per line, up to 4": "По одному в строке, до 4",
+  "{tokens} tokens": "{tokens} токенов",
+  "Recent changes": "Последние изменения",
 } as const satisfies Record<UiText, string>;

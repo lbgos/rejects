@@ -175,13 +175,15 @@ export function ConnectionsScreen({
     page?.type === "account" ? state?.accounts.find((a) => a.site === page.site) : undefined;
   const connector =
     page?.type === "connector" ? state?.connections.find((c) => c.kind === page.kind) : undefined;
+  // A detail page is named after what it is about, whether or not it is connected yet.
   const title =
-    (account && siteName(account.site, uiLanguage)) ??
-    (connector
-      ? CONNECTION_LABEL[connector.kind]
-      : page?.type === "telegram" && telegram
-        ? "Telegram"
-        : t("You"));
+    page?.type === "account"
+      ? siteName(page.site, uiLanguage)
+      : page?.type === "connector"
+        ? CONNECTION_LABEL[page.kind]
+        : page?.type === "telegram"
+          ? "Telegram"
+          : t("You");
 
   return (
     <div
@@ -269,6 +271,21 @@ export function ConnectionsScreen({
               onChanged={refresh}
               onOpenAccount={(site) => setPage({ type: "account", site })}
             />
+          ) : page?.type === "account" ? (
+            // A site nobody signed in to yet: its page offers the sign-in, or says why it cannot.
+            <Section>
+              {state.available ? (
+                <li>
+                  <Row
+                    title={t("Sign in")}
+                    value={t("Not connected")}
+                    onClick={() => void openSheet(page.site)}
+                  />
+                </li>
+              ) : (
+                <VaultDownNotice onRetry={refresh} />
+              )}
+            </Section>
           ) : (
             <>
               <ConnectSection

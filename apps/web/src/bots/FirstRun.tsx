@@ -174,9 +174,9 @@ const STEP_NUMBER: Record<Step, number> = {
 const STEP_COUNT = 5;
 
 /**
- * One step of setup on its own screen: Back and the step count in the bar, the step's question as
- * the title, its rows in a group. A phone gives it the whole Bots tab; wider screens centre it in
- * the main pane.
+ * One step of setup on its own screen: Back in the bar, the step's question as the title with the
+ * step count beside it, its rows in a group. A phone gives it the whole Bots tab; wider screens
+ * set it in a column of the main pane.
  */
 function StepPage({
   title,
@@ -197,24 +197,25 @@ function StepPage({
       data-bot-page
       className="flex h-full min-h-0 flex-col pt-safe text-foreground"
     >
-      <div className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col md:justify-center md:pb-24">
-        <div className="mt-1 flex h-11 shrink-0 items-center justify-between ps-2 pe-5 md:pe-4">
+      {/* Every step starts at the same height: the bar keeps its row when there is no Back. */}
+      <div className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col md:pt-32">
+        <div className="mt-1 flex h-11 shrink-0 items-center ps-2">
           {onBack ? (
             <Button variant="ghost" onClick={onBack}>
               <ChevronLeftIcon />
               <span className="max-md:text-bot-body">{backLabel}</span>
             </Button>
-          ) : (
-            <span />
-          )}
-          <span className="text-xs text-muted-foreground tabular-nums max-md:text-bot-footnote">
+          ) : null}
+        </div>
+        <div className="flex shrink-0 items-baseline justify-between gap-4 px-4 pt-1 max-md:px-5">
+          <h1 className="text-lg font-semibold text-balance max-md:text-bot-heading max-md:font-bold">
+            {title}
+          </h1>
+          <span className="shrink-0 text-xs text-muted-foreground tabular-nums max-md:text-bot-footnote">
             {/* Numbers only: the first step is shown before a language is picked. */}
             {step} / {STEP_COUNT}
           </span>
         </div>
-        <h1 className="shrink-0 px-4 pt-1 text-lg font-semibold text-balance max-md:px-5 max-md:text-bot-heading max-md:font-bold">
-          {title}
-        </h1>
         <div className="min-h-0 overflow-y-auto pb-safe md:flex-none">{children}</div>
       </div>
     </div>
@@ -470,7 +471,7 @@ function EndpointStep({
   const ready = key.trim() !== "" && model.trim() !== "";
   // Label over field: an address or a key needs the row's whole width to be read.
   const field = (label: string, input: ReactNode) => (
-    <li className="flex flex-col gap-1.5 px-4 py-2.5 text-sm max-md:px-5 max-md:text-bot-callout">
+    <li className="flex flex-col gap-1 px-4 py-2.5 text-xs max-md:px-5 max-md:text-bot-footnote">
       <span className="text-muted-foreground">{label}</span>
       {input}
     </li>

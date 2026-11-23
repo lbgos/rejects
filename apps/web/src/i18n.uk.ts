@@ -541,8 +541,6 @@ export const UK = {
   "Daily limit": "Денний ліміт",
   "Notifications are off": "Сповіщення вимкнено",
   "Schedule and memory": "Розклад і пам’ять",
-  "Shown in an empty chat. One per line, up to 4.":
-    "Показуються в порожньому чаті. По одному в рядку, до 4.",
   "Sign-ins are unavailable: the account vault is not answering.":
     "Входи недоступні: сховище акаунтів не відповідає.",
   "Tokens a day, such as 500k or 2M": "Токенів на день, наприклад 500k або 2M",
@@ -573,4 +571,10 @@ export const UK = {
   "Paused, resumes {resume}": "Призупинено, продовжить {resume}",
   "Message {name}": "Повідомлення для {name}",
   "Reply stopped": "Відповідь зупинено",
+  "Search bots and actions": "Пошук ботів і дій",
+  "Such as Kitchen": "Наприклад, Кухня",
+  "Shown in an empty chat.": "Показуються в порожньому чаті.",
+  "One per line, up to 4": "По одному в рядку, до 4",
+  "{tokens} tokens": "{tokens} токенів",
+  "Recent changes": "Останні зміни",
 } as const satisfies Record<string, string>;

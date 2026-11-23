@@ -278,63 +278,71 @@ export function NightlyCheck({ environmentId }: { environmentId: EnvironmentId }
             </Collapsible>
           </li>
         ) : null}
-        {dreams?.changes.map((change) => {
-          const removed = change.after.length === 0;
-          const shown = removed ? change.before : change.after;
-          const was =
-            change.op === "rewrite" || change.op === "merge"
-              ? t("was {notes}", {
-                  notes: change.before.map((note) => `“${note.text}”`).join(", "),
-                })
-              : null;
-          return (
-            <li key={change.id} className={ROW}>
-              <div className="min-w-0 flex-1">
-                <div
-                  className={cn(
-                    "break-words",
-                    ROW_TEXT,
-                    removed && "text-muted-foreground line-through",
-                  )}
-                >
-                  {shown.map((note) => note.text).join(" / ")}
-                </div>
-                <div className={cn("line-clamp-3 break-words", ROW_META)}>
-                  {[
-                    t(OP_LABEL[change.op]),
-                    owner(change),
-                    messageTimeLabel(Date.parse(change.at)),
-                    change.reason,
-                    was,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </div>
-              </div>
-              {change.undone ? (
-                <span className={cn("shrink-0", ROW_META)}>{t("Undone")}</span>
-              ) : (
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  // Its label ends on the row's trailing edge, where "Undone" ends.
-                  className="-me-2 shrink-0"
-                  onClick={() =>
-                    void act(
-                      botRequest(environmentId, BOTS_ENDPOINTS.undoDream, { id: change.id }),
-                      t("Could not undo the change"),
-                    ).then((done) => {
-                      if (done) refreshNotes(environmentId);
-                    })
-                  }
-                >
-                  {t("Undo")}
-                </Button>
-              )}
-            </li>
-          );
-        })}
       </ul>
+      {/* What the check changed is a list of its own, apart from the check's controls. */}
+      {dreams && dreams.changes.length > 0 ? (
+        <>
+          <h3 className={SECTION_HEADER}>{t("Recent changes")}</h3>
+          <ul className={SHEET_LIST}>
+            {dreams.changes.map((change) => {
+              const removed = change.after.length === 0;
+              const shown = removed ? change.before : change.after;
+              const was =
+                change.op === "rewrite" || change.op === "merge"
+                  ? t("was {notes}", {
+                      notes: change.before.map((note) => `“${note.text}”`).join(", "),
+                    })
+                  : null;
+              return (
+                <li key={change.id} className={ROW}>
+                  <div className="min-w-0 flex-1">
+                    <div
+                      className={cn(
+                        "break-words",
+                        ROW_TEXT,
+                        removed && "text-muted-foreground line-through",
+                      )}
+                    >
+                      {shown.map((note) => note.text).join(" / ")}
+                    </div>
+                    <div className={cn("line-clamp-3 break-words", ROW_META)}>
+                      {[
+                        t(OP_LABEL[change.op]),
+                        owner(change),
+                        messageTimeLabel(Date.parse(change.at)),
+                        change.reason,
+                        was,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </div>
+                  </div>
+                  {change.undone ? (
+                    <span className={cn("shrink-0", ROW_META)}>{t("Undone")}</span>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      // Its label ends on the row's trailing edge, where "Undone" ends.
+                      className="-me-2 shrink-0"
+                      onClick={() =>
+                        void act(
+                          botRequest(environmentId, BOTS_ENDPOINTS.undoDream, { id: change.id }),
+                          t("Could not undo the change"),
+                        ).then((done) => {
+                          if (done) refreshNotes(environmentId);
+                        })
+                      }
+                    >
+                      {t("Undo")}
+                    </Button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      ) : null}
       {dreams && dreams.changes.length === 0 ? (
         <p className={EMPTY_NOTE}>{t("Merges repeats and marks outdated notes.")}</p>
       ) : null}

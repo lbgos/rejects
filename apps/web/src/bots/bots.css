@@ -474,6 +474,13 @@ html[data-bots-app] body {
   --toast-header-offset: calc(var(--workspace-topbar-height) + env(safe-area-inset-top));
 }
 
+/* A toast's body starts under its title, not under its icon. */
+:root[data-bots-app]
+  [data-slot="toast"]:has([data-slot="toast-icon"])
+  [data-slot="toast-description"] {
+  padding-inline-start: 1.5rem;
+}
+
 /* On a phone a toast is a banner above the tab bar or the composer (the root route asks for the
    bottom position), so it never covers a title. Its close button sits inside it, and the error's
    own wording stays out of reach of a stray tap: copying it is a desktop control. */
@@ -540,12 +547,16 @@ html[data-bots-app] body {
 }
 /* A turn's "Worked for 8s" line is a caption over the reply: no rule under it, and its text
    starts on the reply's left edge (the button's own padding would set it 4px in). */
-[data-bots-mode="true"] [data-turn-fold] {
+[data-bots-mode="true"] :is([data-turn-fold], [data-turn-working]) {
   border-bottom: 0;
 }
+/* "Working for 4s" is the same line while the turn runs: same edge, no rule. */
 @media (min-width: 768px) {
   [data-bots-mode="true"] [data-turn-fold] button {
     margin-inline-start: -0.25rem;
+  }
+  [data-bots-mode="true"] [data-turn-working] > div {
+    padding-inline: 0;
   }
 }
 /* From here on, a phone only: variant C's bubbles, captions and one-row composer. Wider screens
@@ -768,6 +779,7 @@ html[data-bots-app] body {
 [data-bots-mode="true"] [data-slot="composer-banner-content"] .truncate {
   overflow: visible;
   white-space: normal;
+  line-height: inherit;
 }
 [data-bots-mode="true"] [data-composer-banner-layout="wrap-actions"] {
   flex-wrap: nowrap;
@@ -813,6 +825,7 @@ html[data-bots-app] body {
   --bots-composer-bottom: color-mix(in srgb, var(--foreground) 9%, var(--background));
   --bots-well-top: color-mix(in srgb, var(--foreground) 2%, var(--background));
   --bots-well-bottom: color-mix(in srgb, var(--foreground) 5%, var(--background));
+  --bots-switch-off: color-mix(in srgb, var(--foreground) 26%, var(--background));
   /* Floating pills: opaque for the composer, glass (about 60% fill over a static backdrop blur)
      for the tab bar, search and header discs, so what scrolls under them reads as moving
      content. Phone only (Floating controls, below). */
@@ -874,11 +887,13 @@ html[data-bots-app] body {
   --bots-composer-bottom: color-mix(in srgb, white 70%, var(--background));
   --bots-well-top: color-mix(in srgb, var(--foreground) 6%, var(--background));
   --bots-well-bottom: color-mix(in srgb, var(--foreground) 3%, var(--background));
+  --bots-switch-off: color-mix(in srgb, var(--foreground) 14%, var(--background));
   --bots-float-top: #fff;
   --bots-float-bottom: color-mix(in srgb, white 85%, var(--bots-page));
-  --bots-glass-top: color-mix(in srgb, var(--bots-float-top) 72%, transparent);
-  --bots-glass-bottom: color-mix(in srgb, var(--bots-float-bottom) 66%, transparent);
-  --bots-glass-filter: blur(16px) saturate(180%);
+  /* Dark text under a pale bar reads through it, so the light glass is all but opaque. */
+  --bots-glass-top: color-mix(in srgb, var(--bots-float-top) 92%, transparent);
+  --bots-glass-bottom: color-mix(in srgb, var(--bots-float-bottom) 88%, transparent);
+  --bots-glass-filter: blur(20px) saturate(180%);
   --bots-lit: color-mix(in srgb, var(--foreground) 14%, transparent);
   --bots-lit-soft: color-mix(in srgb, var(--foreground) 9%, transparent);
   --bots-ring: color-mix(in srgb, var(--foreground) 7%, transparent);
@@ -1088,22 +1103,26 @@ html[data-bots-app]:has(
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas: "title control" "description description" "status status";
     align-items: center;
-    gap: 0.125rem 0.75rem;
+    /* No row gap: a row with its help folded away is its title line alone. */
+    gap: 0 0.75rem;
   }
   :root[data-bots-app] [data-settings-page-scroll] [data-settings-row-text] {
     display: contents;
   }
+  /* The stack's own spacing would lift the title off the control's centre line. */
   :root[data-bots-app] [data-settings-page-scroll] [data-settings-row-title] {
     grid-area: title;
+    margin-block: 0;
   }
   :root[data-bots-app] [data-settings-page-scroll] [data-settings-row-description] {
     grid-area: description;
     max-width: none;
-    margin: 0;
+    margin: 0.125rem 0 0;
     text-wrap: pretty;
   }
   :root[data-bots-app] [data-settings-page-scroll] [data-settings-row-status] {
     grid-area: status;
+    margin-top: 0.125rem;
   }
   :root[data-bots-app] [data-settings-page-scroll] [data-settings-row-control] {
     grid-area: control;
@@ -1195,8 +1214,8 @@ html[data-bots-app]:has(
   box-shadow: none;
 }
 
-/* Sunken: form fields, the Settings search and the off switch. Bare fields elsewhere (the
-   sidebar's search) stay bare. */
+/* Sunken: form fields and the Settings search. Bare fields elsewhere (the sidebar's search) stay
+   bare. */
 :root[data-bots-app]
   :is(
     [data-slot="dialog-popup"],
@@ -1209,8 +1228,7 @@ html[data-bots-app]:has(
     [data-slot="input-group"] *,
     [data-settings-search-row] *
   ),
-:root[data-bots-app] [data-settings-index-list] [data-settings-search-row] > div,
-:root[data-bots-app] [data-slot="switch"]:not([data-checked]) {
+:root[data-bots-app] [data-settings-index-list] [data-settings-search-row] > div {
   border-color: transparent;
   background: linear-gradient(180deg, var(--bots-well-top), var(--bots-well-bottom));
   box-shadow:
@@ -1224,6 +1242,16 @@ html[data-bots-app]:has(
     [data-slot="input-group"]
   )::before {
   box-shadow: none;
+}
+
+/* A switch's thumb is white on either track, in both themes; the off track is a grey that reads
+   on a group's surface. */
+:root[data-bots-app] [data-slot="switch-thumb"] {
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 25%);
+}
+:root[data-bots-app] [data-slot="switch"]:not([data-checked]) {
+  background: var(--bots-switch-off);
 }
 
 /* In a form every control is a field: a select and the model picker take the inputs' sunken
@@ -1242,8 +1270,8 @@ html[data-bots-app]:has(
 }
 /* The bot form is an inset grouped form at every width: a group is one rounded card and a field
    is its small label over a bare control, as in the lists on You and Settings. A phone sets the
-   values in the body size. */
-:root[data-bots-app] [data-bot-form] {
+   values in the body size. Setup's fields are the same bare controls in its groups. */
+:root[data-bots-app] :is([data-bot-form], [data-bots-setup]) {
   --bot-form-value: var(--text-sm);
   --bot-form-value-line: 1.25rem;
 }
@@ -1257,8 +1285,7 @@ html[data-bots-app]:has(
   line-height: 1rem;
 }
 :root[data-bots-app]
-  [data-bot-form]
-  [data-bot-form-group]
+  :is([data-bot-form] [data-bot-form-group], [data-bots-setup] .sheet-list)
   :is(
     [data-slot="input-control"],
     [data-slot="textarea-control"],
@@ -1276,24 +1303,32 @@ html[data-bots-app]:has(
   line-height: var(--bot-form-value-line);
 }
 :root[data-bots-app]
-  [data-bot-form]
-  [data-bot-form-group]
+  :is([data-bot-form] [data-bot-form-group], [data-bots-setup] .sheet-list)
   :is([data-slot="input"], [data-slot="textarea"]) {
   padding: 0;
   font-size: inherit;
   line-height: inherit;
 }
-:root[data-bots-app] [data-bot-form] [data-bot-form-group] [data-slot="input"] {
+:root[data-bots-app]
+  :is([data-bot-form] [data-bot-form-group], [data-bots-setup] .sheet-list)
+  [data-slot="input"] {
   height: 1.5rem;
 }
-/* A text area is as tall as what is written in it, from two lines up. */
+/* A text area is as tall as what is written in it, from two lines up; a one-sentence field from
+   one. */
 :root[data-bots-app] [data-bot-form] [data-bot-form-group] [data-slot="textarea"] {
   field-sizing: content;
   min-height: 2lh;
   resize: none;
 }
+:root[data-bots-app]
+  [data-bot-form]
+  [data-bot-form-group]
+  [data-slot="textarea"][data-bot-one-line] {
+  min-height: 1lh;
+}
 @media (max-width: 767px) {
-  :root[data-bots-app] [data-bot-form] {
+  :root[data-bots-app] :is([data-bot-form], [data-bots-setup]) {
     --bot-form-value: var(--text-bot-body);
     --bot-form-value-line: var(--text-bot-body--line-height);
   }
@@ -1305,8 +1340,7 @@ html[data-bots-app]:has(
     line-height: var(--text-bot-footnote--line-height);
   }
   :root[data-bots-app]
-    [data-bot-form]
-    [data-bot-form-group]
+    :is([data-bot-form] [data-bot-form-group], [data-bots-setup] .sheet-list)
     :is(
       [data-slot="input-control"],
       [data-slot="textarea-control"],
@@ -1316,7 +1350,9 @@ html[data-bots-app]:has(
     min-height: 1.75rem;
     letter-spacing: var(--text-bot-body--letter-spacing);
   }
-  :root[data-bots-app] [data-bot-form] [data-bot-form-group] [data-slot="input"] {
+  :root[data-bots-app]
+    :is([data-bot-form] [data-bot-form-group], [data-bots-setup] .sheet-list)
+    [data-slot="input"] {
     height: 1.75rem;
     line-height: 1.75rem;
   }
@@ -1460,7 +1496,7 @@ html[data-bots-app]:has(
       [data-bots-tab-search],
       [data-sidebar-control] [data-slot="button"][href],
       [data-bot-header-actions] :is([data-slot="button"], [data-slot="menu-trigger"]),
-      [data-settings-page-header] [data-slot="button"]:not([data-settings-restore]),
+      [data-settings-page-header] [data-slot="button"]:not([data-settings-bar-action] *),
       [data-bots-mode="true"] [data-composer-banner-surface],
       [data-bot-composer="true"] [data-chat-composer-attach] button
     ),
@@ -1492,7 +1528,7 @@ html[data-bots-app]:has(
       [data-bots-tab-search],
       [data-sidebar-control] [data-slot="button"][href],
       [data-bot-header-actions] :is([data-slot="button"], [data-slot="menu-trigger"]),
-      [data-settings-page-header] [data-slot="button"]:not([data-settings-restore]),
+      [data-settings-page-header] [data-slot="button"]:not([data-settings-bar-action] *),
       [data-bots-mode="true"] [data-composer-banner-surface],
       [data-bot-composer="true"] [data-chat-composer-attach] button
     ),
@@ -1722,7 +1758,8 @@ html[data-bots-app]:has(
 }
 
 /* Phone header controls float like the tab bar: the back arrow, a bot's menu, the bot form's
-   close and a Settings page's controls are matching glass discs, and the bot's raised avatar keeps a gap from the back
+   close and a Settings page's back are matching glass discs (the page's own action in the bar
+   stays a text button), and the bot's raised avatar keeps a gap from the back
    disc. The list's New bot pencil is a raised disc. The `:is(:hover, :not(:hover))`
    matches the plain-glyph rule above so a touch's sticky hover cannot bring it back. */
 @media (max-width: 767px) {
@@ -1730,7 +1767,7 @@ html[data-bots-app]:has(
     :is(
       [data-sidebar-control] [data-slot="button"][href],
       [data-bot-header-actions] :is([data-slot="button"], [data-slot="menu-trigger"]),
-      [data-settings-page-header] [data-slot="button"]:not([data-settings-restore]),
+      [data-settings-page-header] [data-slot="button"]:not([data-settings-bar-action] *),
       [data-bot-panel-header] [data-slot="button"],
       [data-bot-nav-close]
     ):is(:hover, :not(:hover)) {
@@ -1748,7 +1785,7 @@ html[data-bots-app]:has(
     :is(
       [data-sidebar-control] [data-slot="button"][href],
       [data-bot-header-actions] :is([data-slot="button"], [data-slot="menu-trigger"]),
-      [data-settings-page-header] [data-slot="button"]:not([data-settings-restore]),
+      [data-settings-page-header] [data-slot="button"]:not([data-settings-bar-action] *),
       [data-bot-panel-header] [data-slot="button"],
       [data-bot-nav-close]
     ):is(:active, [data-pressed], [aria-expanded="true"]) {
@@ -1817,6 +1854,16 @@ html[data-bots-app]:has(
   --destructive-foreground: var(--error-foreground);
 }
 
+/* A primary action that cannot run yet, or is running, is a neutral button with readable text,
+   not a pale copy of the live one. */
+:root[data-bots-app] [data-slot="button"][data-variant="default"]:disabled {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  color: var(--muted-foreground);
+  box-shadow: none;
+  opacity: 1;
+}
+
 /* Notices over the transcript are opaque, so the message under them never reads through: the
    glass alert keeps its tint over the full page colour. */
 :root[data-bots-app] .chat-banner-lane {
@@ -1827,6 +1874,15 @@ html[data-bots-app]:has(
    page grey, where the theme's zinc-500 falls under 4.5:1; it is a step darker in the bots app. */
 :root:not(.dark, [data-theme-id])[data-bots-app] {
   --muted-foreground: color-mix(in srgb, var(--foreground) 70%, var(--background));
+}
+
+/* Dark, default theme: the same secondary text is a step lighter, and a divider's detail keeps
+   that colour in both themes instead of fading it further. */
+:root.dark:not([data-theme-id])[data-bots-app] {
+  --muted-foreground: color-mix(in srgb, var(--foreground) 72%, var(--background));
+}
+[data-bots-mode="true"] [data-divider-detail] {
+  opacity: 1;
 }
 
 /* Light: every bots screen shares the list's page grey; the bot's replies are white cards on it
@@ -1878,17 +1934,18 @@ html[data-bots-app]:has(
   min-width: 0;
   flex: 1 1 auto;
 }
-/* On the wrapper: the button's own pseudo-elements are its touch target. */
+/* On the wrapper: the button's own pseudo-elements are its touch target. The glyph, its box and
+   its inset are the select trigger's, so chevrons down one group share an edge. */
 [data-bot-model-field]::after {
   content: "";
   flex: none;
-  width: 0.4375rem;
-  height: 0.4375rem;
-  margin-inline: 0.5rem 0.25rem;
-  border: solid var(--muted-foreground);
-  border-width: 0 1.5px 1.5px 0;
+  width: 0.875rem;
+  height: 0.875rem;
+  margin-inline: 0.5rem -0.25rem;
+  background: var(--muted-foreground);
   opacity: 0.7;
-  transform: translateY(-0.125rem) rotate(45deg);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")
+    center / contain no-repeat;
   pointer-events: none;
 }
 :root[data-bots-app] .sheet-list [data-bot-model-field] button {
