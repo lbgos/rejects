@@ -9,13 +9,8 @@ interface PageCopy {
 
 let remembered: PageCopy | null = null;
 
-export function rememberBackPage() {
-  if (!window.matchMedia("(max-width: 767px)").matches) return;
-  // BotTabHost keeps the other tab screens mounted; the active one is the page left behind.
-  const page =
-    document.querySelector('[data-bot-tab-pane][data-active="true"] [data-back-page]') ??
-    document.querySelector("[data-back-page]");
-  if (!(page instanceof HTMLElement)) return;
+function copyPage(page: Element | null): PageCopy | null {
+  if (!(page instanceof HTMLElement)) return null;
   const scrolls: Array<readonly [number, number]> = [];
   page.querySelectorAll("*").forEach((element, index) => {
     if (element.scrollTop > 0) scrolls.push([index, element.scrollTop]);
@@ -23,13 +18,31 @@ export function rememberBackPage() {
   const node = page.cloneNode(true) as HTMLElement;
   node.removeAttribute("data-back-page");
   for (const element of node.querySelectorAll("[id]")) element.removeAttribute("id");
-  remembered = { node, rect: page.getBoundingClientRect(), scrolls };
+  return { node, rect: page.getBoundingClientRect(), scrolls };
 }
 
-export function mountBackPage(page: HTMLElement) {
+export function rememberBackPage() {
+  if (!window.matchMedia("(max-width: 767px)").matches) return;
+  // BotTabHost keeps the other tab screens mounted; the active one is the page left behind.
+  remembered = copyPage(
+    document.querySelector('[data-bot-tab-pane][data-active="true"] [data-back-page]') ??
+      document.querySelector("[data-back-page]"),
+  );
+}
+
+/**
+ * A chat opened from a link or a notification left no page behind; `fallbackPane` names the tab
+ * screen BotTabHost keeps mounted under it, which is copied in its place.
+ */
+export function mountBackPage(page: HTMLElement, fallbackPane?: "bots") {
   const parent = page.parentElement;
-  if (!remembered || !parent) return null;
-  const { node, rect, scrolls } = remembered;
+  const copy =
+    remembered ??
+    (fallbackPane
+      ? copyPage(document.querySelector(`[data-bot-tab-pane="${fallbackPane}"] [data-back-page]`))
+      : null);
+  if (!copy || !parent) return null;
+  const { node, rect, scrolls } = copy;
   const layer = document.createElement("div");
   layer.setAttribute("aria-hidden", "true");
   layer.inert = true;
