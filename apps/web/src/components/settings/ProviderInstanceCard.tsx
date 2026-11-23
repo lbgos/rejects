@@ -972,11 +972,15 @@ export function ProviderInstanceCard({
       </>
     ) : (
       <>
-        {statusDotNode}
-        <span>{summary.headline}</span>
-        {inlineStatusDetail ? (
-          <span className="min-w-0 [overflow-wrap:anywhere]">· {inlineStatusDetail}</span>
-        ) : null}
+        {/* One run of text with its dot, so a long detail wraps after its separator and never
+            starts a line with it. */}
+        <span className="min-w-0 [overflow-wrap:anywhere]">
+          {statusDotNode ? (
+            <span className="me-1.5 inline-flex align-middle">{statusDotNode}</span>
+          ) : null}
+          {summary.headline}
+          {inlineStatusDetail ? ` · ${inlineStatusDetail}` : null}
+        </span>
       </>
     );
   const versionAdvisoryNode = versionAdvisory ? (

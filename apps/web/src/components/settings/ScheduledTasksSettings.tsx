@@ -363,11 +363,11 @@ function deliveryOutcomeVariant(outcome: string) {
   return "outline";
 }
 
-function statusVariant(status: ScheduledTask["lastRunStatus"]) {
-  if (status === "failed") return "error";
-  if (status === "succeeded") return "success";
-  if (status === "running") return "info";
-  return "outline";
+/** A run's result is a word in its colour, as a bot's state is in the list; a success stays quiet. */
+function statusTone(status: ScheduledTask["lastRunStatus"]) {
+  if (status === "failed") return "text-error-foreground";
+  if (status === "running") return "text-info-foreground";
+  return undefined;
 }
 
 export function ScheduledTasksSettings(target: {
@@ -811,11 +811,13 @@ function ScheduledTaskRow({
             <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
               {missed ? (
                 <>
-                  <Badge variant="warning">missed</Badge>
+                  <span className="text-warning-foreground">missed</span>
                   <span>The server was off at that time.</span>
                 </>
               ) : task.lastRunStatus !== "never" ? (
-                <Badge variant={statusVariant(task.lastRunStatus)}>{task.lastRunStatus}</Badge>
+                <span className={statusTone(task.lastRunStatus)}>
+                  {task.lastRunStatus === "succeeded" ? "Last run succeeded" : task.lastRunStatus}
+                </span>
               ) : null}
               {!missed && task.lastRunError ? (
                 <span className="text-destructive">{task.lastRunError}</span>

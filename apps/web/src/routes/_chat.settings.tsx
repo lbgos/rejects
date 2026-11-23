@@ -48,11 +48,16 @@ function RestoreDeviceDefaultsButton({ onRestored }: { onRestored: () => void })
     <Button
       size="xs"
       variant="ghost"
+      data-settings-restore
+      aria-label="Restore device defaults"
       disabled={changedSettingLabels.length === 0}
+      // A phone's bar has room for one word, and shows it only while there is something to reset.
+      className={changedSettingLabels.length === 0 ? "max-sm:hidden" : undefined}
       onClick={() => void restoreDefaults()}
     >
       <RotateCcwIcon className="mx-1 size-3.5" />
-      <span className="max-sm:sr-only">Restore device defaults</span>
+      <span className="max-sm:hidden">Restore device defaults</span>
+      <span className="sm:hidden">Reset</span>
     </Button>
   );
 }
