@@ -237,11 +237,13 @@ function BotHeaderSubtitle({ target }: { target: ScopedThreadRef }) {
     schedules,
   );
   const next = state === "capped" ? null : nextWakeAt(schedules);
-  if (state === "idle" && !next) return null;
+  // A running turn says so in the transcript, where its progress is; the header adds nothing.
+  const shown = state === "idle" || state === "running" ? null : state;
+  if (!shown && !next) return null;
   return (
     <span className="flex max-w-full items-center gap-1 truncate text-xs leading-4 text-muted-foreground tabular-nums">
-      {state !== "idle" ? <BotStateLabel state={state} /> : null}
-      {state !== "idle" && next ? <span aria-hidden>·</span> : null}
+      {shown ? <BotStateLabel state={shown} /> : null}
+      {shown && next ? <span aria-hidden>·</span> : null}
       {next ? <span>{t("next {time}", { time: formatWakeIn(next) })}</span> : null}
     </span>
   );
@@ -271,7 +273,12 @@ function BotActionsMenu({
       >
         <EllipsisIcon />
       </MenuTrigger>
-      <MenuPopup data-bot-surface align="end" collisionPadding={menuCollisionPadding()}>
+      <MenuPopup
+        data-bot-surface
+        data-bot-sheet
+        align="end"
+        collisionPadding={menuCollisionPadding()}
+      >
         {botActions({ bot, schedules, where: "header", canShareWithGuest }).flatMap((action) => {
           const Icon = BOT_ACTION_ICONS[action.icon];
           const item = (

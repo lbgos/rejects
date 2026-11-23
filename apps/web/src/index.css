@@ -188,6 +188,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --color-bot-glass: color-mix(in srgb, var(--foreground) 12%, var(--background));
   --color-bot-hairline: color-mix(in srgb, var(--foreground) 20%, transparent);
   --color-bot-scrim: rgb(0 0 0 / 0.62);
+  --color-bot-sheet-scrim: rgb(0 0 0 / 0.4);
   /* Variant C's type ramp for the bots app on a phone: size, line height and tracking. */
   --text-bot-title: 34px;
   --text-bot-title--line-height: 41px;

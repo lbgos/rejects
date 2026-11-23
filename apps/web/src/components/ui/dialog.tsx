@@ -78,6 +78,7 @@ function DialogBackdrop({
         className,
       )}
       data-slot="dialog-backdrop"
+      data-variant={variant}
       {...props}
     />
   );
@@ -122,6 +123,7 @@ function DialogPopup({
           className,
         )}
         data-slot="dialog-popup"
+        data-variant={variant}
         initialFocus={initialFocus}
         render={renderRetainedPopup}
         {...props}

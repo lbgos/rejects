@@ -24,7 +24,7 @@ export function PushPrompt({ environmentId }: { environmentId: EnvironmentId }) 
       className="flex items-center gap-1 ps-2 pt-2 text-xs text-muted-foreground max-md:ps-5 max-md:pe-2 max-md:text-bot-footnote"
     >
       <span className="min-w-0 flex-1 py-1">
-        {push.message ?? push.blocker ?? t("Get bot replies on this device.")}
+        {push.message ?? push.blocker ?? t("Notifications are off")}
       </span>
       {push.blocker ? null : (
         <Button size="sm" variant="ghost" disabled={push.busy} onClick={() => void push.enable()}>

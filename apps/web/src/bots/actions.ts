@@ -31,13 +31,8 @@ export type BotActionId =
   | "unmute"
   | "mark-read"
   | "mark-unread"
-  | "schedule"
-  | "activity"
-  | "memory"
-  | "bridge"
-  | "screen"
+  | "details"
   | "share-guest"
-  | "rename"
   | "edit"
   | "delete";
 
@@ -57,9 +52,7 @@ export function botActions(input: {
   readonly canShareWithGuest?: boolean;
 }): BotAction[] {
   const { bot, schedules, where } = input;
-  const screen = { id: "screen" as const, label: t("Screen"), icon: "monitor" };
   return [
-    ...(where === "header" ? [screen] : []),
     ...(schedules.length === 0
       ? []
       : [
@@ -93,16 +86,12 @@ export function botActions(input: {
               },
         ]
       : []),
-    { id: "schedule", label: t("Schedule"), icon: "clock", separatorBefore: true },
-    { id: "activity", label: t("Activity"), icon: "activity" },
-    { id: "memory", label: t("Memory"), icon: "brain" },
-    { id: "bridge", label: t("Bridge"), icon: "shield-check" },
-    ...(where === "row" ? [screen] : []),
+    // Schedule, activity and memory are one place; its tabs switch between them.
+    { id: "details", label: t("Schedule and memory"), icon: "clock", separatorBefore: true },
     ...(input.canShareWithGuest
       ? [{ id: "share-guest" as const, label: t("Share with guest"), icon: "share" }]
       : []),
-    { id: "rename", label: t("Rename"), icon: "pencil", separatorBefore: true },
-    { id: "edit", label: t("Edit job and model"), icon: "sliders" },
+    { id: "edit", label: t("Edit bot"), icon: "sliders" },
     ...(isBuiltinBot(bot)
       ? []
       : [
@@ -257,25 +246,16 @@ export function useBotActions(environmentId: EnvironmentId) {
         }
         await refreshBots(environmentId).catch(() => undefined);
         return;
-      case "rename":
       case "edit":
-        return openBotDialog({
-          environmentId,
-          threadId: bot.threadId,
-          focus: id === "rename" ? "name" : null,
-        });
+        return openBotDialog({ environmentId, threadId: bot.threadId, focus: null });
       case "pause":
       case "resume":
         for (const task of schedules)
           void setEnabled({ environmentId, input: { id: task.id, enabled: id === "resume" } });
         return;
-      case "schedule":
-      case "activity":
-      case "memory":
-      case "bridge":
-      case "screen":
+      case "details":
         if (routeThreadId !== bot.threadId) await open(bot);
-        return openBotPanel(scopeThreadRef(environmentId, bot.threadId), id);
+        return openBotPanel(scopeThreadRef(environmentId, bot.threadId), "schedule");
       case "share-guest":
         return openGuestShareDialog(scopeThreadRef(environmentId, bot.threadId));
       case "mark-read":

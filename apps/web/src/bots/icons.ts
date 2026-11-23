@@ -1,17 +1,12 @@
 import {
-  ActivityIcon,
   BellIcon,
   BellOffIcon,
-  BrainIcon,
   CheckIcon,
   ClockIcon,
   MessageSquareDotIcon,
-  MonitorIcon,
   PauseIcon,
-  PencilIcon,
   PlayIcon,
   Share2Icon,
-  ShieldCheckIcon,
   SlidersHorizontalIcon,
   Trash2Icon,
   ZapIcon,
@@ -19,20 +14,15 @@ import {
 } from "lucide-react";
 
 export const BOT_ACTION_ICONS: Record<string, LucideIcon> = {
-  pencil: PencilIcon,
   sliders: SlidersHorizontalIcon,
   pause: PauseIcon,
   play: PlayIcon,
   clock: ClockIcon,
-  activity: ActivityIcon,
-  brain: BrainIcon,
   check: CheckIcon,
   "message-badge": MessageSquareDotIcon,
-  monitor: MonitorIcon,
   trash: Trash2Icon,
   bell: BellIcon,
   "bell-off": BellOffIcon,
   share: Share2Icon,
-  "shield-check": ShieldCheckIcon,
   zap: ZapIcon,
 };

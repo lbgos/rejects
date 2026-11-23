@@ -36,6 +36,7 @@ export function BotMessageMenu({
     <Menu open onOpenChange={(open) => (open ? undefined : onClose())}>
       <MenuPopup
         data-bot-surface
+        data-bot-sheet
         aria-label={t("Message actions")}
         anchor={bubble}
         align={from === "user" ? "end" : "start"}
@@ -44,7 +45,11 @@ export function BotMessageMenu({
       >
         {onReact ? (
           <>
-            <div role="group" aria-label={t("React")} className="flex items-center gap-0.5 p-1">
+            <div
+              role="group"
+              aria-label={t("React")}
+              className="flex items-center gap-0.5 p-1 max-md:justify-between max-md:px-1.5"
+            >
               {BOT_REACTIONS.map((emoji) => (
                 <button
                   key={emoji}
@@ -52,7 +57,7 @@ export function BotMessageMenu({
                   aria-label={t("React {emoji}", { emoji })}
                   aria-pressed={reaction === emoji}
                   onClick={() => onReact(reaction === emoji ? null : emoji)}
-                  className="flex size-9 cursor-pointer items-center justify-center rounded-full text-xl outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset aria-pressed:bg-accent"
+                  className="flex size-9 cursor-pointer items-center justify-center rounded-full text-xl outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset aria-pressed:bg-accent max-md:size-11 max-md:text-2xl pointer-coarse:focus-visible:ring-0"
                 >
                   {emoji}
                 </button>
@@ -65,24 +70,23 @@ export function BotMessageMenu({
           <MenuGroupLabel>
             <span className="tabular-nums">{time}</span>
           </MenuGroupLabel>
+          {quotable ? (
+            <>
+              <MenuItem onClick={() => onPick("reply")}>
+                <ReplyIcon />
+                {t("Reply")}
+              </MenuItem>
+              <MenuItem onClick={() => onPick("copy")}>
+                <CopyIcon />
+                {t("Copy")}
+              </MenuItem>
+              <MenuItem onClick={() => onPick("select")}>
+                <TextSelectIcon />
+                {t("Select text")}
+              </MenuItem>
+            </>
+          ) : null}
         </MenuGroup>
-        {quotable ? (
-          <>
-            <MenuSeparator />
-            <MenuItem onClick={() => onPick("reply")}>
-              <ReplyIcon />
-              {t("Reply")}
-            </MenuItem>
-            <MenuItem onClick={() => onPick("copy")}>
-              <CopyIcon />
-              {t("Copy")}
-            </MenuItem>
-            <MenuItem onClick={() => onPick("select")}>
-              <TextSelectIcon />
-              {t("Select text")}
-            </MenuItem>
-          </>
-        ) : null}
       </MenuPopup>
     </Menu>
   );

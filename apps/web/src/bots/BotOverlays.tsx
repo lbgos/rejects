@@ -1,6 +1,7 @@
-import { BotBridgePanel } from "./BotBridgePanel";
+import { BotBridgePanel, useBridgeState } from "./BotBridgePanel";
 import { BotScreenPanel } from "./BotScreenPanel";
 import {
+  BOTS_ENDPOINTS,
   type BotSummary,
   chargedTokens,
   type EnvironmentId,
@@ -17,7 +18,8 @@ import {
   PlusIcon,
   XIcon,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import * as Option from "effect/Option";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "../components/ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../components/ui/collapsible";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../components/ui/menu";
@@ -30,7 +32,9 @@ import { Textarea } from "../components/ui/textarea";
 import { cn } from "../lib/utils";
 import { useThreadProjection } from "../state/entities";
 import { serverEnvironment } from "../state/server";
+import { usePreparedConnection } from "../state/session";
 import { useAtomCommand } from "../state/use-atom-command";
+import { botRequest } from "./http";
 import { resolveThreadRouteRef } from "../threadRoutes";
 import { saveNote, setNote } from "./actions";
 import { NightlyCheck } from "./NightlyCheck";
@@ -93,6 +97,64 @@ const PANEL_TITLE: Record<BotPanel, UiText> = {
 };
 const PANELS = Object.keys(PANEL_TITLE) as BotPanel[];
 
+/** Screen and Bridge are tabs only on a server that has a bot computer or a linked environment. */
+function useBotPanels(target: ScopedThreadRef, open: BotPanel): ReadonlyArray<BotPanel> {
+  const { environmentId, threadId } = target;
+  const bridge = useBridgeState(environmentId, "");
+  const [screen, setScreen] = useState(false);
+  const connected = Option.isSome(usePreparedConnection(environmentId));
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- asks the server once whether it runs a bot computer
+  useEffect(() => {
+    if (!connected) return;
+    const controller = new AbortController();
+    botRequest(environmentId, BOTS_ENDPOINTS.screen, { threadId }, controller.signal).then(
+      (next) => setScreen(next.available),
+      () => undefined,
+    );
+    return () => controller.abort();
+  }, [environmentId, threadId, connected]);
+  const available: Record<BotPanel, boolean> = {
+    schedule: true,
+    activity: true,
+    memory: true,
+    screen,
+    bridge:
+      (bridge?.environments.length ?? 0) > 0 ||
+      (bridge?.requests.some((request) => request.botThreadId === threadId) ?? false),
+  };
+  return PANELS.filter((id) => available[id] || id === open);
+}
+
+function BotPanelTabs({
+  target,
+  open,
+  size,
+}: {
+  target: ScopedThreadRef;
+  open: BotPanel;
+  size?: "default";
+}) {
+  const panels = useBotPanels(target, open);
+  return (
+    <ToggleGroup
+      aria-label={t("Bot panel")}
+      className="min-w-0 flex-1 *:flex-1"
+      size={size}
+      value={[open]}
+      onValueChange={(values) => {
+        const next = panels.find((id) => id === values[0]);
+        if (next) openBotPanel(target, next);
+      }}
+    >
+      {panels.map((id) => (
+        <Toggle key={id} value={id}>
+          {t(PANEL_TITLE[id])}
+        </Toggle>
+      ))}
+    </ToggleGroup>
+  );
+}
+
 function BotSheet({ target, panel }: { target: ScopedThreadRef; panel: BotPanel }) {
   const phone = useMediaQuery("max-md");
   const bot = useBot(target.environmentId, target.threadId);
@@ -106,15 +168,24 @@ function BotSheet({ target, panel }: { target: ScopedThreadRef; panel: BotPanel 
         side="bottom"
         aria-label={bot ? `${bot.name}: ${t(PANEL_TITLE[panel])}` : t("Bot panel")}
       >
-        <div className="mt-1 flex h-11 shrink-0 items-center px-2">
-          <Button variant="ghost" className="max-w-[70%]" onClick={closeBotPanel}>
+        {/* A pushed page, as in Settings: the back button and the page's name centred. */}
+        <div data-bot-panel-header className="relative mt-1 flex h-11 shrink-0 items-center">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="z-10 ms-3"
+            aria-label={t("Back")}
+            onClick={closeBotPanel}
+          >
             <ChevronLeftIcon />
-            <span className="truncate text-bot-body">{bot?.name ?? t("Back")}</span>
           </Button>
+          <h2 className="pointer-events-none absolute inset-x-18 truncate text-center text-bot-body font-semibold">
+            {bot?.name}
+          </h2>
         </div>
-        <h2 className="shrink-0 px-5 pt-1 pb-1 text-bot-title font-bold">
-          {t(PANEL_TITLE[panel])}
-        </h2>
+        <div data-bot-panel-tabs className="flex shrink-0 px-4 pt-1 pb-2">
+          <BotPanelTabs target={target} open={panel} size="default" />
+        </div>
         <div className="min-h-0 flex-1 overflow-y-auto pb-safe">
           <BotPanelContent target={target} panel={panel} />
         </div>
@@ -138,21 +209,7 @@ export function BotSidePanel({ target }: { target: ScopedThreadRef }) {
       )}
     >
       <div className="flex h-(--workspace-topbar-height) shrink-0 items-center gap-2 border-b ps-3 pe-2">
-        <ToggleGroup
-          aria-label={t("Bot panel")}
-          className="min-w-0 flex-1 *:flex-1"
-          value={[open]}
-          onValueChange={(values) => {
-            const next = PANELS.find((id) => id === values[0]);
-            if (next) openBotPanel(target, next);
-          }}
-        >
-          {PANELS.map((id) => (
-            <Toggle key={id} value={id}>
-              {t(PANEL_TITLE[id])}
-            </Toggle>
-          ))}
-        </ToggleGroup>
+        <BotPanelTabs target={target} open={open} />
         <Button size="icon-xs" variant="ghost" aria-label={t("Close")} onClick={closeBotPanel}>
           <XIcon />
         </Button>
@@ -229,19 +286,25 @@ function SchedulePanel({ target }: { target: ScopedThreadRef }) {
                   }
                 >
                   <div className={cn("truncate", ROW_TEXT)}>{task.title}</div>
-                  <div className={cn("truncate", ROW_META)}>
-                    {botScheduleLabel(task.schedule)} ·{" "}
-                    {t("last {run}", {
-                      run: task.lastRunAt
-                        ? `${clock(Date.parse(task.lastRunAt))} ${statusWord(task.lastRunStatus)}`
-                        : statusWord("never"),
-                    })}
+                  {/* Wraps instead of cutting: the next run is what the row is read for. */}
+                  <div className={cn("break-words", ROW_META)}>
+                    {botScheduleLabel(task.schedule)}
                     {task.nextRunAt
                       ? ` · ${t("next {time}", { time: formatWakeIn(task.nextRunAt) })}`
                       : null}
+                    {task.lastRunAt
+                      ? ` · ${t("last {run}", {
+                          run: `${clock(Date.parse(task.lastRunAt))} ${statusWord(task.lastRunStatus)}`,
+                        })}`
+                      : null}
                   </div>
                 </MenuTrigger>
-                <MenuPopup data-bot-surface align="start" collisionPadding={menuCollisionPadding()}>
+                <MenuPopup
+                  data-bot-surface
+                  data-bot-sheet
+                  align="start"
+                  collisionPadding={menuCollisionPadding()}
+                >
                   <MenuItem
                     onClick={() =>
                       void runNow({ environmentId: target.environmentId, input: { id: task.id } })
@@ -283,9 +346,13 @@ function SchedulePanel({ target }: { target: ScopedThreadRef }) {
 
 function MemoryPanel({ target }: { target: ScopedThreadRef }) {
   const bot = useBot(target.environmentId, target.threadId);
+  const [query, setQuery] = useState("");
   if (!bot) return null;
   return (
     <>
+      <div className="pt-3 max-md:pt-1">
+        <NoteSearch query={query} onChange={setQuery} />
+      </div>
       <NoteList
         environmentId={target.environmentId}
         bot={null}
@@ -293,6 +360,7 @@ function MemoryPanel({ target }: { target: ScopedThreadRef }) {
         scope={t("All bots")}
         addLabel={t("Add to You")}
         empty={t("Every bot gets these notes about you, such as your language or units.")}
+        query={query}
       />
       <NoteList
         environmentId={target.environmentId}
@@ -301,8 +369,25 @@ function MemoryPanel({ target }: { target: ScopedThreadRef }) {
         scope={t("This bot")}
         addLabel={t("Add to {bot}", { bot: bot.name })}
         empty={t("{bot} saves preferences and corrections you give it here.", { bot: bot.name })}
+        query={query}
       />
     </>
+  );
+}
+
+function NoteSearch({ query, onChange }: { query: string; onChange: (query: string) => void }) {
+  const phone = useMediaQuery("max-md");
+  return (
+    <div className="px-4">
+      <Input
+        type="search"
+        size={phone ? "lg" : "compact"}
+        value={query}
+        placeholder={t("Search notes")}
+        aria-label={t("Search notes")}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </div>
   );
 }
 
@@ -323,7 +408,10 @@ export function YouNotes({ environmentId }: { environmentId: EnvironmentId }) {
 
 const SEARCH_FROM = 12;
 
-/** A stale or contradicted note stays out of turns until the user edits it or keeps it as still true. */
+/**
+ * A stale or contradicted note stays out of turns until the user edits it or keeps it as still
+ * true. A panel with several lists passes one `query` for all of them; a list alone has its own.
+ */
 function NoteList({
   environmentId,
   bot,
@@ -331,6 +419,7 @@ function NoteList({
   scope,
   addLabel,
   empty,
+  query: sharedQuery,
 }: {
   environmentId: EnvironmentId;
   bot: BotSummary | null;
@@ -338,11 +427,15 @@ function NoteList({
   scope: string;
   addLabel: string;
   empty?: string;
+  query?: string;
 }) {
   const [editing, setEditing] = useState<{ id: string | null; text: string } | null>(null);
-  const [query, setQuery] = useState("");
+  const [ownQuery, setOwnQuery] = useState("");
+  const query = sharedQuery ?? ownQuery;
   const [retired, setRetired] = useState(false);
-  const [limit, setLimit] = useState(NOTES_PAGE);
+  const [more, setMore] = useState<{ query: string; limit: number }>({ query, limit: NOTES_PAGE });
+  // A new search starts from its first page.
+  const limit = more.query === query ? more.limit : NOTES_PAGE;
   const page = useNotes(environmentId, bot?.threadId ?? null, { query, retired, limit });
   // A saved edit shows until the list read after it arrives.
   const [saved, setSaved] = useState<{ page: typeof page; id: string; text: string } | null>(null);
@@ -359,7 +452,7 @@ function NoteList({
   const showRetired = (next: boolean) => {
     setRetired(next);
     setEditing(null);
-    setLimit(NOTES_PAGE);
+    setMore({ query, limit: NOTES_PAGE });
   };
   const field = (
     <MemoryField
@@ -379,19 +472,9 @@ function NoteList({
           {retired ? t("Back to notes") : scope}
         </Button>
       </div>
-      {total >= SEARCH_FROM || searching ? (
-        <div className="px-4 pb-1.5">
-          <Input
-            type="search"
-            size="compact"
-            value={query}
-            placeholder={t("Search notes")}
-            aria-label={t("Search notes")}
-            onChange={(event) => {
-              setQuery(event.target.value);
-              setLimit(NOTES_PAGE);
-            }}
-          />
+      {sharedQuery === undefined && (total >= SEARCH_FROM || searching) ? (
+        <div className="pb-1.5">
+          <NoteSearch query={ownQuery} onChange={setOwnQuery} />
         </div>
       ) : null}
       {page !== null && notes.length === 0 && !editing && (searching || retired || empty) ? (
@@ -470,7 +553,7 @@ function NoteList({
                 "w-full px-4 py-2.5 text-left text-muted-foreground outline-none hover:bg-accent max-md:px-5 max-md:py-3 max-md:hover:bg-transparent",
                 ROW_TEXT,
               )}
-              onClick={() => setLimit((current) => current + NOTES_PAGE)}
+              onClick={() => setMore({ query, limit: limit + NOTES_PAGE })}
             >
               {t("Show {count} more", { count: Math.min(NOTES_PAGE, total - notes.length) })}
             </button>
@@ -581,6 +664,17 @@ function MemoryField({
   );
 }
 
+/**
+ * An activity row: a time column of one width, so every outcome starts on the same line, then the
+ * outcome, then what it cost. On a phone the outcome takes up to two lines beside the time, with
+ * the cost under it.
+ */
+const ACTIVITY_ROW =
+  "grid w-full grid-cols-[6.5rem_minmax(0,1fr)_auto] items-baseline gap-x-2 px-4 py-2.5 text-left max-md:grid-cols-[minmax(0,1fr)_auto] max-md:gap-y-0.5 max-md:px-5";
+const ACTIVITY_TIME = `${ROW_META} max-md:col-start-2 max-md:row-start-1`;
+const ACTIVITY_TEXT = `${ROW_TEXT} min-w-0 truncate max-md:col-start-1 max-md:row-start-1 max-md:line-clamp-2 max-md:whitespace-normal`;
+const ACTIVITY_META = `${ROW_META} max-md:col-span-2`;
+
 function ActivityPanel({ target }: { target: ScopedThreadRef }) {
   const bot = useBot(target.environmentId, target.threadId);
   const dreams = bot?.dreams ?? [];
@@ -630,27 +724,29 @@ function ActivityPanel({ target }: { target: ScopedThreadRef }) {
               <li key={run.id}>
                 <Collapsible>
                   {/* On a phone the title gets the line, with the time trailing and the meta below. */}
-                  <CollapsibleTrigger className="flex w-full items-baseline gap-2 px-4 py-2.5 text-left hover:bg-accent max-md:grid max-md:grid-cols-[minmax(0,1fr)_auto] max-md:gap-x-2 max-md:gap-y-0.5 max-md:px-5 max-md:hover:bg-transparent">
-                    <span
-                      className={cn("shrink-0 max-md:col-start-2 max-md:row-start-1", ROW_META)}
-                    >
-                      {clock(DateTime.toEpochMillis(run.requestedAt))}
+                  <CollapsibleTrigger className={ACTIVITY_ROW}>
+                    <span className={ACTIVITY_TIME}>
+                      {messageTimeLabel(DateTime.toEpochMillis(run.requestedAt))}
                     </span>
-                    <span
-                      className={cn(
-                        "min-w-0 flex-1 truncate max-md:col-start-1 max-md:row-start-1",
-                        ROW_TEXT,
-                      )}
-                    >
-                      {message?.text.slice(0, 80) ?? t("run")}
-                    </span>
-                    <span className={cn("shrink-0 max-md:col-span-2", ROW_META)}>
+                    <span className={ACTIVITY_TEXT}>{message?.text.slice(0, 80) ?? t("run")}</span>
+                    <span className={ACTIVITY_META}>
+                      {run.status !== "completed" ? (
+                        <span
+                          className={
+                            run.status === "failed" ? "text-destructive-foreground" : undefined
+                          }
+                        >
+                          {statusWord(run.status)} ·{" "}
+                        </span>
+                      ) : notified ? (
+                        `${t("notified")} · `
+                      ) : null}
                       {plural(tools.length, {
                         en: ["{count} tool", "{count} tools"],
                         uk: ["{count} інструмент", "{count} інструменти", "{count} інструментів"],
                         ru: ["{count} инструмент", "{count} инструмента", "{count} инструментов"],
                       })}{" "}
-                      · {formatTokens(tokens)} · {notified ? t("notified") : statusWord(run.status)}
+                      · {formatTokens(tokens)}
                     </span>
                   </CollapsibleTrigger>
                   <CollapsiblePanel animate={false}>
@@ -697,25 +793,17 @@ function ActivityPanel({ target }: { target: ScopedThreadRef }) {
                 .filter(Boolean)
                 .join(" · ");
               return (
-                <li
-                  key={`${run.at}#${run.result}`}
-                  className="flex items-baseline gap-2 px-4 py-2.5 max-md:grid max-md:grid-cols-[minmax(0,1fr)_auto] max-md:gap-x-2 max-md:gap-y-0.5 max-md:px-5"
-                >
-                  <span className={cn("shrink-0 max-md:col-start-2 max-md:row-start-1", ROW_META)}>
-                    {messageTimeLabel(Date.parse(run.at))}
-                  </span>
+                <li key={`${run.at}#${run.result}`} className={ACTIVITY_ROW}>
+                  <span className={ACTIVITY_TIME}>{messageTimeLabel(Date.parse(run.at))}</span>
                   <span
                     className={cn(
-                      "min-w-0 flex-1 truncate max-md:col-start-1 max-md:row-start-1",
-                      ROW_TEXT,
+                      ACTIVITY_TEXT,
                       run.outcome === "failed" && "text-destructive-foreground",
                     )}
                   >
                     {run.result}
                   </span>
-                  {spent === "" ? null : (
-                    <span className={cn("shrink-0 max-md:col-span-2", ROW_META)}>{spent}</span>
-                  )}
+                  {spent === "" ? null : <span className={ACTIVITY_META}>{spent}</span>}
                 </li>
               );
             })}

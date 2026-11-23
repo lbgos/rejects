@@ -78,7 +78,8 @@ const COPY = {
     new: "Ні, для мене це нове",
     backToLanguages: "Назад до мов",
     slow: "Головного бота створено. Відкрийте його в «Ботах», коли з’єднання оновиться.",
-    failed: "Не вдалося налаштувати. Спробуйте ще раз.",
+    failed: "Не вдалося зберегти. Перевірте дані та спробуйте ще раз.",
+    failedAnswer: "Налаштування не завершилося. Виберіть відповідь ще раз.",
   },
   ru: {
     step: "Шаг {n} из {of}",
@@ -116,7 +117,8 @@ const COPY = {
     new: "Нет, для меня это новое",
     backToLanguages: "Назад к языкам",
     slow: "Главный бот создан. Откройте его в «Ботах», когда соединение обновится.",
-    failed: "Не удалось настроить. Попробуйте ещё раз.",
+    failed: "Не удалось сохранить. Проверьте данные и попробуйте ещё раз.",
+    failedAnswer: "Настройка не завершилась. Выберите ответ ещё раз.",
   },
   en: {
     step: "Step {n} of {of}",
@@ -154,7 +156,8 @@ const COPY = {
     new: "No, this is new to me",
     backToLanguages: "Back to languages",
     slow: "The main bot is created. Open it from Bots when the connection catches up.",
-    failed: "Could not set up. Try again.",
+    failed: "Could not save. Check the details and try again.",
+    failedAnswer: "Setup did not finish. Choose an answer again to retry.",
   },
 } as const;
 
@@ -282,7 +285,7 @@ export function FirstRun({ environmentId }: { environmentId: EnvironmentId }) {
       if (picked !== uiLanguage) setUiLanguageChoice(picked);
     } catch {
       // The failure stays beside the choice that caused it, where the retry is.
-      setFailure(COPY[picked].failed);
+      setFailure(COPY[picked].failedAnswer);
       setBusy(null);
     }
   };

@@ -46,9 +46,10 @@ import {
   DialogPopup,
   DialogTitle,
 } from "../components/ui/dialog";
-import { XIcon } from "lucide-react";
+import { ChevronDownIcon, XIcon } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Checkbox } from "../components/ui/checkbox";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../components/ui/collapsible";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import {
@@ -59,6 +60,7 @@ import {
   SelectValue,
 } from "../components/ui/select";
 import { Textarea } from "../components/ui/textarea";
+import { SECTION_TITLE } from "./panelStyles";
 import { formatTokens, parseTokenCap, usageSourceLabel } from "./presentation";
 import { refreshBots, useBot } from "./state";
 import { BOT_TEMPLATES, type BotTemplateId } from "./templates";
@@ -88,6 +90,7 @@ export function resolveDefaultBotModel(
   return firstAvailable ?? DEFAULT_BOT_MODEL;
 }
 
+/** A labelled control. Its note always sits under it, so every field in the form reads the same way. */
 function Field({
   label,
   hint,
@@ -100,33 +103,61 @@ function Field({
   children: ReactNode;
 }) {
   return (
-    <div className="space-y-1.5">
-      <Label data-bot-field-label className="flex items-baseline justify-between" htmlFor={htmlFor}>
-        <span>{label}</span>
-        {hint ? (
-          <span className="font-normal text-2xs text-muted-foreground/80 max-md:hidden">
-            {hint}
-          </span>
-        ) : null}
+    <div data-bot-field className="space-y-1.5 max-md:space-y-1 max-md:px-4 max-md:py-2.5">
+      <Label data-bot-field-label htmlFor={htmlFor}>
+        {label}
       </Label>
       {children}
-      {/* On a phone the note sits under its field. */}
-      {hint ? <p className="text-bot-footnote text-muted-foreground md:hidden">{hint}</p> : null}
+      {hint ? (
+        <p className="text-xs text-muted-foreground max-md:text-bot-footnote">{hint}</p>
+      ) : null}
     </div>
   );
 }
 
-/** A run of related fields. Groups are set apart by a hairline; a heading names the less obvious ones. */
+/**
+ * A run of related fields. A wide screen sets groups apart with a hairline; a phone draws each as
+ * an inset group under its quiet title, as the lists on You and Settings are.
+ */
 function FieldGroup({ title, children }: { title?: string; children: ReactNode }) {
   return (
-    <section className="space-y-5 border-t border-bot-hairline pt-5 first:border-t-0 first:pt-0">
-      {title ? (
-        <h3 className="text-xs font-medium text-muted-foreground max-md:text-bot-footnote">
-          {title}
-        </h3>
-      ) : null}
-      {children}
+    <section className="space-y-1.5 md:border-t md:border-bot-hairline md:pt-5 md:first:border-t-0 md:first:pt-0">
+      {title ? <h3 className={cn(SECTION_TITLE, "px-4 md:hidden")}>{title}</h3> : null}
+      <div
+        data-bot-form-group
+        className="space-y-4 max-md:space-y-0 max-md:divide-y max-md:divide-bot-hairline max-md:overflow-hidden max-md:bg-(--bots-list-surface)"
+      >
+        {children}
+      </div>
     </section>
+  );
+}
+
+/** Fields most edits never touch stay folded under their title. */
+function Disclosure({
+  title,
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <Collapsible defaultOpen={defaultOpen}>
+      <CollapsibleTrigger className="group flex w-full items-center justify-between gap-2 rounded-md py-1 text-left text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset max-md:min-h-11 max-md:px-4 max-md:py-0 max-md:text-bot-body max-md:font-normal">
+        {title}
+        <ChevronDownIcon
+          aria-hidden
+          className="size-4 shrink-0 text-muted-foreground group-data-panel-open:rotate-180"
+        />
+      </CollapsibleTrigger>
+      <CollapsiblePanel animate={false}>
+        <div className="space-y-4 pt-3 max-md:space-y-0 max-md:divide-y max-md:divide-bot-hairline max-md:border-t max-md:border-bot-hairline max-md:pt-0">
+          {children}
+        </div>
+      </CollapsiblePanel>
+    </Collapsible>
   );
 }
 
@@ -169,7 +200,7 @@ const USAGE_ROWS_SHOWN = 7;
 
 function UsageList({ usage }: { usage: BotSummary["usage"] }) {
   return (
-    <ul className="space-y-0.5 text-xs text-muted-foreground tabular-nums max-md:text-bot-footnote">
+    <ul className="space-y-0.5 text-xs text-muted-foreground tabular-nums max-md:space-y-1 max-md:px-4 max-md:py-2.5 max-md:text-bot-footnote">
       {usage.slice(0, USAGE_ROWS_SHOWN).map((entry, index) => {
         const top = entry.sources[0];
         return (
@@ -273,7 +304,7 @@ export function BotDialog({
   );
   const [networkText, setNetworkText] = useState((bot?.localNetwork ?? []).join("\n"));
   const [ownSkills, setOwnSkills] = useState(bot?.ownSkills ?? []);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<{ text: string; retry: boolean } | null>(null);
   const [saving, setSaving] = useState(false);
   const network = parseLocalNetwork(networkText);
   const modelOptionsByInstance = getCustomModelOptionsByInstance(
@@ -325,7 +356,7 @@ export function BotDialog({
   const submit = async () => {
     if (!canSave || saving) return;
     setSaving(true);
-    setError("");
+    setError(null);
     try {
       const picked = BOT_TEMPLATES.find((entry) => entry.id === template);
       const input: BotInput = {
@@ -362,14 +393,17 @@ export function BotDialog({
       await refreshBots(environmentId);
       if (bot) return onClose();
       if (!(await waitForThreadShell({ environmentId, threadId: saved.threadId })))
-        throw new Error(t("Bot created. Open it from Bots when the connection catches up."));
+        return setError({
+          text: t("Bot created. Open it from Bots when the connection catches up."),
+          retry: false,
+        });
       await navigate({
         to: "/$environmentId/$threadId",
         params: { environmentId, threadId: saved.threadId },
       });
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("Could not save bot."));
+      setError({ text: e instanceof Error ? e.message : t("Could not save bot."), retry: true });
     } finally {
       setSaving(false);
     }
@@ -382,7 +416,13 @@ export function BotDialog({
         if (!open && !saving) onClose();
       }}
     >
-      <DialogPopup data-bot-surface data-bot-page showCloseButton={false} className="max-w-lg">
+      <DialogPopup
+        data-bot-surface
+        data-bot-page
+        data-bot-form
+        showCloseButton={false}
+        className="max-w-lg"
+      >
         {/* Close, the title, and the confirming action. */}
         <div
           data-bot-nav-bar
@@ -410,7 +450,12 @@ export function BotDialog({
         {/* A failed save says so beside the action that failed, whatever the form is scrolled to. */}
         {error ? (
           <p className="shrink-0 px-6 pb-2 text-sm text-destructive-foreground" role="alert">
-            {error}
+            {error.text}
+            {error.retry
+              ? ` ${t("Your edits are kept: press {action} to try again.", {
+                  action: request.threadId ? t("Save") : t("Create"),
+                })}`
+              : null}
           </p>
         ) : null}
         <DialogPanel>
@@ -464,7 +509,6 @@ export function BotDialog({
                     autoFocus={focus !== "cap"}
                     maxLength={60}
                     value={name}
-                    onFocus={(e) => focus === "name" && e.currentTarget.select()}
                     onChange={(e) => setName(e.target.value)}
                   />
                 </Field>
@@ -484,8 +528,8 @@ export function BotDialog({
                   />
                 </Field>
               </FieldGroup>
-              <FieldGroup>
-                <Field label={t("Job")} htmlFor="bot-job">
+              <FieldGroup title={t("Job")}>
+                <Field label={t("What it does")} htmlFor="bot-job">
                   <Textarea
                     id="bot-job"
                     className="max-h-64 overflow-y-auto"
@@ -500,7 +544,7 @@ export function BotDialog({
                 <Field
                   label={t("Starters")}
                   htmlFor="bot-starters"
-                  hint={t("one per line, up to 4")}
+                  hint={t("Shown in an empty chat. One per line, up to 4.")}
                 >
                   <Textarea
                     id="bot-starters"
@@ -509,13 +553,6 @@ export function BotDialog({
                     onChange={(e) => setStartersText(e.target.value)}
                   />
                 </Field>
-                <label className="flex w-fit cursor-pointer items-center gap-2 text-sm">
-                  <Checkbox
-                    checked={musicSkill}
-                    onCheckedChange={(checked) => setMusicSkill(checked === true)}
-                  />
-                  {t("Music downloads")}
-                </label>
               </FieldGroup>
               <FieldGroup title={t("Model and limits")}>
                 <Field
@@ -605,16 +642,12 @@ export function BotDialog({
                   </Field>
                 ) : null}
                 <Field
-                  label={t("Daily token cap")}
+                  label={t("Daily limit")}
                   htmlFor="bot-cap"
                   hint={
-                    dailyTokenCap === null ? (
-                      <span className="text-destructive">{t("e.g. 500k, 2M")}</span>
-                    ) : (
-                      t("{tokens}/day; cache reads at 1/10", {
-                        tokens: dailyTokenCap.toLocaleString(uiLocales),
-                      })
-                    )
+                    <span className={dailyTokenCap === null ? "text-destructive" : undefined}>
+                      {t("Tokens a day, such as 500k or 2M")}
+                    </span>
                   }
                 >
                   <Input
@@ -622,17 +655,37 @@ export function BotDialog({
                     autoFocus={focus === "cap"}
                     inputMode="text"
                     autoComplete="off"
-                    className="max-w-40"
                     value={capText}
                     aria-invalid={dailyTokenCap === null}
                     onFocus={(e) => e.currentTarget.select()}
                     onChange={(e) => setCapText(e.target.value)}
                   />
                 </Field>
-                {bot ? <UsageList usage={bot.usage} /> : null}
               </FieldGroup>
-              {bot || ownSkills.length > 0 ? (
-                <FieldGroup title={t("Advanced")}>
+              {bot && bot.usage.length > 0 ? (
+                <FieldGroup>
+                  <Disclosure title={t("Usage, last 7 days")}>
+                    <UsageList usage={bot.usage} />
+                  </Disclosure>
+                </FieldGroup>
+              ) : null}
+              <FieldGroup>
+                {/* Open when the bot already uses something in it. */}
+                <Disclosure
+                  title={t("Advanced")}
+                  defaultOpen={
+                    (bot?.skills?.includes("music") ?? false) ||
+                    (bot?.localNetwork?.length ?? 0) > 0 ||
+                    (bot?.ownSkills?.length ?? 0) > 0
+                  }
+                >
+                  <label className="flex w-fit cursor-pointer items-center gap-2 text-sm max-md:min-h-11 max-md:w-full max-md:px-4 max-md:text-bot-body">
+                    <Checkbox
+                      checked={musicSkill}
+                      onCheckedChange={(checked) => setMusicSkill(checked === true)}
+                    />
+                    {t("Music downloads")}
+                  </label>
                   {ownSkills.length > 0 ? (
                     <Field label={t("Skills it wrote")}>
                       <OwnSkillsList
@@ -659,15 +712,13 @@ export function BotDialog({
                       label={t("Local network access")}
                       htmlFor="bot-network"
                       hint={
-                        "invalid" in network ? (
-                          <span className="text-destructive">
-                            {network.invalid
+                        <span className={"invalid" in network ? "text-destructive" : undefined}>
+                          {"invalid" in network
+                            ? network.invalid
                               ? localNetworkProblem(network.invalid)
-                              : t("Up to {count} entries", { count: LOCAL_NETWORK_MAX_ENTRIES })}
-                          </span>
-                        ) : (
-                          t("IPv4 or CIDR with a TCP port, one per line")
-                        )
+                              : t("Up to {count} entries", { count: LOCAL_NETWORK_MAX_ENTRIES })
+                            : t("IPv4 or CIDR with a TCP port, one per line")}
+                        </span>
                       }
                     >
                       <Textarea
@@ -681,8 +732,8 @@ export function BotDialog({
                       />
                     </Field>
                   ) : null}
-                </FieldGroup>
-              ) : null}
+                </Disclosure>
+              </FieldGroup>
             </fieldset>
           </form>
         </DialogPanel>

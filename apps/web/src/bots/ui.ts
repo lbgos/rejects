@@ -8,7 +8,7 @@ export type BotPanel = "schedule" | "activity" | "memory" | "screen" | "bridge";
 export interface BotDialogRequest {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId | null;
-  readonly focus: "name" | "cap" | null;
+  readonly focus: "cap" | null;
   readonly template?: BotTemplateId;
 }
 

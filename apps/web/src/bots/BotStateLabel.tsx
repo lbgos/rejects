@@ -5,7 +5,7 @@ import type { BotState } from "./presentation";
 const STATE_CLASS: Record<BotState, string> = {
   running: "text-info-foreground",
   waiting: "text-muted-foreground",
-  capped: "text-warning-foreground max-md:text-muted-foreground",
+  capped: "text-warning-foreground",
   paused: "text-muted-foreground",
   idle: "text-muted-foreground",
   failed: "text-error-foreground",

@@ -476,7 +476,7 @@ function BotRow({
           <span className="flex min-w-0 items-baseline gap-1">
             <span
               className={cn(
-                "min-w-0 truncate text-sm max-md:text-bot-body max-md:font-semibold",
+                "min-w-0 truncate text-sm max-md:text-bot-body",
                 bot.unread ? "font-semibold" : "font-medium",
               )}
             >
@@ -496,15 +496,11 @@ function BotRow({
           </span>
           <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground max-md:text-bot-callout">
             {state !== "idle" ? (
-              <BotStateLabel
-                state={state}
-                className={cn(
-                  "max-md:text-bot-callout",
-                  (state === "paused" || state === "capped") && "max-md:hidden",
-                )}
-              />
+              <BotStateLabel state={state} className="max-md:text-bot-callout" />
             ) : null}
-            <span className="min-w-0 flex-1 truncate">{empty ? t("No messages yet") : text}</span>
+            <span className={cn("min-w-0 flex-1 truncate", bot.unread && "text-foreground")}>
+              {empty ? t("No messages yet") : text}
+            </span>
           </span>
         </span>
       </div>

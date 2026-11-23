@@ -433,7 +433,8 @@ html[data-bots-app] body {
 :root[data-bots-app] :is(.dialog-glass, .dropdown-glass) {
   background: var(--popover);
 }
-:root[data-bots-app] [data-slot="dialog-backdrop"] {
+/* The image viewer keeps its own dark backdrop in both themes and has no card behind the image. */
+:root[data-bots-app] [data-slot="dialog-backdrop"]:not([data-variant="media"]) {
   background: var(--color-bot-scrim);
 }
 
@@ -525,6 +526,11 @@ html[data-bots-app] body {
   display: none;
 }
 
+/* The turn's "Working for 4s" line already says a turn runs; the trailing "Thinking" placeholder
+   would say it a second time. A phone hides both for its typing bubble (below). */
+[data-bots-mode="true"] [data-timeline-row-kind="thinking"] {
+  display: none;
+}
 /* From here on, a phone only: variant C's bubbles, captions and one-row composer. Wider screens
    keep T3's unboxed prose, turn dividers and composer box. */
 @media (max-width: 767px) {
@@ -1185,6 +1191,7 @@ html[data-bots-app]:has(
   :is([data-slot="dialog-popup"], [data-slot="sheet-popup"], [data-bot-page])
   :is([data-slot="select-trigger"], [data-bot-model-field] button) {
   width: 100%;
+  max-width: none;
   justify-content: space-between;
   border-color: transparent;
   background: linear-gradient(180deg, var(--bots-well-top), var(--bots-well-bottom));
@@ -1192,6 +1199,53 @@ html[data-bots-app]:has(
     inset 0 1px 1px var(--bots-well-shade),
     inset 0 0 0 1px var(--bots-ring);
 }
+/* The bot form on a phone is an inset grouped form: a group is one rounded card and a field is
+   its small label over a bare control, as in the lists on You and Settings. */
+@media (max-width: 767px) {
+  :root[data-bots-app] [data-bot-form] [data-slot="dialog-panel"] {
+    padding: 0.5rem 1rem calc(2rem + env(safe-area-inset-bottom));
+  }
+  :root[data-bots-app] [data-bot-form] [data-bot-form-group] {
+    border-radius: 0.625rem;
+  }
+  :root[data-bots-app] [data-bot-form] [data-bot-field-label] {
+    color: var(--muted-foreground);
+    font-size: var(--text-bot-footnote);
+    font-weight: 400;
+    line-height: var(--text-bot-footnote--line-height);
+  }
+  :root[data-bots-app]
+    [data-bot-form]
+    [data-bot-form-group]
+    :is(
+      [data-slot="input-control"],
+      [data-slot="textarea-control"],
+      [data-slot="select-trigger"],
+      [data-bot-model-field] button
+    ) {
+    height: auto;
+    min-height: 1.75rem;
+    border-width: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    padding-inline: 0;
+    font-size: var(--text-bot-body);
+    line-height: var(--text-bot-body--line-height);
+    letter-spacing: var(--text-bot-body--letter-spacing);
+  }
+  :root[data-bots-app]
+    [data-bot-form]
+    [data-bot-form-group]
+    :is([data-slot="input"], [data-slot="textarea"]) {
+    padding: 0;
+  }
+  :root[data-bots-app] [data-bot-form] [data-bot-form-group] [data-slot="input"] {
+    height: 1.75rem;
+    line-height: 1.75rem;
+  }
+}
+
 /* A finger cannot drag a resize grip; fields size themselves. */
 @media (pointer: coarse) {
   :root[data-bots-app] textarea {
@@ -1231,11 +1285,69 @@ html[data-bots-app]:has(
   border-color: transparent;
 }
 
+/* On a phone a menu is an action sheet: it rises from the bottom edge at the screen's width, each
+   row a full touch target, with the page dimmed behind it. Menus built by contextMenuFallback
+   place and size themselves with inline styles, so their rules need the priority. */
+@media (max-width: 767px) and (pointer: coarse) {
+  :root[data-bots-app] [data-slot="menu-positioner"]:has(> [data-bot-sheet]),
+  :root[data-bots-app] [data-context-menu="true"][data-level="0"] {
+    position: fixed !important;
+    inset: auto 0.5rem max(0.5rem, env(safe-area-inset-bottom)) 0.5rem !important;
+    width: auto !important;
+    max-width: none !important;
+    transform: none !important;
+  }
+  :root[data-bots-app] [data-slot="menu-popup"][data-bot-sheet],
+  :root[data-bots-app] [data-context-menu="true"][data-level="0"] {
+    border-radius: 0.875rem !important;
+    box-shadow:
+      inset 0 1px 0 var(--bots-lit-soft),
+      inset 0 0 0 1px var(--bots-ring),
+      0 0 0 100vmax var(--color-bot-sheet-scrim);
+  }
+  :root[data-bots-app] [data-slot="menu-popup"][data-bot-sheet] {
+    width: 100%;
+    max-width: none;
+    transform-origin: bottom center;
+  }
+  :root[data-bots-app] [data-slot="menu-popup"][data-bot-sheet] > div,
+  :root[data-bots-app] [data-context-menu="true"][data-level="0"] > div {
+    max-width: none !important;
+    max-height: min(32rem, calc(100dvh - 6rem)) !important;
+    padding: 0.375rem !important;
+  }
+  :root[data-bots-app] [data-bot-sheet] [data-slot="menu-item"],
+  :root[data-bots-app] [data-context-menu="true"][data-level="0"] button {
+    min-height: 3rem !important;
+    gap: 0.875rem !important;
+    border-radius: 0.625rem !important;
+    padding: 0 0.875rem !important;
+    font-size: var(--text-bot-body) !important;
+    line-height: var(--text-bot-body--line-height) !important;
+    letter-spacing: var(--text-bot-body--letter-spacing);
+  }
+  :root[data-bots-app] [data-bot-sheet] [data-slot="menu-item"] > svg,
+  :root[data-bots-app] [data-context-menu="true"][data-level="0"] button > svg {
+    width: 1.375rem;
+    height: 1.375rem;
+  }
+  :root[data-bots-app] [data-bot-sheet] [data-slot="menu-label"] {
+    padding: 0.5rem 0.875rem 0.25rem;
+    font-size: var(--text-bot-footnote);
+    font-weight: 400;
+  }
+  :root[data-bots-app] [data-bot-sheet] [data-slot="menu-separator"],
+  :root[data-bots-app] [data-context-menu="true"][data-level="0"] [role="separator"] {
+    margin: 0.375rem 0.875rem !important;
+    background: var(--color-bot-hairline) !important;
+  }
+}
+
 /* Dialogs and sheets: the popover's fill and edge with the longest shadow. Full-screen bot pages
    and the Settings route modal stay on the page level. */
 :root[data-bots-app]
   :is(
-    [data-slot="dialog-popup"]:not([data-bot-page], [data-app-modal]),
+    [data-slot="dialog-popup"]:not([data-bot-page], [data-app-modal], [data-variant="media"]),
     [data-slot="alert-dialog-popup"],
     [data-slot="command-dialog-popup"],
     [data-slot="sheet-popup"]:not([data-bot-page])
@@ -1359,6 +1471,22 @@ html[data-bots-app]:has(
     --bots-page: var(--background);
     background-color: var(--background);
     box-shadow: inset 1px 0 0 var(--bots-ring);
+  }
+}
+
+/* Desktop, dark: a centred modal (Settings, Usage, the bot form) is a layer above the page. Its
+   surface is a step lighter than the pane behind the scrim and carries the dialog's lit edge, so
+   it reads as a modal on a black page; its groups step up again from that surface. */
+@media (min-width: 768px) {
+  :root.dark[data-bots-app] :is([data-app-modal], [data-slot="dialog-popup"][data-bot-page]) {
+    --bots-page: color-mix(in srgb, var(--foreground) 8%, var(--background));
+    --popover: var(--bots-page);
+    --bots-list-surface: color-mix(in srgb, var(--foreground) 14%, var(--background));
+    border-color: transparent;
+    box-shadow:
+      inset 0 1px 0 var(--bots-lit-soft),
+      inset 0 0 0 1px var(--bots-ring),
+      var(--bots-dialog-shadow);
   }
 }
 
@@ -1490,6 +1618,11 @@ html[data-bots-app]:has(
     animation-range: 24px 56px !important;
   }
 }
+/* A pushed page has no large title to scroll away: its name stays in the bar. */
+:root[data-bots-app] [data-bots-bar-title][data-pinned] {
+  animation-name: none !important;
+  opacity: 1;
+}
 /* Without scroll timelines the edge and title follow the bar's scrolled state, in one short fade. */
 @supports not (animation-timeline: scroll()) {
   :root[data-bots-app] :is([data-chat-header], [data-bots-top-bar])[data-scrolled="true"]::after {
@@ -1512,7 +1645,8 @@ html[data-bots-app]:has(
     :is(
       [data-sidebar-control] [data-slot="button"][href],
       [data-bot-header-actions] :is([data-slot="button"], [data-slot="menu-trigger"]),
-      [data-settings-page-header] [data-slot="button"]
+      [data-settings-page-header] [data-slot="button"],
+      [data-bot-panel-header] [data-slot="button"]
     ):is(:hover, :not(:hover)) {
     width: 2.25rem;
     height: 2.25rem;
@@ -1528,7 +1662,8 @@ html[data-bots-app]:has(
     :is(
       [data-sidebar-control] [data-slot="button"][href],
       [data-bot-header-actions] :is([data-slot="button"], [data-slot="menu-trigger"]),
-      [data-settings-page-header] [data-slot="button"]
+      [data-settings-page-header] [data-slot="button"],
+      [data-bot-panel-header] [data-slot="button"]
     ):is(:active, [data-pressed], [aria-expanded="true"]) {
     background:
       var(--bots-selected), linear-gradient(180deg, var(--bots-glass-top), var(--bots-glass-bottom));
@@ -1548,6 +1683,13 @@ html[data-bots-app]:has(
   /* The composer's placeholder reads on the lit capsule. */
   :root[data-bots-app] [data-bot-composer="true"] [data-composer-placeholder] {
     color: color-mix(in srgb, var(--foreground) 60%, transparent);
+  }
+  /* Code keeps its lines: a wrapped line loses the indentation that carries its meaning, so a
+     long one scrolls sideways inside the well. */
+  :root[data-bots-app] [data-bot-bubble] .chat-markdown-codeblock pre {
+    overflow-x: auto;
+    overflow-wrap: normal;
+    white-space: pre;
   }
   /* Code in a reply sits in a sunken well, below the card it is in. */
   :root[data-bots-app] [data-bot-bubble] .chat-markdown-codeblock {
@@ -1616,6 +1758,10 @@ html[data-bots-app]:has(
    list row it reads as the row's value, not as a button. */
 [data-bot-model-field] button {
   text-align: start;
+}
+/* A bot's model reads as its name: the provider's mark beside it looks like a busy indicator. */
+[data-bot-model-field] [data-chat-provider-model-picker-icon] {
+  display: none;
 }
 :root[data-bots-app] .sheet-list [data-bot-model-field] button {
   border-color: transparent;
