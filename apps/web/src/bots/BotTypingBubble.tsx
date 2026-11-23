@@ -31,14 +31,14 @@ export function BotTypingBubble({
         <div
           ref={observeVisibleAnimation}
           data-bot-typing-dots
-          className="flex w-fit items-center gap-1.25 rounded-3xl bg-bot-bubble px-3.75 py-3.25"
+          className="flex w-fit items-center gap-1.25 px-1 py-2"
         >
           <span data-holiday-dot="warm" className="size-2 rounded-full bg-muted-foreground" />
           <span data-holiday-dot="berry" className="size-2 rounded-full bg-muted-foreground/70" />
           <span data-holiday-dot="fir" className="size-2 rounded-full bg-muted-foreground/45" />
         </div>
       ) : (
-        <p className="flex items-center gap-1.5 ps-2 text-xs text-muted-foreground tabular-nums max-md:text-bot-footnote">
+        <p className="flex items-center gap-1.5 ps-1 text-xs text-muted-foreground tabular-nums max-md:text-bot-footnote">
           <span className="min-w-0 truncate">
             {doing ? <StatusSwap text={doing} /> : t("Working")}
           </span>

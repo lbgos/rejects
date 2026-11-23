@@ -86,7 +86,7 @@ export function LoginRequestCards({
           <div
             key={request.id}
             data-login-request
-            className="flex w-full max-w-[88%] flex-col rounded-3xl bg-bot-bubble px-3.75 pt-3.5 pb-3.75 md:max-w-md md:rounded-lg md:border md:bg-transparent md:p-3"
+            className="flex w-full max-w-[88%] flex-col rounded-2xl bg-bot-bubble px-3.75 pt-3.5 pb-3.75 md:max-w-md md:rounded-lg md:border md:bg-transparent md:p-3"
           >
             <div className="flex min-w-0 items-center gap-2">
               {request.check ? (

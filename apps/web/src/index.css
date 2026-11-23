@@ -199,9 +199,9 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --text-bot-body: 17px;
   --text-bot-body--line-height: 22px;
   --text-bot-body--letter-spacing: -0.43px;
-  --text-bot-message: 17px;
-  --text-bot-message--line-height: 23px;
-  --text-bot-message--letter-spacing: -0.43px;
+  --text-bot-message: 16px;
+  --text-bot-message--line-height: 22px;
+  --text-bot-message--letter-spacing: -0.31px;
   --text-bot-callout: 15px;
   --text-bot-callout--line-height: 20px;
   --text-bot-callout--letter-spacing: -0.23px;

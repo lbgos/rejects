@@ -36,6 +36,7 @@ import {
   isVideoAttachment,
 } from "../../types";
 import ChatMarkdown from "../ChatMarkdown";
+import { preserveUserIndentation } from "./userMessageIndentation";
 import {
   CalendarClockIcon,
   ChevronDownIcon,
@@ -1263,7 +1264,7 @@ const UserMessageBody = memo(function UserMessageBody(props: {
   }
   return (
     <ChatMarkdown
-      text={props.text}
+      text={preserveUserIndentation(props.text)}
       cwd={props.markdownCwd}
       threadRef={ctx.threadRef ?? undefined}
       skills={props.skills}
