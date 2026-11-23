@@ -15,6 +15,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import {
   allowedBy,
+  browserAgent,
   clickAllowedBy,
   historyEntry,
   makeBrowsers,
@@ -260,6 +261,23 @@ it.each([
   { direction: "forward", from: { ...history, currentIndex: 2 }, id: null },
 ] as const)("$direction from entry $from.currentIndex lands on $id", ({ direction, from, id }) => {
   assert.equal(historyEntry(from, direction)?.id ?? null, id);
+});
+
+it.each([
+  { profile: "slack.com", desktop: true },
+  { profile: "acme.slack.com", desktop: true },
+  { profile: "notslack.com", desktop: false },
+  { profile: "classroom.google.com", desktop: false },
+])("the $profile browser is a desktop Chrome: $desktop", ({ profile, desktop }) => {
+  const agent = browserAgent("Chrome/156.0.7000.1", profile);
+  assert.deepEqual(
+    [
+      agent.userAgentMetadata.mobile,
+      agent.userAgentMetadata.platform,
+      /Android|Mobile/.test(agent.userAgent),
+    ],
+    desktop ? [false, "Linux", false] : [true, "Android", true],
+  );
 });
 
 // quarantine: #2 Chromium popup and CDP calls time out at random.
