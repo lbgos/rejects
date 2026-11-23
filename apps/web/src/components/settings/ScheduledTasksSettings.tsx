@@ -41,6 +41,7 @@ import {
   MIN_SCHEDULED_TASK_INTERVAL_MS,
   ProviderInstanceId,
   resolveEnvironmentMachineKind,
+  SCHEDULED_TASK_MISSED_RUN,
   scheduledTaskThreadMode,
 } from "@t3tools/contracts";
 import {
@@ -779,13 +780,17 @@ function ScheduledTaskRow({
       );
     }
   };
+  // A run the server slept through is not a failure of the task; the status says which it was.
+  const missed = task.lastRunStatus === "failed" && task.lastRunError === SCHEDULED_TASK_MISSED_RUN;
+  const threadLinked = task.threadId !== null && scheduledTaskThreadMode(task) !== "new_thread";
   return (
     <SettingsRow
       data-scheduled-task-row
       title={task.title}
       description={<span className="line-clamp-2">{task.prompt}</span>}
       status={
-        <div className="flex flex-wrap items-center gap-2">
+        // The schedule and its next run on one line; the last result and the bot under it.
+        <div className="flex flex-col gap-1">
           <span>
             {scheduleLabel(task.schedule, timeZone, task.nextRunAt)} ·{" "}
             {task.blockedByPolicy !== undefined ? (
@@ -802,13 +807,24 @@ function ScheduledTaskRow({
               "Not scheduled"
             )}
           </span>
-          {task.lastRunStatus !== "never" ? (
-            <Badge variant={statusVariant(task.lastRunStatus)}>{task.lastRunStatus}</Badge>
+          {task.lastRunStatus !== "never" || threadLinked ? (
+            <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              {missed ? (
+                <>
+                  <Badge variant="warning">missed</Badge>
+                  <span>The server was off at that time.</span>
+                </>
+              ) : task.lastRunStatus !== "never" ? (
+                <Badge variant={statusVariant(task.lastRunStatus)}>{task.lastRunStatus}</Badge>
+              ) : null}
+              {!missed && task.lastRunError ? (
+                <span className="text-destructive">{task.lastRunError}</span>
+              ) : null}
+              {threadLinked && task.threadId !== null ? (
+                <ScheduledTaskThreadLink environmentId={environmentId} threadId={task.threadId} />
+              ) : null}
+            </span>
           ) : null}
-          {task.threadId !== null && scheduledTaskThreadMode(task) !== "new_thread" ? (
-            <ScheduledTaskThreadLink environmentId={environmentId} threadId={task.threadId} />
-          ) : null}
-          {task.lastRunError ? <span className="text-destructive">{task.lastRunError}</span> : null}
         </div>
       }
       control={

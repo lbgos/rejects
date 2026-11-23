@@ -241,6 +241,10 @@ export function scheduledTaskThreadMode(
   return task.threadMode ?? (task.threadId === null ? "new_thread" : "continue");
 }
 
+/** What a task's `lastRunError` holds when its time passed while the server was down. */
+export const SCHEDULED_TASK_MISSED_RUN =
+  "Missed a scheduled run because the server was not running at that time.";
+
 export const ScheduledTask = Schema.Struct({
   id: ScheduledTaskId,
   title: TrimmedNonEmptyString,
