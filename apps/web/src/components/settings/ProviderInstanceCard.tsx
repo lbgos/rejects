@@ -1121,12 +1121,8 @@ export function ProviderInstanceCard({
           {titleIconNode}
           <span className="min-w-0 flex-1">
             <span className="flex min-w-0 items-center gap-2">
+              {/* The name has the line; the version is in the provider's own pane. */}
               <span className="truncate text-sm font-medium text-foreground">{displayName}</span>
-              {versionLabel ? (
-                <code className="max-w-24 shrink-0 truncate text-xs text-muted-foreground">
-                  {versionLabel}
-                </code>
-              ) : null}
               {versionAdvisoryNode}
             </span>
             <span className="mt-0.5 flex items-start gap-1.5 text-xs leading-normal text-muted-foreground/80">

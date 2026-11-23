@@ -11,7 +11,15 @@ import {
 } from "@t3tools/contracts";
 import * as Equal from "effect/Equal";
 import { useLocation, useNavigate } from "@tanstack/react-router";
-import { createContext, type ComponentPropsWithoutRef, type ReactNode, useContext } from "react";
+import {
+  createContext,
+  type ComponentPropsWithoutRef,
+  type ReactNode,
+  use,
+  useContext,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
 
 import {
   PRIMARY_SETTINGS_UNAVAILABLE_MESSAGE,
@@ -204,6 +212,17 @@ export function PolicyTooltip({ children }: { readonly children: string }) {
   );
 }
 
+/**
+ * A phone's pushed settings page: its bar names the page and holds the page's one action, so a
+ * section with the page's own title gives up its title row.
+ */
+export const SettingsPhoneBarContext = createContext<{
+  readonly titles: ReadonlyArray<string>;
+  readonly actionSlot: HTMLElement | null;
+  /** Remounts the page after its settings were restored to their defaults. */
+  readonly onRestored: () => void;
+} | null>(null);
+
 export function SettingsSection({
   title,
   hideTitle = false,
@@ -224,16 +243,23 @@ export function SettingsSection({
   children: ReactNode;
 }) {
   const targetRef = useSettingsSearchTarget<HTMLElement>(sectionProps.id);
+  const bar = use(SettingsPhoneBarContext);
+  const titleInBar = bar !== null && !hideTitle && !titleAction && bar.titles.includes(title);
 
   return (
     <section
       {...sectionProps}
       ref={targetRef}
       tabIndex={sectionProps.id ? -1 : sectionProps.tabIndex}
-      className={cn(!hideTitle && "space-y-2.5", className)}
+      className={cn(!hideTitle && !titleInBar && "space-y-2.5", className)}
     >
-      {hideTitle ? (
-        <h2 className="sr-only">{title}</h2>
+      {hideTitle || titleInBar ? (
+        <>
+          <h2 className="sr-only">{title}</h2>
+          {titleInBar && headerAction && bar.actionSlot
+            ? createPortal(headerAction, bar.actionSlot)
+            : null}
+        </>
       ) : (
         <div
           data-settings-scroll-target
@@ -249,7 +275,10 @@ export function SettingsSection({
           <div className="flex min-h-7 min-w-7 items-center justify-end">{headerAction}</div>
         </div>
       )}
-      <SettingsGroup data-settings-scroll-target={hideTitle ? "" : undefined} variant={variant}>
+      <SettingsGroup
+        data-settings-scroll-target={hideTitle || titleInBar ? "" : undefined}
+        variant={variant}
+      >
         {children}
       </SettingsGroup>
     </section>
@@ -334,6 +363,9 @@ export function SettingsRow({
   children?: ReactNode;
 }) {
   const targetRef = useSettingsSearchTarget<HTMLDivElement>(rowProps.id);
+  const [helpOpen, setHelpOpen] = useState(false);
+  // On a phone in the bots app a row is its title and control; the help opens from its info button.
+  const foldsHelp = Boolean(description) && Boolean(control);
   const primarySettingsAvailable = usePrimarySettingsAvailable();
   const context = useOptionalSettingsScope();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -507,6 +539,19 @@ export function SettingsRow({
         <div data-settings-row-text className="min-w-0 flex-1 space-y-1">
           <div data-settings-row-title className="flex min-h-5 items-center gap-1.5">
             <h3 className="text-sm font-medium text-foreground">{title}</h3>
+            {foldsHelp ? (
+              <Button
+                size="icon-micro"
+                variant="ghost-muted"
+                data-settings-row-help
+                aria-expanded={helpOpen}
+                aria-label={typeof title === "string" ? `About ${title}` : "About this setting"}
+                className="relative z-10 hidden max-md:in-data-bots-app:inline-flex"
+                onClick={() => setHelpOpen((open) => !open)}
+              >
+                <InfoIcon className="size-3.5" />
+              </Button>
+            ) : null}
             {renderedInheritance ? (
               <span
                 className={cn(
@@ -520,14 +565,15 @@ export function SettingsRow({
                 {renderedInheritance}
               </span>
             ) : null}
-            <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
+            <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center empty:hidden">
               {renderedReset}
             </span>
           </div>
           {description ? (
             <p
               data-settings-row-description
-              className="max-w-2xl text-pretty text-xs leading-normal text-muted-foreground"
+              data-help={foldsHelp && !helpOpen ? "folded" : undefined}
+              className="max-w-2xl text-pretty text-xs leading-normal text-muted-foreground max-md:in-data-bots-app:data-[help=folded]:hidden"
             >
               {description}
             </p>

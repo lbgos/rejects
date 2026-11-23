@@ -8,6 +8,7 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import { useState, type ReactNode } from "react";
+import { useMessages } from "gt-react";
 import { ChevronLeftIcon, RotateCcwIcon } from "lucide-react";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useBotTabHostActive } from "../bots/BotTabHost";
@@ -31,7 +32,10 @@ import {
 } from "../components/settings/SettingsScopeContext";
 import { SettingsScopeNotice } from "../components/settings/SettingsScopeNotice";
 import { SETTINGS_DEVICE_ONLY_PATHS } from "../components/settings/SettingsScopeSentence";
-import { SettingsPageContainer } from "../components/settings/settingsLayout";
+import {
+  SettingsPageContainer,
+  SettingsPhoneBarContext,
+} from "../components/settings/settingsLayout";
 import {
   retainSettingsScope,
   validateSettingsRouteSearch,
@@ -51,13 +55,10 @@ function RestoreDeviceDefaultsButton({ onRestored }: { onRestored: () => void })
       data-settings-restore
       aria-label="Restore device defaults"
       disabled={changedSettingLabels.length === 0}
-      // A phone's bar has room for one word, and shows it only while there is something to reset.
-      className={changedSettingLabels.length === 0 ? "max-sm:hidden" : undefined}
       onClick={() => void restoreDefaults()}
     >
       <RotateCcwIcon className="mx-1 size-3.5" />
-      <span className="max-sm:hidden">Restore device defaults</span>
-      <span className="sm:hidden">Reset</span>
+      Restore device defaults
     </Button>
   );
 }
@@ -117,7 +118,10 @@ function SettingsContentLayout() {
       ? environment?.environmentId
       : JSON.stringify(search);
   const [restoreSignal, setRestoreSignal] = useState(0);
+  const [actionSlot, setActionSlot] = useState<HTMLElement | null>(null);
+  const m = useMessages();
   const phone = useMediaQuery("max-md");
+  const pageLabel = settingsBreadcrumbLabel(location.pathname);
   const phoneIndex = phone && location.pathname === "/settings";
   const tabHost = useBotTabHostActive();
 
@@ -152,14 +156,17 @@ function SettingsContentLayout() {
                   <ChevronLeftIcon />
                 </Button>
                 <h1 className="pointer-events-none absolute inset-x-18 truncate text-center text-bot-body font-semibold">
-                  {settingsBreadcrumbLabel(location.pathname) ?? "Settings"}
+                  {pageLabel ? m(pageLabel) : "Settings"}
                 </h1>
               </>
             ) : (
               <SettingsBreadcrumb pathname={location.pathname} />
             )}
             <div className="ms-auto flex shrink-0 items-center gap-1">
-              {location.pathname === "/settings/general" ? (
+              {/* A phone's bar holds the page's own action; its reset is a row at the page's end. */}
+              {phone ? (
+                <div ref={setActionSlot} data-settings-bar-action className="contents" />
+              ) : location.pathname === "/settings/general" ? (
                 <RestoreDeviceDefaultsButton
                   onRestored={() => setRestoreSignal((value) => value + 1)}
                 />
@@ -168,9 +175,21 @@ function SettingsContentLayout() {
             </div>
           </header>
           <div key={`${contentScopeKey}:${restoreSignal}`} className="min-h-0 flex flex-1 flex-col">
-            <SettingsScopeBoundary pathname={location.pathname}>
-              <Outlet />
-            </SettingsScopeBoundary>
+            <SettingsPhoneBarContext
+              value={
+                phone && pageLabel
+                  ? {
+                      titles: [pageLabel, m(pageLabel)],
+                      actionSlot,
+                      onRestored: () => setRestoreSignal((value) => value + 1),
+                    }
+                  : null
+              }
+            >
+              <SettingsScopeBoundary pathname={location.pathname}>
+                <Outlet />
+              </SettingsScopeBoundary>
+            </SettingsPhoneBarContext>
           </div>
         </div>
       </div>

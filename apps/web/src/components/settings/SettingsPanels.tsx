@@ -3,6 +3,7 @@ import { PRIVACY_POLICY_URL } from "../../legalLinks";
 import { CheckIcon, ChevronRightIcon } from "lucide-react";
 import { msg, T, useGT, useMessages } from "gt-react";
 import { Link } from "@tanstack/react-router";
+import { use } from "react";
 import { IDLE_COMPACTION_MODES, globalIdleCompaction } from "@t3tools/contracts";
 import {
   DEFAULT_UNIFIED_SETTINGS,
@@ -44,6 +45,7 @@ import {
 import {
   SettingResetButton,
   SettingsPageContainer,
+  SettingsPhoneBarContext,
   SettingsRow,
   SettingsSection,
 } from "./settingsLayout";
@@ -71,13 +73,7 @@ const TIMESTAMP_FORMAT_LABELS = {
 };
 
 function AboutVersionSection() {
-  return (
-    <SettingsRow
-      id={searchableSetting("app-version").id}
-      title={<AboutVersionTitle />}
-      description="Current version of the application."
-    />
-  );
+  return <SettingsRow id={searchableSetting("app-version").id} title={<AboutVersionTitle />} />;
 }
 
 export function useSettingsRestore(onRestored?: () => void) {
@@ -391,9 +387,6 @@ export function GeneralSettingsPanel() {
   const setting = useTranslatedSearchableSetting();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
-  const languageValue = SUPPORTED_LOCALES.includes(settings.language)
-    ? settings.language
-    : SYSTEM_LANGUAGE;
 
   return (
     <SettingsPageContainer>
@@ -557,7 +550,26 @@ export function GeneralSettingsPanel() {
           }
         />
       </SettingsSection>
+      <PhoneRestoreDefaults />
     </SettingsPageContainer>
+  );
+}
+
+/** A phone's General page ends with its reset; wider screens keep it in the page's bar. */
+function PhoneRestoreDefaults() {
+  const bar = use(SettingsPhoneBarContext);
+  const { changedSettingLabels, restoreDefaults } = useSettingsRestore(bar?.onRestored);
+  if (bar === null) return null;
+  return (
+    <Button
+      variant="destructive-outline"
+      size="xl"
+      data-settings-restore
+      disabled={changedSettingLabels.length === 0}
+      onClick={() => void restoreDefaults()}
+    >
+      Restore defaults
+    </Button>
   );
 }
 
@@ -1210,26 +1222,33 @@ export function AboutSettingsPanel() {
           {...searchableSetting("privacy-policy")}
           {...(phone
             ? {
+                // The whole row is the link; its chevron sits where a control would.
+                className: "relative",
                 title: (
                   <a
                     data-settings-row-link
+                    className="after:absolute after:inset-0"
                     href={PRIVACY_POLICY_URL}
                     target="_blank"
                     rel="noreferrer noopener"
                   >
                     {searchableSetting("privacy-policy").title}
-                    <ChevronRightIcon aria-hidden />
                   </a>
                 ),
               }
             : {})}
+          // A phone's row is the link alone; what telemetry is off still shows.
           description={
             telemetryOff === undefined
-              ? "How we handle your data, including the anonymous usage data rejects collects."
+              ? phone
+                ? undefined
+                : "How we handle your data, including the anonymous usage data rejects collects."
               : `How we handle your data. ${telemetryOff}`
           }
           control={
-            phone ? undefined : (
+            phone ? (
+              <ChevronRightIcon aria-hidden className="size-4 text-muted-foreground" />
+            ) : (
               <Button
                 render={<a href={PRIVACY_POLICY_URL} target="_blank" rel="noreferrer noopener" />}
                 size="sm"
@@ -1244,17 +1263,28 @@ export function AboutSettingsPanel() {
           {...searchableSetting("open-source-licenses")}
           {...(phone
             ? {
+                className: "relative",
                 title: (
-                  <Link data-settings-row-link to="/settings/open-source-licenses">
+                  <Link
+                    data-settings-row-link
+                    className="after:absolute after:inset-0"
+                    to="/settings/open-source-licenses"
+                  >
                     {searchableSetting("open-source-licenses").title}
-                    <ChevronRightIcon aria-hidden />
                   </Link>
                 ),
               }
             : {})}
-          description="Notices for dependencies, assets, and optional tools used by rejects."
+          {...(phone
+            ? {}
+            : {
+                description:
+                  "Notices for dependencies, assets, and optional tools used by rejects.",
+              })}
           control={
-            phone ? undefined : (
+            phone ? (
+              <ChevronRightIcon aria-hidden className="size-4 text-muted-foreground" />
+            ) : (
               <Button
                 render={<Link to="/settings/open-source-licenses" />}
                 size="sm"

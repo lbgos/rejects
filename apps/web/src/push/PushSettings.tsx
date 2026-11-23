@@ -10,11 +10,11 @@ export function PushSettings() {
     <SettingsRow
       {...searchableSetting("bot-notifications")}
       data-ui-target="notifications"
-      description={
-        push.message ??
-        push.blocker ??
-        t("Push to this device when a bot messages or answers you, even with the app closed.")
-      }
+      description={t(
+        "Push to this device when a bot messages or answers you, even with the app closed.",
+      )}
+      // What stands in the way stays in view; the plain description folds away on a phone.
+      status={push.message ?? push.blocker ?? undefined}
       control={
         <Button
           size="sm"
