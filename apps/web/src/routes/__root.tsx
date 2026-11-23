@@ -114,7 +114,8 @@ function RootRouteBranch() {
 
   if (pathname === GUEST_PAGE_PATH) return <Outlet />;
 
-  if (pathname === "/pair") {
+  // Pairing and an agent's sign-in are pages of their own, with or without a session.
+  if (pathname === "/pair" || pathname === "/connect-agent") {
     return <Outlet />;
   }
 
