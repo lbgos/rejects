@@ -17,6 +17,7 @@ import { botActions, botSwipeActions, useBotActions, type BotActionId } from "./
 import { rememberBackPage } from "./backPage";
 import { BotAvatar } from "./BotAvatar";
 import { BotStateLabel } from "./BotStateLabel";
+import { needsFirstRun } from "./firstRun.logic";
 import { BOT_ACTION_ICONS } from "./icons";
 import { PushPrompt } from "../push/PushPrompt";
 import {
@@ -216,10 +217,13 @@ export function BotList({
               : !loaded
                 ? LOADING_ROWS
                 : bots.length === 0
-                  ? notice(t("No bots"), t("Bots you create show up here."), {
-                      label: t("New bot"),
-                      run: () => openBotDialog({ environmentId, threadId: null, focus: null }),
-                    })
+                  ? // Before setup has made the main bot, the main pane runs setup and the list waits.
+                    needsFirstRun(bots) && !phone
+                    ? null
+                    : notice(t("No bots"), t("Bots you create show up here."), {
+                        label: t("New bot"),
+                        run: () => openBotDialog({ environmentId, threadId: null, focus: null }),
+                      })
                   : notice(t("No results for “{query}”", { query: query.trim() }))}
           {shown.map((row) => (
             <li

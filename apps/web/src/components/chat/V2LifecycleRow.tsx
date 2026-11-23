@@ -1,7 +1,9 @@
 import { ThreadHoverCardPopup } from "../ThreadHoverCard";
 import { AgentElapsed } from "./AgentElapsed";
 import { projectedSubagentsToRuntime } from "@t3tools/client-runtime/state/subagentRuntime";
-import type { ReactNode } from "react";
+import { use, type ReactNode } from "react";
+import { BotThreadContext } from "../../bots/context";
+import { t } from "../../i18n";
 import { useThreadShell, useProject } from "../../state/entities";
 import { useEnvironment } from "../../state/environments";
 import { buildThreadRouteParams } from "../../threadRoutes";
@@ -76,11 +78,14 @@ export function V2LifecycleRow(props: {
   readonly onOpenThread: (threadId: ThreadId) => void;
 }) {
   const { item } = props;
+  const inBotChat = use(BotThreadContext);
   if (item.type === "run_interrupt_result") {
+    const detail = runInterruptDetail(item.message);
     return (
       <TimelineSystemDivider
-        label="Run interrupted"
-        detail={runInterruptDetail(item.message)}
+        // A bot chat says it in the reader's words; who pressed Stop goes without saying.
+        label={inBotChat ? t("Reply stopped") : "Run interrupted"}
+        detail={inBotChat && detail === "Stopped by user" ? null : detail}
         icon={CircleStopIcon}
         wrapDetail
       />

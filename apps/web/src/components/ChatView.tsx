@@ -3706,9 +3706,7 @@ export default function ChatView(props: ChatViewProps) {
                             {!composerMounted ? null : (
                               <ChatComposer
                                 canOperateThread={canOperateThread}
-                                idlePlaceholder={
-                                  botChrome ? `Message ${botChrome.title}` : undefined
-                                }
+                                idlePlaceholder={botChrome?.placeholder}
                                 reportedModelSelection={reportedModelSelection}
                                 multipleModelSelections={multipleModelSelections}
                                 supportsMultipleModels={

@@ -383,7 +383,12 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
       ? workEntry.toolLifecycleStatus === "inProgress"
         ? "Thinking"
         : "Thought"
-      : questionHeading || (displayLabel ?? workEntryDisplayLabel(workEntry, workspaceRoot));
+      : questionHeading ||
+        (displayLabel ??
+          // A bot chat names a page by its address as people say it, without the scheme.
+          (botName === null
+            ? workEntryDisplayLabel(workEntry, workspaceRoot)
+            : workEntryDisplayLabel(workEntry, workspaceRoot).replace(/^https?:\/\//, "")));
   const answerPreview =
     workEntry.questionAnswer && hasQuestionAnswer(workEntry.questionAnswer)
       ? getQuestionAnswerPreview(workEntry.questionAnswer)

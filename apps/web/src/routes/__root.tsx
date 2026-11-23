@@ -29,6 +29,7 @@ import { isChunkLoadError } from "../lib/chunkReloadGuard";
 import { UseInAnotherAppDialogHost } from "../components/mcp/UseInAnotherAppDialog";
 import { configureClientTracing } from "../observability/clientTracing";
 import { resolveInitialServerAuthGateState } from "../environments/primary";
+import { useBotTabHostActive } from "../bots/BotTabHost";
 import { GUEST_PAGE_PATH } from "../guestPage";
 import { hasHostedPairingRequest, isHostedStaticApp } from "../hostedPairing";
 import { isLocalEnvironmentDisabled } from "../localEnvironment";
@@ -95,8 +96,10 @@ function RootRouteNotFoundView() {
 function RootRouteView() {
   // Above every branch: app services raise toasts for the whole page, so the surface they write to
   // must not unmount when the root switches branches (for example /pair to the app shell).
+  // On a phone the bots app raises toasts from the bottom, clear of the title and the tab bar.
+  const phoneBots = useBotTabHostActive();
   return (
-    <ToastProvider>
+    <ToastProvider position={phoneBots ? "bottom-center" : "top-right"}>
       <AnchoredToastProvider>
         <RootRouteBranch />
       </AnchoredToastProvider>

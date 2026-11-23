@@ -7,6 +7,8 @@ export const BotThreadContext = createContext(false);
 export interface BotChrome {
   /** The bot's name; auto-titling can rewrite the thread title after the first message. */
   readonly title: string;
+  /** What the empty composer says: whom the message goes to, or that the bot is paused. */
+  readonly placeholder: string;
   readonly header: ReactNode;
   readonly banner: ComposerBannerStackItem | null;
   readonly emptyState: ReactNode;

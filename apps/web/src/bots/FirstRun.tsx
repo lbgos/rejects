@@ -2,7 +2,6 @@ import {
   BOTS_ENDPOINTS,
   type BotPreferences,
   type BotReadiness,
-  type BotSummary,
   type EnvironmentId,
   type ModelSelection,
   TELEGRAM_ENDPOINTS,
@@ -43,7 +42,6 @@ type Blocker = NonNullable<ProviderChoice["blocker"]>;
 
 const COPY = {
   uk: {
-    step: "Крок {n} з {of}",
     model: "Модель для ботів",
     endpointRow: "Ключ API та адреса",
     noSandbox: "На цій машині немає пісочниці: боти працюють без терміналу.",
@@ -82,7 +80,6 @@ const COPY = {
     failedAnswer: "Налаштування не завершилося. Виберіть відповідь ще раз.",
   },
   ru: {
-    step: "Шаг {n} из {of}",
     model: "Модель для ботов",
     endpointRow: "Ключ API и адрес",
     noSandbox: "На этой машине нет песочницы: боты работают без терминала.",
@@ -121,7 +118,6 @@ const COPY = {
     failedAnswer: "Настройка не завершилась. Выберите ответ ещё раз.",
   },
   en: {
-    step: "Step {n} of {of}",
     model: "Model for your bots",
     endpointRow: "API key and endpoint",
     noSandbox: "No sandbox on this machine: bots run without a shell.",
@@ -165,9 +161,6 @@ const EXPERIENCES = ["experienced", "new"] as const satisfies ReadonlyArray<
   NonNullable<BotPreferences["experience"]>
 >;
 
-export const needsFirstRun = (bots: ReadonlyArray<BotSummary>) =>
-  bots.every((bot) => !bot.main && bot.threadId.startsWith("builtin:"));
-
 type Step = "model" | "endpoint" | "telegram" | "cortex" | "experience";
 
 /** The endpoint form is part of choosing a model, so both count as the second step. */
@@ -188,14 +181,12 @@ const STEP_COUNT = 5;
 function StepPage({
   title,
   step,
-  stepLine,
   backLabel,
   onBack,
   children,
 }: {
   title: string;
   step: number;
-  stepLine: string;
   backLabel?: string;
   onBack?: () => void;
   children: ReactNode;
@@ -207,7 +198,7 @@ function StepPage({
       className="flex h-full min-h-0 flex-col pt-safe text-foreground"
     >
       <div className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col md:justify-center md:pb-24">
-        <div className="mt-1 flex h-11 shrink-0 items-center justify-between ps-2 pe-5 md:px-2">
+        <div className="mt-1 flex h-11 shrink-0 items-center justify-between ps-2 pe-5 md:pe-4">
           {onBack ? (
             <Button variant="ghost" onClick={onBack}>
               <ChevronLeftIcon />
@@ -217,7 +208,8 @@ function StepPage({
             <span />
           )}
           <span className="text-xs text-muted-foreground tabular-nums max-md:text-bot-footnote">
-            {stepLine.replace("{n}", String(step)).replace("{of}", String(STEP_COUNT))}
+            {/* Numbers only: the first step is shown before a language is picked. */}
+            {step} / {STEP_COUNT}
           </span>
         </div>
         <h1 className="shrink-0 px-4 pt-1 text-lg font-semibold text-balance max-md:px-5 max-md:text-bot-heading max-md:font-bold">
@@ -292,7 +284,7 @@ export function FirstRun({ environmentId }: { environmentId: EnvironmentId }) {
 
   if (language === null)
     return (
-      <StepPage title="Мова · Язык · Language" step={1} stepLine="{n} / {of}">
+      <StepPage title="Мова · Язык · Language" step={1}>
         <Section>
           {LANGUAGES.map(({ id, label }) => (
             <li key={id}>
@@ -307,7 +299,6 @@ export function FirstRun({ environmentId }: { environmentId: EnvironmentId }) {
     <StepPage
       title={title}
       step={STEP_NUMBER[step]}
-      stepLine={copy.step}
       backLabel={copy.back}
       onBack={() => (back === null ? setLanguage(null) : setStep(back))}
     >

@@ -245,10 +245,13 @@ export function NightlyCheck({ environmentId }: { environmentId: EnvironmentId }
                   className={cn(
                     "min-w-0 flex-1",
                     ROW_META,
-                    running ? "text-muted-foreground" : "text-destructive-foreground",
+                    // A check that is switched off or running again raises no alarm about the last one.
+                    running || !dreams?.enabled
+                      ? "text-muted-foreground"
+                      : "text-destructive-foreground",
                   )}
                 >
-                  {running ? `${t("Last check")}: ` : null}
+                  {running || !dreams?.enabled ? `${t("Last check")}: ` : null}
                   {plural(errors.length, {
                     en: ["{count} check did not finish", "{count} checks did not finish"],
                     uk: [
@@ -309,11 +312,13 @@ export function NightlyCheck({ environmentId }: { environmentId: EnvironmentId }
                 </div>
               </div>
               {change.undone ? (
-                <span className={ROW_META}>{t("Undone")}</span>
+                <span className={cn("shrink-0", ROW_META)}>{t("Undone")}</span>
               ) : (
                 <Button
                   variant="ghost"
                   size="xs"
+                  // Its label ends on the row's trailing edge, where "Undone" ends.
+                  className="-me-2 shrink-0"
                   onClick={() =>
                     void act(
                       botRequest(environmentId, BOTS_ENDPOINTS.undoDream, { id: change.id }),

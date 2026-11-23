@@ -154,6 +154,7 @@ function CopyErrorButton({ text }: { text: string }) {
             size="icon-micro"
             variant="ghost-muted"
             aria-label={label}
+            data-slot="toast-copy"
             className="[--control-icon-color:currentColor] rounded-md text-muted-foreground/80 hover:bg-transparent hover:text-muted-foreground"
             onClick={() => copyToClipboard(text)}
           />

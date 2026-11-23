@@ -459,6 +459,7 @@ describe("MessagesTimeline work rows", () => {
   it("shows a working bot's typing dots until there is something to name", async () => {
     const chrome: BotChrome = {
       title: "Echo",
+      placeholder: "Message Echo",
       header: null,
       banner: null,
       emptyState: null,

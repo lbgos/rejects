@@ -1,6 +1,7 @@
 import {
   type BotDriverFit,
   type BotReadiness,
+  type BotSummary,
   botDriverFit,
   type ModelSelection,
   ProviderDriverKind,
@@ -86,3 +87,7 @@ export const endpointInstance = (input: {
     },
   };
 };
+
+/** True until setup has made the main bot: only built-in bots, or none, exist. */
+export const needsFirstRun = (bots: ReadonlyArray<Pick<BotSummary, "main" | "threadId">>) =>
+  bots.every((bot) => !bot.main && bot.threadId.startsWith("builtin:"));

@@ -165,6 +165,9 @@ export function BotThread({ target, children }: { target: ScopedThreadRef; child
   const chrome = modelSelection
     ? {
         title: botName,
+        placeholder: stopped
+          ? t("Paused, resumes {resume}", { resume })
+          : t("Message {name}", { name: botName }),
         header,
         banner,
         emptyState,
@@ -184,7 +187,10 @@ export function BotThread({ target, children }: { target: ScopedThreadRef; child
   return (
     <BotThreadContext value={true}>
       <BotChromeContext value={chrome}>
-        <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+        <div
+          data-bot-stopped={stopped || undefined}
+          className="flex min-h-0 min-w-0 flex-1 overflow-hidden"
+        >
           {children}
           <BotSidePanel target={target} />
         </div>
