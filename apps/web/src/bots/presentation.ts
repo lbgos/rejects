@@ -171,6 +171,13 @@ export function botScheduleLabel(schedule: ScheduledTaskSchedule): string {
   return t("{days} at {time}", { days, time: schedule.timeOfDay });
 }
 
+/** A one-off, or a rule for a single weekday: its label is its next run, so a row need not repeat it. */
+export function scheduleNamesItsNextRun(schedule: ScheduledTaskSchedule): boolean {
+  if (schedule.type === "once") return true;
+  if (schedule.type === "interval" || schedule.type === "webhook") return false;
+  return (schedule.weekdays ?? []).length === 1;
+}
+
 type ShownStatus =
   | OrchestrationV2RunStatus
   | OrchestrationV2TurnItemStatus

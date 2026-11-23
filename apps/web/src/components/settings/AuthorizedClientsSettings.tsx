@@ -1,5 +1,5 @@
 import { AUTH_SCOPE_OPTIONS as PAIRING_SCOPE_OPTIONS } from "@t3tools/shared/authScopeOptions";
-import { PlugIcon, PlusIcon, QrCodeIcon } from "lucide-react";
+import { EllipsisIcon, PlugIcon, PlusIcon, QrCodeIcon } from "lucide-react";
 import { type ReactNode, memo, useId, useState } from "react";
 import {
   AuthAccessWriteScope,
@@ -48,6 +48,8 @@ import { QRCodeSvg } from "../ui/qr-code";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { Button } from "../ui/button";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
+import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { Textarea } from "../ui/textarea";
 import {
   isLoopbackHostname,
@@ -578,6 +580,7 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
     reportFailure: false,
   });
   const [dialogOpen, setDialogOpen] = useState(false);
+  const phone = useMediaQuery("max-md");
   const [pairingLabel, setPairingLabel] = useState("");
   const [pairingScopes, setPairingScopes] = useState<ReadonlyArray<AuthGrantScope>>([
     ...AuthStandardClientScopes,
@@ -625,18 +628,44 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
 
   return (
     <div className="flex flex-wrap items-center justify-end gap-2">
-      <Button size="xs" variant="outline" onClick={() => openUseInAnotherApp(environmentId)}>
-        <PlugIcon className="size-3" />
-        Use in another app (MCP)
-      </Button>
-      <Button
-        size="xs"
-        variant="destructive-outline"
-        disabled={isRevokingOtherClients || !canRevokeOtherClients(clientSessions)}
-        onClick={() => void onRevokeOtherClients()}
-      >
-        {isRevokingOtherClients ? "Revoking…" : "Revoke others"}
-      </Button>
+      {phone ? (
+        // A phone's header has room for the one action people come for; the rest are in its menu.
+        <Menu>
+          <MenuTrigger
+            render={<Button size="icon-xs" variant="outline" aria-label="More client actions" />}
+          >
+            <EllipsisIcon />
+          </MenuTrigger>
+          <MenuPopup align="end">
+            <MenuItem onClick={() => openUseInAnotherApp(environmentId)}>
+              <PlugIcon />
+              Use in another app (MCP)
+            </MenuItem>
+            <MenuItem
+              variant="destructive"
+              disabled={isRevokingOtherClients || !canRevokeOtherClients(clientSessions)}
+              onClick={() => void onRevokeOtherClients()}
+            >
+              {isRevokingOtherClients ? "Revoking…" : "Revoke others"}
+            </MenuItem>
+          </MenuPopup>
+        </Menu>
+      ) : (
+        <>
+          <Button size="xs" variant="outline" onClick={() => openUseInAnotherApp(environmentId)}>
+            <PlugIcon className="size-3" />
+            Use in another app (MCP)
+          </Button>
+          <Button
+            size="xs"
+            variant="destructive-outline"
+            disabled={isRevokingOtherClients || !canRevokeOtherClients(clientSessions)}
+            onClick={() => void onRevokeOtherClients()}
+          >
+            {isRevokingOtherClients ? "Revoking…" : "Revoke others"}
+          </Button>
+        </>
+      )}
       {pairingDenial !== undefined ? (
         <ManagedControl reason={pairingDenial}>
           <Button size="xs" variant="default" disabled>

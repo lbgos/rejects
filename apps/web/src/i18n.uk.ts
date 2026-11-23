@@ -176,6 +176,7 @@ export const UK = {
   Edit: "Змінити",
   "{name} enabled": "{name} увімкнено",
   "No runs yet.": "Запусків ще немає.",
+  Runs: "Запуски",
   run: "запуск",
   notified: "сповістив",
   "Wakes and workers": "Пробудження та виконавці",

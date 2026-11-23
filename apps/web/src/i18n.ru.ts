@@ -178,6 +178,7 @@ export const RU = {
   Edit: "Изменить",
   "{name} enabled": "{name} включено",
   "No runs yet.": "Запусков пока нет.",
+  Runs: "Запуски",
   run: "запуск",
   notified: "уведомил",
   "Wakes and workers": "Пробуждения и исполнители",

@@ -106,6 +106,7 @@ import {
   matchesScheduledTaskScope,
   scheduleFromDraft,
   scheduleLabel,
+  scheduleZoneToName,
   scheduledTaskDefaultModel,
   WEEKDAY_LABELS,
   taskToDraft,
@@ -143,6 +144,7 @@ import {
 import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
+import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { Textarea } from "../ui/textarea";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -782,17 +784,24 @@ function ScheduledTaskRow({
   };
   // A run the server slept through is not a failure of the task; the status says which it was.
   const missed = task.lastRunStatus === "failed" && task.lastRunError === SCHEDULED_TASK_MISSED_RUN;
+  const phone = useMediaQuery("max-md");
   const threadLinked = task.threadId !== null && scheduledTaskThreadMode(task) !== "new_thread";
   return (
     <SettingsRow
       data-scheduled-task-row
       title={task.title}
-      description={<span className="line-clamp-2">{task.prompt}</span>}
+      // A phone's row is the task and its state; its prompt is in the task itself.
+      description={phone ? undefined : <span className="line-clamp-2">{task.prompt}</span>}
       status={
         // The schedule and its next run on one line; the last result and the bot under it.
         <div className="flex flex-col gap-1">
           <span>
-            {scheduleLabel(task.schedule, timeZone, task.nextRunAt)} ·{" "}
+            {scheduleLabel(
+              task.schedule,
+              scheduleZoneToName(timeZone, new Intl.DateTimeFormat().resolvedOptions().timeZone),
+              task.nextRunAt,
+            )}{" "}
+            ·{" "}
             {task.blockedByPolicy !== undefined ? (
               task.blockedByPolicy
             ) : !task.enabled ? (

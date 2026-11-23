@@ -68,7 +68,14 @@ export function FoldedSettingsSection({
 
   return (
     <section id={id} ref={targetRef} tabIndex={-1} className="outline-none">
-      <Collapsible open={open} onOpenChange={setOpen} render={<SettingsGroup divided={false} />}>
+      {/* Named as the group it is drawn as: the collapsible's own slot name would hide it from the
+          grouped-list styles. */}
+      <Collapsible
+        data-slot="settings-group"
+        open={open}
+        onOpenChange={setOpen}
+        render={<SettingsGroup divided={false} />}
+      >
         {/* On a narrow screen the controls drop below the title instead of covering it. */}
         <div data-settings-fold className="flex flex-wrap items-center gap-x-4 px-3 sm:px-4">
           <CollapsibleTrigger className="flex min-h-11 min-w-0 flex-1 basis-40 items-center gap-2 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring rounded-md">
@@ -81,7 +88,15 @@ export function FoldedSettingsSection({
             />
             <span className="shrink-0 text-sm font-medium">{title}</span>
             {summary ? (
-              <span className="min-w-0 truncate text-xs text-muted-foreground">{summary}</span>
+              // Beside a control a phone has no room for it: a cut-off count says nothing.
+              <span
+                className={cn(
+                  "min-w-0 truncate text-xs text-muted-foreground",
+                  control && "max-md:hidden",
+                )}
+              >
+                {summary}
+              </span>
             ) : null}
           </CollapsibleTrigger>
           {control ? (

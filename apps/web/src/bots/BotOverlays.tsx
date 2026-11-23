@@ -58,6 +58,7 @@ import {
   groupRepeatedRuns,
   messageTimeLabel,
   noteMeta,
+  scheduleNamesItsNextRun,
   statusWord,
 } from "./presentation";
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
@@ -258,7 +259,8 @@ function SchedulePanel({ target }: { target: ScopedThreadRef }) {
               {formatTokens(bot.tokensToday)} / {formatTokens(bot.dailyTokenCap)}
             </span>
           </li>
-          {next ? (
+          {/* One schedule states its own next run; the fact is for telling several apart. */}
+          {next && tasks.length !== 1 ? (
             <li className={FACT_ROW}>
               <span className={ROW_TEXT}>{t("Next wake")}</span>
               <span className={ROW_META}>{formatWakeIn(next)}</span>
@@ -292,7 +294,8 @@ function SchedulePanel({ target }: { target: ScopedThreadRef }) {
                   {/* Wraps instead of cutting: the next run is what the row is read for. */}
                   <div className={cn("break-words", ROW_META)}>
                     {botScheduleLabel(task.schedule)}
-                    {task.nextRunAt
+                    {/* A rule that names one moment has already said when it runs next. */}
+                    {task.nextRunAt && !scheduleNamesItsNextRun(task.schedule)
                       ? ` · ${t("next {time}", { time: formatWakeIn(task.nextRunAt) })}`
                       : null}
                     {task.lastRunAt
@@ -729,15 +732,14 @@ function MemoryField({
 }
 
 /**
- * An activity row: a time column of one width, so every outcome starts on the same line, then the
- * outcome on one line, then what it cost. On a phone the outcome has the row's width, with the
- * cost and the time under it.
+ * An activity row: the outcome has the row's width, so it is never cut to make room for what the
+ * run cost; the cost and the time sit on the line under it.
  */
 const ACTIVITY_ROW =
-  "grid w-full grid-cols-[6.5rem_minmax(0,1fr)_auto] items-baseline gap-x-2 px-4 py-2.5 text-left max-md:grid-cols-[minmax(0,1fr)_auto] max-md:gap-y-0.5 max-md:px-5";
-const ACTIVITY_TIME = `${ROW_META} max-md:col-start-2 max-md:row-start-2`;
-const ACTIVITY_TEXT = `${ROW_TEXT} min-w-0 truncate max-md:col-span-2 max-md:row-start-1`;
-const ACTIVITY_META = `${ROW_META} max-md:col-start-1 max-md:row-start-2`;
+  "grid w-full grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-2 gap-y-0.5 px-4 py-2.5 text-left max-md:px-5";
+const ACTIVITY_TIME = `${ROW_META} col-start-2 row-start-2`;
+const ACTIVITY_TEXT = `${ROW_TEXT} col-span-2 row-start-1 min-w-0 truncate`;
+const ACTIVITY_META = `${ROW_META} col-start-1 row-start-2`;
 
 /** "9–14 Nov": the nights a run of equal nightly results covers. */
 const DAY_RANGE = new Intl.DateTimeFormat(uiLocales, { day: "numeric", month: "short" });
@@ -764,6 +766,10 @@ function ActivityPanel({ target }: { target: ScopedThreadRef }) {
   );
   return (
     <>
+      {/* Named only beside the nightly check's own list. */}
+      {dreams.length > 0 && detail.runs.length > 0 ? (
+        <h3 className={SECTION_HEADER}>{t("Runs")}</h3>
+      ) : null}
       <ul className={SHEET_LIST}>
         {detail.runs
           .map((run) => {
@@ -790,7 +796,6 @@ function ActivityPanel({ target }: { target: ScopedThreadRef }) {
             return (
               <li key={run.id}>
                 <Collapsible>
-                  {/* On a phone the title gets the line, with the time trailing and the meta below. */}
                   <CollapsibleTrigger className={ACTIVITY_ROW}>
                     <span className={ACTIVITY_TIME}>
                       {messageTimeLabel(DateTime.toEpochMillis(run.requestedAt))}

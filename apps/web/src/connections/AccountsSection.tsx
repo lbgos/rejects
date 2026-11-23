@@ -112,9 +112,16 @@ export function ConnectSection({
         account.site !== GMAIL_SITE && !COMMON_SITES.some((entry) => entry.site === account.site),
     )
     .map(accountItem);
+  // Nothing in the list can be opened without the vault, so the notice stands in for it.
+  if (!state.available) {
+    return (
+      <Section title={t("Connect")}>
+        <VaultDownNotice onRetry={onRetry} />
+      </Section>
+    );
+  }
   return (
     <Section title={t("Connect")}>
-      {state.available ? null : <VaultDownNotice onRetry={onRetry} />}
       {[...connectorItems, ...siteItems, ...otherItems].map((item) => (
         <li key={item.key}>
           <Row
@@ -122,19 +129,18 @@ export function ConnectSection({
             title={item.title}
             value={item.value}
             tone={item.error ? "error" : "muted"}
-            disabled={!state.available}
             onClick={item.onClick}
           />
         </li>
       ))}
       <li>
-        <OtherSite disabled={!state.available} onAdd={onSignIn} />
+        <OtherSite onAdd={onSignIn} />
       </li>
     </Section>
   );
 }
 
-function OtherSite({ disabled, onAdd }: { disabled: boolean; onAdd: (site: string) => void }) {
+function OtherSite({ onAdd }: { onAdd: (site: string) => void }) {
   const [text, setText] = useState("");
   const site = siteOf(text);
   return (
@@ -155,11 +161,10 @@ function OtherSite({ disabled, onAdd }: { disabled: boolean; onAdd: (site: strin
         spellCheck={false}
         inputMode="url"
         className="min-w-0 flex-1"
-        disabled={disabled}
         value={text}
         onChange={(event) => setText(event.target.value)}
       />
-      <Button size="sm" variant="outline" type="submit" disabled={disabled || !site}>
+      <Button size="sm" variant="outline" type="submit" disabled={!site}>
         {t("Sign in")}
       </Button>
     </form>

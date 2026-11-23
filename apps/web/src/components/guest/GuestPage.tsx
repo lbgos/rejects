@@ -55,6 +55,7 @@ import type { TimelineRow } from "../chat/timelineRowContext";
 import { useTimelineFollow } from "../chat/useTimelineFollow";
 import { GuestHtmlRender } from "./GuestHtmlRender";
 import { Button } from "../ui/button";
+import { StandalonePage, StandalonePageHeader } from "../ui/standalone-page";
 import { Input } from "../ui/input";
 import {
   applyGuestStreamEvent,
@@ -340,10 +341,17 @@ function GuestSession({ shareId }: { readonly shareId: string }) {
 }
 
 function Notice({ title, detail }: { readonly title: string; readonly detail?: string }) {
+  // A link that will not open is where the visit ends, so it is a page of its own; a wait is a line.
+  if (detail) {
+    return (
+      <StandalonePage>
+        <StandalonePageHeader title={title} description={detail} />
+      </StandalonePage>
+    );
+  }
   return (
-    <div className="m-auto flex max-w-sm flex-col gap-1 p-6 text-center">
-      <p className="text-sm font-medium">{title}</p>
-      {detail ? <p className="text-xs text-muted-foreground">{detail}</p> : null}
+    <div role="status" className="m-auto p-6 text-center text-sm text-muted-foreground">
+      {title}
     </div>
   );
 }

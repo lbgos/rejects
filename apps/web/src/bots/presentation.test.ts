@@ -19,6 +19,7 @@ import {
   timeSeparatorLabels,
   formatTokens,
   formatWakeIn,
+  scheduleNamesItsNextRun,
   groupRepeatedRuns,
   parseTokenCap,
   quoteReply,
@@ -112,6 +113,23 @@ describe("formatWakeIn", () => {
       ),
     ).toEqual(["<1m", "12m", "12:00", "08:30"]);
     expect(formatWakeIn(at(50 * 3_600_000), now)).toMatch(/^\S+ 11:00$/);
+  });
+});
+
+describe("scheduleNamesItsNextRun", () => {
+  it("is true only for a rule that names a single moment", () => {
+    expect(scheduleNamesItsNextRun({ type: "fixed_time", timeOfDay: "09:00", weekdays: [6] })).toBe(
+      true,
+    );
+    expect(
+      scheduleNamesItsNextRun({
+        type: "fixed_time",
+        timeOfDay: "07:30",
+        weekdays: [1, 2, 3, 4, 5],
+      }),
+    ).toBe(false);
+    expect(scheduleNamesItsNextRun({ type: "fixed_time", timeOfDay: "16:00" })).toBe(false);
+    expect(scheduleNamesItsNextRun({ type: "interval", everyMs: 3_600_000 })).toBe(false);
   });
 });
 
