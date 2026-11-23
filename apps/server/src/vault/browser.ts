@@ -191,7 +191,7 @@ interface Session {
   activeTarget: string | null;
   readonly sheetPopups: Array<{ session: string; targetId: string }>;
   readonly pageInfo: Map<string, { url: string; title: string }>;
-  phoneAgent: ReturnType<typeof mobileUserAgent> | null;
+  agent: ReturnType<typeof browserAgent> | null;
   mainFrame: string | null;
   pin: Pin | null;
   lastPin: Pin | null;
@@ -250,34 +250,57 @@ const KEYS: Record<string, { code: string; keyCode: number; text?: string }> = {
 };
 const PRESSABLE_KEYS = Object.keys(KEYS);
 
-/** No headless brand in the client hints: the browser would list its own HeadlessChrome in the full version list. */
-const mobileUserAgent = (product: string) => {
+/** Sites that send a phone browser to their native app (Slack: `/client` to `/app`, sign-in to a download page). */
+const DESKTOP_SITES = ["slack.com"];
+
+/**
+ * A phone Chrome, or a Linux desktop Chrome for a profile on DESKTOP_SITES. No headless brand in
+ * the client hints: the browser would list its own HeadlessChrome in the full version list.
+ */
+export const browserAgent = (product: string, profile: string) => {
   const version = product.split("/")[1] ?? "156.0.0.0";
   const major = version.split(".")[0] ?? "156";
+  const desktop = DESKTOP_SITES.some((site) => profile === site || profile.endsWith(`.${site}`));
+  const brands = {
+    brands: [
+      { brand: "Not.A/Brand", version: "99" },
+      { brand: "Chromium", version: major },
+      { brand: "Google Chrome", version: major },
+    ],
+    fullVersionList: [
+      { brand: "Not.A/Brand", version: "99.0.0.0" },
+      { brand: "Chromium", version },
+      { brand: "Google Chrome", version },
+    ],
+    fullVersion: version,
+  };
   return {
-    userAgent: `Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${major}.0.0.0 Mobile Safari/537.36`,
+    userAgent: desktop
+      ? `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${major}.0.0.0 Safari/537.36`
+      : `Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${major}.0.0.0 Mobile Safari/537.36`,
     // No q-values: Chromium adds its own, and a list with them leaks into navigator.languages.
     acceptLanguage: "en-US,en",
-    platform: "Linux armv8l",
-    userAgentMetadata: {
-      brands: [
-        { brand: "Not.A/Brand", version: "99" },
-        { brand: "Chromium", version: major },
-        { brand: "Google Chrome", version: major },
-      ],
-      fullVersionList: [
-        { brand: "Not.A/Brand", version: "99.0.0.0" },
-        { brand: "Chromium", version },
-        { brand: "Google Chrome", version },
-      ],
-      fullVersion: version,
-      platform: "Android",
-      platformVersion: "14.0.0",
-      architecture: "",
-      model: "Pixel 8",
-      mobile: true,
-      formFactors: ["Mobile"],
-    },
+    platform: desktop ? "Linux x86_64" : "Linux armv8l",
+    userAgentMetadata: desktop
+      ? {
+          ...brands,
+          platform: "Linux",
+          platformVersion: "6.8.0",
+          architecture: "x86",
+          bitness: "64",
+          model: "",
+          mobile: false,
+          formFactors: ["Desktop"],
+        }
+      : {
+          ...brands,
+          platform: "Android",
+          platformVersion: "14.0.0",
+          architecture: "",
+          model: "Pixel 8",
+          mobile: true,
+          formFactors: ["Mobile"],
+        },
   };
 };
 
@@ -655,7 +678,7 @@ export const makeBrowsers = (
         height: viewport.height,
         // Headful Chrome can read input divided by an emulated scale above 1, so taps miss.
         deviceScaleFactor: 1,
-        mobile: true,
+        mobile: session.agent?.userAgentMetadata.mobile ?? true,
       },
       sessionId,
     );
@@ -848,7 +871,7 @@ export const makeBrowsers = (
       activeTarget: null,
       sheetPopups: [],
       pageInfo: new Map(),
-      phoneAgent: null,
+      agent: null,
       mainFrame: null,
       pin: null,
       lastPin: null,
@@ -915,7 +938,7 @@ export const makeBrowsers = (
   const preparePage = async (
     session: Session,
     sessionId: string,
-    agent: ReturnType<typeof mobileUserAgent>,
+    agent: ReturnType<typeof browserAgent>,
   ) => {
     const on = (method: string, params: object = {}) => send(session, method, params, sessionId);
     // The page's own frames and workers are its children, not the browser's.
@@ -948,7 +971,7 @@ export const makeBrowsers = (
 
   /** Not queued: the opener's script waits for the new window, so a tap that opened it is still in flight, and the queue would wait for that tap. */
   const showPopup = async (session: Session, attached: string, targetId: string) => {
-    if (!session.sheet || session.phoneAgent === null) {
+    if (!session.sheet || session.agent === null) {
       void send(session, "Target.closeTarget", { targetId }).catch(() => undefined);
       return;
     }
@@ -962,7 +985,7 @@ export const makeBrowsers = (
     }
     session.sheetPopups.push({ session: attached, targetId });
     try {
-      await preparePage(session, attached, session.phoneAgent);
+      await preparePage(session, attached, session.agent);
       await applyViewport(session, session.viewport, attached);
       await send(session, "Runtime.runIfWaitingForDebugger", {}, attached);
       await switchTo(session, attached, targetId);
@@ -1038,7 +1061,7 @@ export const makeBrowsers = (
     }
   };
 
-  const attach = async (session: Session) => {
+  const attach = async (session: Session, profile: string) => {
     await send(session, "Target.setDiscoverTargets", { discover: true });
     const { targetInfos } = (await send(session, "Target.getTargets")) as {
       targetInfos: Array<{ targetId: string; type: string; url: string; title: string }>;
@@ -1057,13 +1080,13 @@ export const makeBrowsers = (
     session.mainTarget = targetId;
     session.activeTarget = targetId;
     const { product } = (await send(session, "Browser.getVersion")) as { product: string };
-    session.phoneAgent = mobileUserAgent(product);
+    session.agent = browserAgent(product, profile);
     // New pages (popups, new tabs) attach held, before any of their script runs.
     await send(session, "Target.setAutoAttach", {
       ...AUTO_ATTACH,
       filter: [{ type: "page", exclude: false }, ...CHILD_TARGETS],
     });
-    await preparePage(session, sessionId, session.phoneAgent);
+    await preparePage(session, sessionId, session.agent);
     const { frameTree } = (await page(session, "Page.getFrameTree")) as {
       frameTree: { frame: { id: string } };
     };
@@ -1089,7 +1112,7 @@ export const makeBrowsers = (
       const session = await spawnSession(profile);
       sessions.set(profile, session);
       try {
-        await attach(session);
+        await attach(session, profile);
       } catch (error) {
         close(profile, false);
         throw error;
