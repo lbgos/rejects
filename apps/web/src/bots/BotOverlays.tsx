@@ -35,6 +35,8 @@ import { serverEnvironment } from "../state/server";
 import { usePreparedConnection } from "../state/session";
 import { useAtomCommand } from "../state/use-atom-command";
 import { botRequest } from "./http";
+import { readLocalApi } from "../localApi";
+import { useLongPress } from "./useLongPress";
 import { resolveThreadRouteRef } from "../threadRoutes";
 import { saveNote, setNote } from "./actions";
 import { NightlyCheck } from "./NightlyCheck";
@@ -488,60 +490,13 @@ function NoteList({
             {editing?.id === note.id ? (
               field
             ) : (
-              <div className="flex items-center gap-2 pe-4 max-md:pe-5">
-                <button
-                  type="button"
-                  disabled={retired}
-                  className="min-w-0 flex-1 py-2.5 ps-4 text-left outline-none not-disabled:hover:bg-accent max-md:py-2.75 max-md:ps-5 max-md:hover:bg-transparent"
-                  onClick={() => setEditing({ id: note.id, text: note.text })}
-                >
-                  <div
-                    className={cn(
-                      "break-words",
-                      ROW_TEXT,
-                      (retired || note.status !== "fresh") && "text-muted-foreground",
-                    )}
-                  >
-                    {note.text}
-                  </div>
-                  {noteMeta(note) ? (
-                    <div className={cn("line-clamp-2 break-words", ROW_META)}>{noteMeta(note)}</div>
-                  ) : null}
-                </button>
-                {retired ? (
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    onClick={() => void setNote(environmentId, bot, note.id, { retired: false })}
-                  >
-                    {t("Restore")}
-                  </Button>
-                ) : (
-                  <>
-                    {note.status === "fresh" ? null : (
-                      <Button
-                        variant="ghost"
-                        size="xs"
-                        onClick={() => void saveNote(environmentId, bot, note.id, note.text)}
-                      >
-                        {t("Still true")}
-                      </Button>
-                    )}
-                    <Button
-                      variant={note.pinned ? "ghost" : "ghost-muted"}
-                      size="icon-xs"
-                      aria-pressed={note.pinned !== undefined}
-                      aria-label={note.pinned ? t("Unpin") : t("Pin to every reply")}
-                      title={note.pinned ? t("Unpin") : t("Pin to every reply")}
-                      onClick={() =>
-                        void setNote(environmentId, bot, note.id, { pinned: !note.pinned })
-                      }
-                    >
-                      <PinIcon className={note.pinned ? "fill-current" : undefined} />
-                    </Button>
-                  </>
-                )}
-              </div>
+              <NoteRow
+                environmentId={environmentId}
+                bot={bot}
+                note={note}
+                retired={retired}
+                onEdit={() => setEditing({ id: note.id, text: note.text })}
+              />
             )}
           </li>
         ))}
@@ -580,6 +535,114 @@ function NoteList({
         )}
       </ul>
     </section>
+  );
+}
+
+type Note = NonNullable<ReturnType<typeof useNotes>>["notes"][number];
+
+/**
+ * A note at rest. A press edits it; a long press or a right click opens its menu (pin, remove).
+ * Only a pinned note shows a pin, so the pinned ones stand out; a pointer also gets the pin on
+ * the row it hovers.
+ */
+function NoteRow({
+  environmentId,
+  bot,
+  note,
+  retired,
+  onEdit,
+}: {
+  environmentId: EnvironmentId;
+  bot: BotSummary | null;
+  note: Note;
+  retired: boolean;
+  onEdit: () => void;
+}) {
+  const togglePin = () => void setNote(environmentId, bot, note.id, { pinned: !note.pinned });
+  const menu = async (point: { x: number; y: number }) => {
+    const picked = await readLocalApi()?.contextMenu.show(
+      [
+        {
+          id: "pin" as const,
+          label: note.pinned ? t("Unpin") : t("Pin to every reply"),
+          icon: note.pinned ? "pin-off" : "pin",
+        },
+        { id: "remove" as const, label: t("Remove"), icon: "trash", destructive: true },
+      ],
+      point,
+    );
+    if (picked === "pin") togglePin();
+    if (picked === "remove") void setNote(environmentId, bot, note.id, { retired: true });
+  };
+  const { consumeClick, ...press } = useLongPress((point) => {
+    if (!retired) void menu(point);
+  });
+  return (
+    <div
+      className="group/note flex items-center gap-2 pe-4 [-webkit-touch-callout:none] max-md:pe-5"
+      {...press}
+    >
+      <button
+        type="button"
+        disabled={retired}
+        className="min-w-0 flex-1 py-2.5 ps-4 text-left outline-none not-disabled:hover:bg-accent max-md:py-2.75 max-md:ps-5 max-md:hover:bg-transparent"
+        onClick={() => {
+          if (!consumeClick()) onEdit();
+        }}
+      >
+        <div
+          className={cn(
+            "break-words",
+            ROW_TEXT,
+            (retired || note.status !== "fresh") && "text-muted-foreground",
+          )}
+        >
+          {note.text}
+        </div>
+        {noteMeta(note) ? (
+          <div className={cn("line-clamp-2 break-words", ROW_META)}>{noteMeta(note)}</div>
+        ) : null}
+      </button>
+      {retired ? (
+        <Button
+          variant="ghost"
+          size="xs"
+          onClick={() => void setNote(environmentId, bot, note.id, { retired: false })}
+        >
+          {t("Restore")}
+        </Button>
+      ) : (
+        <>
+          {note.status === "fresh" ? null : (
+            <Button
+              variant="ghost"
+              size="xs"
+              onClick={() => void saveNote(environmentId, bot, note.id, note.text)}
+            >
+              {t("Still true")}
+            </Button>
+          )}
+          <span
+            className={cn(
+              "flex",
+              !note.pinned &&
+                "opacity-0 group-hover/note:opacity-100 has-focus-visible:opacity-100 pointer-coarse:hidden",
+            )}
+          >
+            <Button
+              variant={note.pinned ? "ghost" : "ghost-muted"}
+              size="icon-xs"
+              aria-pressed={note.pinned !== undefined}
+              aria-label={note.pinned ? t("Unpin") : t("Pin to every reply")}
+              title={note.pinned ? t("Unpin") : t("Pin to every reply")}
+              onClick={togglePin}
+            >
+              <PinIcon className={note.pinned ? "fill-current" : undefined} />
+            </Button>
+          </span>
+        </>
+      )}
+    </div>
   );
 }
 

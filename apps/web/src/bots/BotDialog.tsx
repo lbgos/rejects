@@ -103,7 +103,7 @@ function Field({
   children: ReactNode;
 }) {
   return (
-    <div data-bot-field className="space-y-1.5 max-md:space-y-1 max-md:px-4 max-md:py-2.5">
+    <div data-bot-field className="space-y-1 px-4 py-2.5">
       <Label data-bot-field-label htmlFor={htmlFor}>
         {label}
       </Label>
@@ -116,16 +116,16 @@ function Field({
 }
 
 /**
- * A run of related fields. A wide screen sets groups apart with a hairline; a phone draws each as
- * an inset group under its quiet title, as the lists on You and Settings are.
+ * A run of related fields: one rounded group under its quiet title, as the lists on You and
+ * Settings are, at every width.
  */
 function FieldGroup({ title, children }: { title?: string; children: ReactNode }) {
   return (
-    <section className="space-y-1.5 md:border-t md:border-bot-hairline md:pt-5 md:first:border-t-0 md:first:pt-0">
-      {title ? <h3 className={cn(SECTION_TITLE, "px-4 md:hidden")}>{title}</h3> : null}
+    <section className="space-y-1.5">
+      {title ? <h3 className={cn(SECTION_TITLE, "px-4")}>{title}</h3> : null}
       <div
         data-bot-form-group
-        className="space-y-4 max-md:space-y-0 max-md:divide-y max-md:divide-bot-hairline max-md:overflow-hidden max-md:bg-(--bots-list-surface)"
+        className="divide-y divide-bot-hairline overflow-hidden bg-(--bots-list-surface)"
       >
         {children}
       </div>
@@ -145,7 +145,7 @@ function Disclosure({
 }) {
   return (
     <Collapsible defaultOpen={defaultOpen}>
-      <CollapsibleTrigger className="group flex w-full items-center justify-between gap-2 rounded-md py-1 text-left text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset max-md:min-h-11 max-md:px-4 max-md:py-0 max-md:text-bot-body max-md:font-normal">
+      <CollapsibleTrigger className="group flex min-h-10 w-full items-center justify-between gap-2 px-4 text-left text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset max-md:min-h-11 max-md:text-bot-body">
         {title}
         <ChevronDownIcon
           aria-hidden
@@ -153,9 +153,7 @@ function Disclosure({
         />
       </CollapsibleTrigger>
       <CollapsiblePanel animate={false}>
-        <div className="space-y-4 pt-3 max-md:space-y-0 max-md:divide-y max-md:divide-bot-hairline max-md:border-t max-md:border-bot-hairline max-md:pt-0">
-          {children}
-        </div>
+        <div className="divide-y divide-bot-hairline border-t border-bot-hairline">{children}</div>
       </CollapsiblePanel>
     </Collapsible>
   );
@@ -200,7 +198,7 @@ const USAGE_ROWS_SHOWN = 7;
 
 function UsageList({ usage }: { usage: BotSummary["usage"] }) {
   return (
-    <ul className="space-y-0.5 text-xs text-muted-foreground tabular-nums max-md:space-y-1 max-md:px-4 max-md:py-2.5 max-md:text-bot-footnote">
+    <ul className="space-y-1 px-4 py-2.5 text-xs text-muted-foreground tabular-nums max-md:text-bot-footnote">
       {usage.slice(0, USAGE_ROWS_SHOWN).map((entry, index) => {
         const top = entry.sources[0];
         return (
@@ -421,7 +419,7 @@ export function BotDialog({
         data-bot-page
         data-bot-form
         showCloseButton={false}
-        className="max-w-lg"
+        className="max-w-xl"
       >
         {/* Close, the title, and the confirming action. */}
         <div
@@ -431,6 +429,7 @@ export function BotDialog({
           <DialogClose
             disabled={saving}
             aria-label={t("Cancel")}
+            data-bot-nav-close
             className="justify-self-start"
             render={<Button variant="ghost" size="icon" />}
           >
@@ -507,6 +506,7 @@ export function BotDialog({
                     data-1p-ignore
                     data-lpignore="true"
                     autoFocus={focus !== "cap"}
+                    onFocus={(e) => focus === "name" && e.currentTarget.select()}
                     maxLength={60}
                     value={name}
                     onChange={(e) => setName(e.target.value)}
@@ -679,7 +679,7 @@ export function BotDialog({
                     (bot?.ownSkills?.length ?? 0) > 0
                   }
                 >
-                  <label className="flex w-fit cursor-pointer items-center gap-2 text-sm max-md:min-h-11 max-md:w-full max-md:px-4 max-md:text-bot-body">
+                  <label className="flex min-h-10 w-full cursor-pointer items-center gap-2 px-4 text-sm max-md:min-h-11 max-md:text-bot-body">
                     <Checkbox
                       checked={musicSkill}
                       onCheckedChange={(checked) => setMusicSkill(checked === true)}

@@ -18,6 +18,7 @@ export function BotMessageMenu({
   from,
   quotable,
   time,
+  excerpt,
   reaction,
   onReact,
   onPick,
@@ -27,6 +28,7 @@ export function BotMessageMenu({
   readonly from: "bot" | "user";
   readonly quotable: boolean;
   readonly time: string;
+  readonly excerpt: string;
   readonly reaction: string | undefined;
   readonly onReact: ((emoji: BotReaction | null) => void) | undefined;
   readonly onPick: (pick: BotMenuPick) => void;
@@ -67,8 +69,12 @@ export function BotMessageMenu({
           </>
         ) : null}
         <MenuGroup>
+          {/* A phone's sheet may cover the message it acts on, so the label quotes it. */}
           <MenuGroupLabel>
-            <span className="tabular-nums">{time}</span>
+            <span className="flex min-w-0 gap-1.5">
+              <span className="shrink-0 tabular-nums">{time}</span>
+              {excerpt ? <span className="min-w-0 truncate md:hidden">{excerpt}</span> : null}
+            </span>
           </MenuGroupLabel>
           {quotable ? (
             <>

@@ -205,6 +205,7 @@ export function BotGestures({
           from={from}
           quotable={quotable}
           time={messageTimeLabel(Date.parse(at))}
+          excerpt={text.trim().split("\n", 1)[0]?.slice(0, 80) ?? ""}
           reaction={reaction}
           onReact={
             from === "bot" && chrome

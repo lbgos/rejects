@@ -33,6 +33,7 @@ export type BotActionId =
   | "mark-unread"
   | "details"
   | "share-guest"
+  | "rename"
   | "edit"
   | "delete";
 
@@ -91,6 +92,7 @@ export function botActions(input: {
     ...(input.canShareWithGuest
       ? [{ id: "share-guest" as const, label: t("Share with guest"), icon: "share" }]
       : []),
+    { id: "rename", label: t("Rename"), icon: "pencil" },
     { id: "edit", label: t("Edit bot"), icon: "sliders" },
     ...(isBuiltinBot(bot)
       ? []
@@ -246,8 +248,13 @@ export function useBotActions(environmentId: EnvironmentId) {
         }
         await refreshBots(environmentId).catch(() => undefined);
         return;
+      case "rename":
       case "edit":
-        return openBotDialog({ environmentId, threadId: bot.threadId, focus: null });
+        return openBotDialog({
+          environmentId,
+          threadId: bot.threadId,
+          focus: id === "rename" ? "name" : null,
+        });
       case "pause":
       case "resume":
         for (const task of schedules)
@@ -296,8 +303,11 @@ export function useBotActions(environmentId: EnvironmentId) {
     position: { x: number; y: number },
     onClose?: () => void,
   ) => {
+    const actions = botActions({ bot, schedules, where: "row" });
+    // A phone's sheet covers the row it was opened from, so it names the bot it acts on.
+    const sheet = window.matchMedia("(max-width: 767px) and (pointer: coarse)").matches;
     const picked = await readLocalApi()?.contextMenu.show(
-      botActions({ bot, schedules, where: "row" }),
+      sheet ? [{ id: "edit" as const, label: bot.name, header: true }, ...actions] : actions,
       position,
     );
     onClose?.();

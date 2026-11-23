@@ -5,6 +5,7 @@ import {
   ClockIcon,
   MessageSquareDotIcon,
   PauseIcon,
+  PencilIcon,
   PlayIcon,
   Share2Icon,
   SlidersHorizontalIcon,
@@ -14,6 +15,7 @@ import {
 } from "lucide-react";
 
 export const BOT_ACTION_ICONS: Record<string, LucideIcon> = {
+  pencil: PencilIcon,
   sliders: SlidersHorizontalIcon,
   pause: PauseIcon,
   play: PlayIcon,
