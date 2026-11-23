@@ -3,13 +3,23 @@ import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environ
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeftIcon,
+  BotIcon,
+  ClockIcon,
   MessageSquareIcon,
   MonitorIcon,
   PaletteIcon,
   PlugIcon,
   SettingsIcon,
+  SlidersHorizontalIcon,
+  SquarePenIcon,
   TextSearchIcon,
+  UserIcon,
 } from "lucide-react";
+import { BotAvatar } from "../bots/BotAvatar";
+import { useBotsMode } from "../bots/mode";
+import { useBots } from "../bots/state";
+import { openBotDialog, openBotPanel } from "../bots/ui";
+import { t } from "../i18n";
 import { openThreadFind } from "./chat/threadFindStore";
 import { dispatchPreviewAction } from "./preview/previewActionBus";
 import { previewBridge } from "./preview/previewBridge";
@@ -30,7 +40,7 @@ import {
 } from "../lib/workspaceFocus";
 import { useStableCallback } from "../hooks/useStableCallback";
 import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
-import { useEnvironments } from "../state/environments";
+import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import {
   useAnyEnvironmentHiding,
   useEnvironmentThreadRefs,
@@ -182,6 +192,9 @@ function OpenCommandPaletteDialog(props: {
   // A pushed view drops the typed highlight until the user moves it again.
   const highlightClearedRef = useRef(viewStack.length > 0);
   const { environments } = useEnvironments();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const bots = useBots(primaryEnvironmentId);
+  const botsMode = useBotsMode();
   const availableSettingsSearchItems = useAvailableSettingsSearchItems();
   const routeTarget = useThreadRouteTarget();
   const activeThreadRef = routeTarget?.kind === "server" ? routeTarget.threadRef : null;
@@ -327,7 +340,100 @@ function OpenCommandPaletteDialog(props: {
     },
   });
 
-  const rootGroups = buildRootGroups({ actionItems, recentThreadItems });
+  const botItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
+  // The route names the open chat; a bot's thread is not always among the loaded threads.
+  const openThreadId =
+    routeTarget?.kind === "server" ? routeTarget.threadRef.threadId : null;
+  const openBot = openThreadId ? bots.find((bot) => bot.threadId === openThreadId) : undefined;
+  if (primaryEnvironmentId !== null) {
+    const environmentId = primaryEnvironmentId;
+    // The bot form and a bot's panels are drawn by the bots app, so a command opens it first.
+    const inBotsApp = async () => {
+      if (!botsMode.active) await navigate({ to: "/bots", search: { thread: undefined } });
+    };
+    if (bots.length > 0) {
+      botItems.push({
+        kind: "submenu",
+        value: "action:open-bot",
+        searchTerms: ["bot", "open", "chat", "switch"],
+        title: t("Open bot…"),
+        icon: <BotIcon className={ITEM_ICON_CLASS} />,
+        addonIcon: <BotIcon className={ADDON_ICON_CLASS} />,
+        groups: [
+          {
+            value: "open-bot",
+            label: t("Bots"),
+            items: bots.map((bot) => ({
+              kind: "action" as const,
+              value: `bot:${bot.threadId}`,
+              searchTerms: ["bot", bot.name, bot.description ?? ""],
+              title: bot.name,
+              ...(bot.description ? { description: bot.description } : {}),
+              icon: <BotAvatar bot={bot} className="size-5 shrink-0" />,
+              run: async () => {
+                await navigate({
+                  to: "/$environmentId/$threadId",
+                  params: { environmentId, threadId: bot.threadId },
+                });
+              },
+            })),
+          },
+        ],
+      });
+    }
+    botItems.push({
+      kind: "action",
+      value: "action:new-bot",
+      searchTerms: ["new bot", "create bot", "add bot", "assistant"],
+      title: t("New bot"),
+      icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        await inBotsApp();
+        openBotDialog({ environmentId, threadId: null, focus: null });
+      },
+    });
+    if (openBot) {
+      const target = scopeThreadRef(environmentId, openBot.threadId);
+      botItems.push({
+        kind: "action",
+        value: "action:bot-details",
+        searchTerms: ["schedule", "activity", "memory", "notes", "runs", openBot.name],
+        title: t("Schedule and memory"),
+        description: openBot.name,
+        icon: <ClockIcon className={ITEM_ICON_CLASS} />,
+        run: async () => openBotPanel(target, "schedule"),
+      });
+      botItems.push({
+        kind: "action",
+        value: "action:bot-edit",
+        searchTerms: ["edit bot", "rename", "model", "job", "limit", openBot.name],
+        title: t("Edit bot"),
+        description: openBot.name,
+        icon: <SlidersHorizontalIcon className={ITEM_ICON_CLASS} />,
+        run: async () => openBotDialog({ environmentId, threadId: openBot.threadId, focus: null }),
+      });
+    }
+    botItems.push({
+      kind: "action",
+      value: "action:you",
+      searchTerms: ["you", "accounts", "notes", "sign-ins", "nightly check", "telegram"],
+      title: t("You"),
+      icon: <UserIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        await navigate({ to: "/connections" });
+      },
+    });
+  }
+
+  // Bots are opened from their own group, so they stay out of the recent threads.
+  const botThreadValues = new Set(
+    bots.map((bot) => `thread:${primaryEnvironmentId}:${bot.threadId}`),
+  );
+  const rootGroups = buildRootGroups({
+    botItems,
+    actionItems,
+    recentThreadItems: recentThreadItems.filter((item) => !botThreadValues.has(item.value)),
+  });
   // Every setting goes to the palette's own matcher, so settings get the same
   // word starts and typo tolerance as chats.
   const settingsSearchItems: CommandPaletteActionItem[] = settingsForThisPlatform(

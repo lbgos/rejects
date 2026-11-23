@@ -569,4 +569,8 @@ export const UK = {
   "Changing files": "Змінює файли",
   "Your edits are kept: press {action} to try again.":
     "Ваші зміни збережено тут: натисніть «{action}», щоб спробувати ще раз.",
+  "Open bot…": "Відкрити бота…",
+  "Paused, resumes {resume}": "Призупинено, продовжить {resume}",
+  "Message {name}": "Повідомлення для {name}",
+  "Reply stopped": "Відповідь зупинено",
 } as const satisfies Record<string, string>;

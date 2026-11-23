@@ -569,4 +569,8 @@ export const RU = {
   "Changing files": "Меняет файлы",
   "Your edits are kept: press {action} to try again.":
     "Ваши правки сохранены здесь: нажмите «{action}», чтобы попробовать ещё раз.",
+  "Open bot…": "Открыть бота…",
+  "Paused, resumes {resume}": "Приостановлено, продолжит {resume}",
+  "Message {name}": "Сообщение для {name}",
+  "Reply stopped": "Ответ остановлен",
 } as const satisfies Record<UiText, string>;
