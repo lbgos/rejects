@@ -21,6 +21,7 @@ import { HolidayWreath } from "../holiday/HolidayWreath";
 import { MailSendCards } from "../connections/MailCards";
 import { LabChangeCards } from "../connections/LabCards";
 import { useThreadShell } from "../state/entities";
+import { serverEnvironment } from "../state/server";
 import { botActions, reactToMessage, saveBotModel, useBotActions } from "./actions";
 import { BotAvatar } from "./BotAvatar";
 import { BotSidePanel } from "./BotOverlays";
@@ -162,6 +163,10 @@ export function BotThread({ target, children }: { target: ScopedThreadRef; child
     if (bot) void saveBotModel(environmentId, bot, modelSelection);
   };
   const modelSelection = bot?.modelSelection;
+  const providers = useAtomValue(serverEnvironment.providersValueAtom(environmentId));
+  const providerDown =
+    providers?.find((provider) => provider.instanceId === modelSelection?.instanceId)?.status ===
+    "error";
   const chrome = modelSelection
     ? {
         title: botName,
@@ -176,6 +181,7 @@ export function BotThread({ target, children }: { target: ScopedThreadRef; child
         selectModel,
         sendDisabledReason,
         historyFrom: bot?.historyFrom,
+        providerDown,
         reactions: bot?.reactions,
         react: (messageId: MessageId, emoji: BotReaction | null) => {
           if (bot) void reactToMessage(environmentId, bot, messageId, emoji);
@@ -242,9 +248,9 @@ function BotHeaderSubtitle({ target }: { target: ScopedThreadRef }) {
     bot,
     schedules,
   );
-  const next = state === "capped" ? null : nextWakeAt(schedules);
-  // A running turn says so in the transcript, where its progress is; the header adds nothing.
-  const shown = state === "idle" || state === "running" ? null : state;
+  // The header names the same state as the bot's row in the list; a running turn has no next wake.
+  const next = state === "capped" || state === "running" ? null : nextWakeAt(schedules);
+  const shown = state === "idle" ? null : state;
   if (!shown && !next) return null;
   return (
     <span className="flex max-w-full items-center gap-1 truncate text-xs leading-4 text-muted-foreground tabular-nums">
@@ -338,7 +344,7 @@ function BotEmptyState({ target }: { target: ScopedThreadRef }) {
         {bot.name}
       </div>
       {facts.length > 0 ? (
-        <p className="mt-1.5 text-xs text-muted-foreground/70 max-md:text-bot-footnote">
+        <p className="mt-1.5 text-xs text-muted-foreground max-md:text-bot-footnote">
           {facts.join(" · ")}
         </p>
       ) : null}

@@ -268,7 +268,9 @@ const entryRunId = (entry: TimelineEntry) => {
 const freshSpan = () => ({
   reacted: false,
   answered: false,
+  stopped: false,
   work: [] as string[],
+  thoughts: [] as string[],
   emoji: undefined as { id: string } | undefined,
 });
 
@@ -277,9 +279,16 @@ const planRunOf = (entry: TimelineEntry) => {
   return item?.type === "todo_list" ? (item.runId ?? "") : null;
 };
 
+const isFailedTurn = (entry: TimelineEntry) => {
+  const item = entry.kind === "work" ? entry.entry.projectedItem?.item : undefined;
+  return item?.type === "error" && item.status === "failed";
+};
+
 export function visibleBotEntries(
   entries: ReadonlyArray<TimelineEntry>,
   historyFrom: string | undefined,
+  /** The bot's model is down, which the notice above the composer says. */
+  providerDown = false,
 ): ReadonlyArray<TimelineEntry> {
   // A turn's plan is one row: its newest update says where the plan stands.
   const latestPlan = new Map<string, string>();
@@ -300,6 +309,8 @@ export function visibleBotEntries(
   const close = () => {
     if (span.emoji) echoes.add(span.emoji.id);
     if ((span.reacted || span.emoji) && !span.answered) for (const id of span.work) quiet.add(id);
+    // A stopped turn is its "Reply stopped" line; the thinking it never finished adds no row.
+    if (span.stopped) for (const id of span.thoughts) quiet.add(id);
   };
   for (const entry of entries) {
     if (entry.kind === "message" && entry.message.role === "user") {
@@ -318,9 +329,12 @@ export function visibleBotEntries(
       if (!emoji) span.answered = true;
     }
     if (entry.kind === "work" && entry.entry.tone !== "error") span.work.push(entry.id);
+    if (entry.kind === "work" && entry.entry.itemType === "reasoning") span.thoughts.push(entry.id);
+    if (entry.kind === "event" && entry.projectedItem.item.type === "run_interrupt_result")
+      span.stopped = true;
   }
   close();
-  return entries.filter((entry) => {
+  const shown = entries.filter((entry) => {
     const runId = entryRunId(entry);
     return (
       !(runId !== null && upkeepRuns.has(runId)) &&
@@ -336,6 +350,11 @@ export function visibleBotEntries(
       !quiet.has(entry.id)
     );
   });
+  // A chat with no message yet whose own first turn failed for want of a model: the notice states
+  // the cause once, so the chat stays empty instead of adding a failure row with nothing above it.
+  return providerDown && !shown.some((entry) => entry.kind === "message")
+    ? shown.filter((entry) => !isFailedTurn(entry))
+    : shown;
 }
 
 export function noteMeta(note: MemoryNote, now = Date.now()): string {
@@ -520,10 +539,7 @@ export function botRetryTarget(
   const { message } = asked;
   if (message.createdBy !== undefined && message.createdBy !== "user") return null;
   if ((message.attachments?.length ?? 0) > 0 || !message.text.trim()) return null;
-  const failure = entries.slice(start + 1).findLast((entry) => {
-    const item = entry.kind === "work" ? entry.entry.projectedItem?.item : undefined;
-    return item?.type === "error" && item.status === "failed";
-  });
+  const failure = entries.slice(start + 1).findLast(isFailedTurn);
   return failure ? { entryId: failure.id, text: message.text } : null;
 }
 
@@ -632,4 +648,27 @@ export function usageSourceLabel(source: string): string {
       : source === BOT_USAGE_OTHER
         ? t("Other")
         : source;
+}
+
+/**
+ * Consecutive nightly checks that changed nothing and say the same, such as a week of
+ * "No changes", grouped so the activity list shows each run of them as one row. A night that
+ * changed notes keeps its own row.
+ */
+export function groupRepeatedRuns<
+  Run extends { readonly result: string; readonly outcome: string },
+>(runs: ReadonlyArray<Run>): ReadonlyArray<readonly [Run, ...Run[]]> {
+  const groups: Array<[Run, ...Run[]]> = [];
+  for (const run of runs) {
+    const group = groups.at(-1);
+    if (
+      group &&
+      run.outcome !== "changed" &&
+      group[0].result === run.result &&
+      group[0].outcome === run.outcome
+    )
+      group.push(run);
+    else groups.push([run]);
+  }
+  return groups;
 }

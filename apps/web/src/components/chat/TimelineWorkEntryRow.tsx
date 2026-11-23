@@ -284,12 +284,13 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
             </span>
           }
         >
-          <div className="ms-6 flex flex-wrap items-center gap-x-1.5 gap-y-1 pt-0.5 pb-1">
+          {/* Two text buttons; the first one's label starts on the sentence's left edge. */}
+          <div className="ms-5.5 flex flex-wrap items-center gap-x-1 gap-y-1 pt-0.5 pb-1">
             {retryText !== null && onSend ? (
               <Button
                 type="button"
                 size="xs"
-                variant="outline"
+                variant="ghost"
                 onClick={() => void onSend(retryText)}
               >
                 <RotateCcwIcon aria-hidden />
@@ -307,7 +308,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
             </Button>
           </div>
           {expanded ? (
-            <p className="ms-7 pb-1 text-xs leading-relaxed wrap-anywhere whitespace-pre-wrap text-muted-foreground select-text max-md:text-bot-footnote">
+            <p className="ms-7.5 pb-1 text-xs leading-relaxed wrap-anywhere whitespace-pre-wrap text-muted-foreground select-text max-md:text-bot-footnote">
               {failureItem.failure.message}
             </p>
           ) : null}

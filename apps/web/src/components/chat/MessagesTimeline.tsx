@@ -447,7 +447,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   const botChrome = useContext(BotChromeContext);
   const botEmptyState = botChrome?.emptyState;
   const timelineEntries = botChrome
-    ? visibleBotEntries(allTimelineEntries, botChrome.historyFrom)
+    ? visibleBotEntries(allTimelineEntries, botChrome.historyFrom, botChrome.providerDown)
     : allTimelineEntries;
   const historyFrom = botChrome?.historyFrom;
   // Turns before a bot chat's clear stay hidden, so once they load there is nothing earlier to show.

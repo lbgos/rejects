@@ -468,6 +468,7 @@ describe("MessagesTimeline work rows", () => {
       selectModel: () => {},
       sendDisabledReason: null,
       historyFrom: undefined,
+      providerDown: false,
       reactions: undefined,
       react: () => {},
     };

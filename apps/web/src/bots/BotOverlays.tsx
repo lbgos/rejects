@@ -55,6 +55,7 @@ import {
   botScheduleLabel,
   formatTokens,
   formatWakeIn,
+  groupRepeatedRuns,
   messageTimeLabel,
   noteMeta,
   statusWord,
@@ -729,14 +730,17 @@ function MemoryField({
 
 /**
  * An activity row: a time column of one width, so every outcome starts on the same line, then the
- * outcome, then what it cost. On a phone the outcome takes up to two lines beside the time, with
- * the cost under it.
+ * outcome on one line, then what it cost. On a phone the outcome has the row's width, with the
+ * cost and the time under it.
  */
 const ACTIVITY_ROW =
   "grid w-full grid-cols-[6.5rem_minmax(0,1fr)_auto] items-baseline gap-x-2 px-4 py-2.5 text-left max-md:grid-cols-[minmax(0,1fr)_auto] max-md:gap-y-0.5 max-md:px-5";
-const ACTIVITY_TIME = `${ROW_META} max-md:col-start-2 max-md:row-start-1`;
-const ACTIVITY_TEXT = `${ROW_TEXT} min-w-0 truncate max-md:col-start-1 max-md:row-start-1 max-md:line-clamp-2 max-md:whitespace-normal`;
-const ACTIVITY_META = `${ROW_META} max-md:col-span-2`;
+const ACTIVITY_TIME = `${ROW_META} max-md:col-start-2 max-md:row-start-2`;
+const ACTIVITY_TEXT = `${ROW_TEXT} min-w-0 truncate max-md:col-span-2 max-md:row-start-1`;
+const ACTIVITY_META = `${ROW_META} max-md:col-start-1 max-md:row-start-2`;
+
+/** "9–14 Nov": the nights a run of equal nightly results covers. */
+const DAY_RANGE = new Intl.DateTimeFormat(uiLocales, { day: "numeric", month: "short" });
 
 function ActivityPanel({ target }: { target: ScopedThreadRef }) {
   const bot = useBot(target.environmentId, target.threadId);
@@ -804,12 +808,22 @@ function ActivityPanel({ target }: { target: ScopedThreadRef }) {
                       ) : notified ? (
                         `${t("notified")} · `
                       ) : null}
-                      {plural(tools.length, {
-                        en: ["{count} tool", "{count} tools"],
-                        uk: ["{count} інструмент", "{count} інструменти", "{count} інструментів"],
-                        ru: ["{count} инструмент", "{count} инструмента", "{count} инструментов"],
-                      })}{" "}
-                      · {formatTokens(tokens)}
+                      {tools.length > 0
+                        ? `${plural(tools.length, {
+                            en: ["{count} tool", "{count} tools"],
+                            uk: [
+                              "{count} інструмент",
+                              "{count} інструменти",
+                              "{count} інструментів",
+                            ],
+                            ru: [
+                              "{count} инструмент",
+                              "{count} инструмента",
+                              "{count} инструментов",
+                            ],
+                          })} · `
+                        : null}
+                      {t("{tokens} tokens", { tokens: formatTokens(tokens) })}
                     </span>
                   </CollapsibleTrigger>
                   <CollapsiblePanel animate={false}>
@@ -842,29 +856,48 @@ function ActivityPanel({ target }: { target: ScopedThreadRef }) {
         <>
           <h3 className={SECTION_HEADER}>{t("Nightly check")}</h3>
           <ul className={SHEET_LIST}>
-            {dreams.map((run) => {
-              const tokens = chargedTokens({
-                inputTokens: run.input,
-                cachedInputTokens: run.cached,
-                outputTokens: run.output,
-              });
+            {groupRepeatedRuns(dreams).map((nights) => {
+              const [first] = nights;
+              const last = nights.at(-1) ?? first;
+              const tokens = nights.reduce(
+                (sum, run) =>
+                  sum +
+                  chargedTokens({
+                    inputTokens: run.input,
+                    cachedInputTokens: run.cached,
+                    outputTokens: run.output,
+                  }),
+                0,
+              );
+              const durationMs = nights.reduce((sum, run) => sum + run.durationMs, 0);
               // A scope with nothing to check made no call: no duration and no tokens to show.
               const spent = [
-                run.durationMs > 0 ? formatDuration(run.durationMs) : null,
-                tokens > 0 ? formatTokens(tokens) : null,
+                nights.length > 1
+                  ? plural(nights.length, {
+                      en: ["{count} night", "{count} nights"],
+                      uk: ["{count} ніч", "{count} ночі", "{count} ночей"],
+                      ru: ["{count} ночь", "{count} ночи", "{count} ночей"],
+                    })
+                  : null,
+                durationMs > 0 ? formatDuration(durationMs) : null,
+                tokens > 0 ? t("{tokens} tokens", { tokens: formatTokens(tokens) }) : null,
               ]
                 .filter(Boolean)
                 .join(" · ");
               return (
-                <li key={`${run.at}#${run.result}`} className={ACTIVITY_ROW}>
-                  <span className={ACTIVITY_TIME}>{messageTimeLabel(Date.parse(run.at))}</span>
+                <li key={`${first.at}#${first.result}`} className={ACTIVITY_ROW}>
+                  <span className={ACTIVITY_TIME}>
+                    {nights.length > 1
+                      ? DAY_RANGE.formatRange(Date.parse(first.at), Date.parse(last.at))
+                      : messageTimeLabel(Date.parse(first.at))}
+                  </span>
                   <span
                     className={cn(
                       ACTIVITY_TEXT,
-                      run.outcome === "failed" && "text-destructive-foreground",
+                      first.outcome === "failed" && "text-destructive-foreground",
                     )}
                   >
-                    {run.result}
+                    {first.result}
                   </span>
                   {spent === "" ? null : <span className={ACTIVITY_META}>{spent}</span>}
                 </li>

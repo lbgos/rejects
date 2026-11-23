@@ -19,6 +19,7 @@ import {
   timeSeparatorLabels,
   formatTokens,
   formatWakeIn,
+  groupRepeatedRuns,
   parseTokenCap,
   quoteReply,
   resolveBotState,
@@ -111,6 +112,30 @@ describe("formatWakeIn", () => {
       ),
     ).toEqual(["<1m", "12m", "12:00", "08:30"]);
     expect(formatWakeIn(at(50 * 3_600_000), now)).toMatch(/^\S+ 11:00$/);
+  });
+});
+
+describe("nightly check rows", () => {
+  it("folds nights that say the same and changed nothing", () => {
+    const night = (result: string, outcome: "changed" | "skipped" | "failed") => ({
+      result,
+      outcome,
+    });
+    const groups = groupRepeatedRuns([
+      night("2 merged", "changed"),
+      night("2 merged", "changed"),
+      night("No changes", "skipped"),
+      night("No changes", "skipped"),
+      night("Model did not answer", "failed"),
+      night("No changes", "skipped"),
+    ]);
+    expect(groups.map((group) => [group[0].result, group.length])).toEqual([
+      ["2 merged", 1],
+      ["2 merged", 1],
+      ["No changes", 2],
+      ["Model did not answer", 1],
+      ["No changes", 1],
+    ]);
   });
 });
 
@@ -271,6 +296,65 @@ describe("visibleBotEntries", () => {
       "greeting",
       "plan:latest",
     ]);
+  });
+
+  it("shows a stopped turn as its stop line, without the thinking it never finished", () => {
+    const asked: TimelineEntry = {
+      id: "asked",
+      kind: "message",
+      createdAt: "2026-11-05T16:00:00.000Z",
+      message: {
+        id: MessageId.make("asked"),
+        role: "user",
+        text: "asked",
+        runId: RunId.make("run:7"),
+        streaming: false,
+        createdAt: "2026-11-05T16:00:00.000Z",
+        updatedAt: "2026-11-05T16:00:00.000Z",
+      },
+    };
+    const thought = (id: string, createdAt: string): TimelineEntry => ({
+      id,
+      kind: "work",
+      createdAt,
+      entry: { runId: RunId.make("run:7"), itemType: "reasoning", tone: "thinking" } as never,
+    });
+    const stopped: TimelineEntry = {
+      id: "stopped",
+      kind: "event",
+      createdAt: "2026-11-05T16:00:05.000Z",
+      projectedItem: {
+        item: { type: "run_interrupt_result", runId: RunId.make("run:7") },
+      } as never,
+    };
+    const first = thought("thought", "2026-11-05T16:00:01.000Z");
+    expect(visibleBotEntries([asked, first, stopped], undefined).map((e) => e.id)).toEqual([
+      "asked",
+      "stopped",
+    ]);
+    expect(visibleBotEntries([asked, first], undefined).map((e) => e.id)).toEqual([
+      "asked",
+      "thought",
+    ]);
+  });
+
+  it("leaves a chat empty when its own first turn failed for want of a model", () => {
+    const failed: TimelineEntry = {
+      id: "failed",
+      kind: "work",
+      createdAt: "2026-11-05T14:00:02.000Z",
+      entry: {
+        runId: RunId.make("run:5"),
+        projectedItem: { item: { type: "error", status: "failed" } },
+      } as never,
+    };
+    const kickoff = message("bots:kickoff:main", "run:5", "2026-11-05T14:00:00.000Z");
+    const ids = (entries: TimelineEntry[], providerDown: boolean) =>
+      visibleBotEntries(entries, undefined, providerDown).map((e) => e.id);
+    expect(ids([kickoff, failed], true)).toEqual([]);
+    expect(ids([kickoff, failed], false)).toEqual(["failed"]);
+    const asked = message("asked", "run:6", "2026-11-05T15:00:00.000Z");
+    expect(ids([asked, failed], true)).toEqual(["asked", "failed"]);
   });
 });
 

@@ -17,6 +17,8 @@ export interface BotChrome {
   readonly selectModel: (modelSelection: ModelSelection) => void;
   readonly sendDisabledReason: string | null;
   readonly historyFrom: string | undefined;
+  /** The bot's model provider reports an error; the composer's notice says so. */
+  readonly providerDown: boolean;
   readonly reactions: BotReactions | undefined;
   readonly react: (messageId: MessageId, emoji: BotReaction | null) => void;
 }
