@@ -490,16 +490,17 @@ describe("botToolActivity", () => {
   it.each([
     [
       entry("mcp__t3-code__web_search", { query: "proxmox  9.2\nkernel" }),
-      "web_search proxmox 9.2 kernel",
+      "Searching the web: proxmox 9.2 kernel",
     ],
-    [entry("t3-code.web_search", { query: "pve" }), "web_search pve"],
+    [entry("t3-code.web_search", { query: "pve" }), "Searching the web: pve"],
     [
       entry("web_browse", { url: "https://pve.proxmox.com/wiki/Roadmap" }),
-      "web_browse pve.proxmox.com/wiki/Roadmap",
+      "Reading a page: pve.proxmox.com/wiki/Roadmap",
     ],
-    [entry("notify_user", {}), "notify_user"],
+    [entry("notify_user", { text: "Done" }), "Sending a notification"],
+    [entry("some_new_tool", { id: "x" }), "Working"],
     [entry(null, undefined, "Running vp"), "Running vp"],
-  ])("%#: names the tool and its first text argument", (work, label) => {
+  ])("%#: says what the tool is doing in plain words", (work, label) => {
     expect(botToolActivity(work)).toBe(label);
   });
 });

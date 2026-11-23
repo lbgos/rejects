@@ -456,7 +456,7 @@ describe("MessagesTimeline work rows", () => {
     },
   );
 
-  it("shows a working bot's typing bubble with its timer", async () => {
+  it("shows a working bot's typing dots until there is something to name", async () => {
     const chrome: BotChrome = {
       title: "Echo",
       header: null,
@@ -481,10 +481,11 @@ describe("MessagesTimeline work rows", () => {
       </BotChromeContext>,
     );
     await vi.waitFor(() =>
-      expect(screen.container.querySelector("[data-bot-typing]")?.textContent).toMatch(
-        /Working\s*·\s*\d/,
+      expect(screen.container.querySelector("[data-bot-typing] [data-bot-typing-dots]")).not.toBe(
+        null,
       ),
     );
+    expect(screen.container.querySelector("[data-bot-typing]")?.textContent).toBe("");
   });
 });
 

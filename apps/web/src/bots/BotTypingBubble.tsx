@@ -4,8 +4,8 @@ import { observeVisibleAnimation } from "../lib/visibleAnimation";
 import { StatusSwap } from "./StatusSwap";
 
 /**
- * A turn's one sign of work: the dots until the bot has written something, then only the line
- * that names what it is doing. The dots pulse while on screen and the page is visible.
+ * A turn's one sign of work: the dots until there is something to name, then only the line that
+ * names what the bot is doing. The dots pulse while on screen and the page is visible.
  */
 export function BotTypingBubble({
   startedAt,
@@ -27,7 +27,7 @@ export function BotTypingBubble({
       data-row-enter
       className="flex flex-col gap-2 pb-2 md:hidden"
     >
-      {dots ? (
+      {dots && !doing ? (
         <div
           ref={observeVisibleAnimation}
           data-bot-typing-dots
@@ -37,18 +37,18 @@ export function BotTypingBubble({
           <span data-holiday-dot="berry" className="size-2 rounded-full bg-muted-foreground/70" />
           <span data-holiday-dot="fir" className="size-2 rounded-full bg-muted-foreground/45" />
         </div>
-      ) : null}
-      {/* Rendered from the first frame so the footer grows once and the list follows it. */}
-      <p className="flex items-center gap-1.5 ps-2 text-xs text-muted-foreground tabular-nums max-md:text-bot-footnote">
-        <span className="min-w-0 truncate">
-          {doing ? <StatusSwap text={doing} /> : t("Working")}
-        </span>
-        {startedAt ? (
-          <span className="shrink-0">
-            · <WorkingTimer createdAt={startedAt} />
+      ) : (
+        <p className="flex items-center gap-1.5 ps-2 text-xs text-muted-foreground tabular-nums max-md:text-bot-footnote">
+          <span className="min-w-0 truncate">
+            {doing ? <StatusSwap text={doing} /> : t("Working")}
           </span>
-        ) : null}
-      </p>
+          {startedAt ? (
+            <span className="shrink-0">
+              · <WorkingTimer createdAt={startedAt} />
+            </span>
+          ) : null}
+        </p>
+      )}
     </div>
   );
 }

@@ -554,21 +554,62 @@ export function swapStatus(state: StatusSwapState, text: string): StatusSwapStat
 
 const ACTIVITY_ARG_MAX = 48;
 
+/** What a tool call reads as while the turn runs: plain words, present tense. */
+const TOOL_DOING: Readonly<Record<string, UiText>> = {
+  web_search: "Searching the web",
+  web_read: "Reading a page",
+  web_browse: "Reading a page",
+  memory_search: "Checking its notes",
+  update_memory: "Saving a note",
+  schedule_task: "Setting a schedule",
+  list_scheduled_tasks: "Checking its schedule",
+  delete_scheduled_task: "Changing its schedule",
+  notify_user: "Sending a notification",
+  send_telegram: "Sending a notification",
+  mail_search: "Searching mail",
+  mail_read: "Reading mail",
+  music_search: "Searching for music",
+  music_download: "Downloading music",
+  music_status: "Checking a download",
+  html_render: "Drawing a chart",
+  html_preview: "Drawing a chart",
+  computer_browser: "Using its browser",
+  computer_desktop: "Using its computer",
+  computer_shell: "Running a command",
+  command_execution: "Running a command",
+  file_search: "Searching files",
+  file_change: "Changing files",
+};
+/** Tools whose first text argument says what is being looked for. */
+const TOOL_NAMES_ITS_TARGET = new Set([
+  "web_search",
+  "web_read",
+  "web_browse",
+  "mail_search",
+  "music_search",
+]);
+
 export function botToolActivity(entry: Pick<WorkLogEntry, "label" | "structuredPayload">): string {
   const item = entry.structuredPayload;
-  if (item?.type !== "dynamic_tool" || !item.toolName) return entry.label;
+  if (item?.type !== "dynamic_tool" || !item.toolName) {
+    const doing = item ? TOOL_DOING[item.type] : undefined;
+    return doing ? t(doing) : entry.label;
+  }
   const name = resolveT3McpToolName(item.toolName) ?? item.toolName;
+  const doing = TOOL_DOING[name];
+  // A tool with no plain name stays unnamed: its identifier is not for the reader.
+  if (!doing) return t("Working");
   const input: unknown = item.input;
   const first =
-    typeof input === "object" && input !== null
+    TOOL_NAMES_ITS_TARGET.has(name) && typeof input === "object" && input !== null
       ? Object.values(input).find((value) => typeof value === "string")
       : undefined;
   const arg = (first ?? "")
     .replace(/^https?:\/\//, "")
     .replace(/\s+/g, " ")
     .trim();
-  if (!arg) return name;
-  return `${name} ${arg.length > ACTIVITY_ARG_MAX ? `${arg.slice(0, ACTIVITY_ARG_MAX - 1)}…` : arg}`;
+  if (!arg) return t(doing);
+  return `${t(doing)}: ${arg.length > ACTIVITY_ARG_MAX ? `${arg.slice(0, ACTIVITY_ARG_MAX - 1)}…` : arg}`;
 }
 
 const LINK_PREVIEWS = 2;
