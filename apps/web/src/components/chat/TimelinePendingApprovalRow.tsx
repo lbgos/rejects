@@ -10,6 +10,7 @@ import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { ToolActivityIconView, type WorkEntryIconName } from "./TimelineToolActivityIcon";
 import { TimelineRowCtx } from "./timelineRowContext";
+import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { WorkLogRow } from "./WorkLog";
 
 const APPROVAL_PRESENTATION = {
@@ -39,6 +40,7 @@ export const TimelinePendingApprovalRow = memo(function TimelinePendingApprovalR
   const { respondingRequestIds, canOperateThread, onRespondToApproval } = use(TimelineRowCtx);
   const presentation = APPROVAL_PRESENTATION[approval.requestKind];
   const canRespond = approval.responseCapability === "live";
+  const phone = useMediaQuery("max-md");
   return (
     <WorkLogRow
       role="group"
@@ -80,11 +82,12 @@ export const TimelinePendingApprovalRow = memo(function TimelinePendingApprovalR
               </span>
               {onRespondToApproval ? (
                 <>
-                  <span aria-hidden className="text-muted-foreground">
+                  <span aria-hidden className="text-muted-foreground max-md:hidden">
                     ·
                   </span>
                   <ComposerPendingApprovalActions
-                    presentation="inline"
+                    // A finger needs buttons; a pointer reads them as words in the line.
+                    presentation={phone ? "composer" : "inline"}
                     requestId={approval.requestId}
                     disabled={!canOperateThread}
                     isResponding={respondingRequestIds.includes(approval.requestId)}

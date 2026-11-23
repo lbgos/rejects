@@ -1,4 +1,5 @@
 import {
+  EllipsisIcon,
   PanelBottomIcon,
   PanelRightIcon,
   SquareMenuIcon,
@@ -10,6 +11,8 @@ import { memo, type ReactNode, useLayoutEffect, useRef } from "react";
 import { cn } from "~/lib/utils";
 
 import type { ThreadPanelPresentation } from "../../rightPanelLayout";
+import { Button } from "../ui/button";
+import { Menu, MenuCheckboxItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { PopoverCreateHandle, PopoverTrigger } from "../ui/popover";
 import { useMobileSidebarSheetMounted } from "../ui/sidebar";
 import { Toggle } from "../ui/toggle";
@@ -19,6 +22,8 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 const THREAD_PANEL_HEADER_INSET_PX = 12;
 
 export interface PanelLayoutControlsProps {
+  /** A phone's bar has room for one control: the panels are named rows in its menu. */
+  compact?: boolean;
   showThreadPanelControl?: boolean;
   showTerminalControl?: boolean;
   showRightPanelControl?: boolean;
@@ -39,6 +44,7 @@ export interface PanelLayoutControlsProps {
 }
 
 export const PanelLayoutControls = memo(function PanelLayoutControls({
+  compact = false,
   showThreadPanelControl = true,
   showTerminalControl = true,
   showRightPanelControl = true,
@@ -84,6 +90,54 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
       </TooltipPopup>
     </Tooltip>
   );
+
+  if (compact) {
+    return (
+      <div className="flex h-full shrink-0 items-center" data-panel-layout-controls>
+        <Menu>
+          <MenuTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="icon-pill"
+                data-phone-bar-disc
+                // Where focus returns when the side panel closes, as its own toggle is on desktop.
+                data-right-panel-toggle
+                aria-label="Panels"
+              />
+            }
+          >
+            <EllipsisIcon />
+          </MenuTrigger>
+          <MenuPopup align="end" sideOffset={6}>
+            {showThreadPanelControl ? (
+              <MenuCheckboxItem checked={threadPanelOpen} onCheckedChange={onToggleThreadPanel}>
+                Thread details
+              </MenuCheckboxItem>
+            ) : null}
+            {showTerminalControl ? (
+              <MenuCheckboxItem
+                checked={terminalOpen}
+                disabled={!terminalAvailable}
+                onCheckedChange={onToggleTerminal}
+              >
+                Terminal
+              </MenuCheckboxItem>
+            ) : null}
+            {showRightPanelControl ? (
+              <MenuCheckboxItem
+                checked={rightPanelOpen}
+                disabled={!rightPanelAvailable}
+                onCheckedChange={onToggleRightPanel}
+              >
+                Side panel
+              </MenuCheckboxItem>
+            ) : null}
+          </MenuPopup>
+        </Menu>
+      </div>
+    );
+  }
 
   return (
     <div

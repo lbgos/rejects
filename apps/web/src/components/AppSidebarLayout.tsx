@@ -396,6 +396,20 @@ function SidebarControl({ showSidebar }: { readonly showSidebar: boolean }) {
             <ChevronLeftIcon />
           </Button>
         )
+      ) : isMobile && showSidebar ? (
+        // A coding page on a phone: the way back to the bots app, then its list of threads.
+        <div className="pointer-events-auto flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="icon-pill"
+            data-phone-bar-disc
+            aria-label="Back to bots"
+            render={<Link to="/bots" search={{ thread: undefined }} />}
+          >
+            <ChevronLeftIcon />
+          </Button>
+          <SidebarTrigger variant="ghost" data-phone-bar-disc aria-label="Threads" />
+        </div>
       ) : showSidebar ? (
         <Tooltip>
           <TooltipTrigger

@@ -236,7 +236,8 @@ export const ChatHeader = memo(function ChatHeader({
       ref={breadcrumbContainerRef}
       className={cn(
         "flex min-w-0 flex-1 items-center gap-2 sm:gap-3",
-        rightPanelOpen ? "pr-10" : "pr-24",
+        // A phone's bar ends in one disc where wider screens have three toggles.
+        rightPanelOpen ? "pr-10" : "pr-24 max-md:pr-12",
       )}
       onContextMenu={handleHeaderContextMenu}
     >
