@@ -50,7 +50,7 @@ import {
 import { usePreparedConnection } from "../state/session";
 import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../state/server";
 import { secretUse } from "./BotSecretCards";
-import { clock, FIELD_ROW, failed, Row, Section } from "./rows";
+import { clock, FIELD_ROW, failed, Row, Section, VaultDownNotice } from "./rows";
 import { SignInSheet } from "./SignInSheet";
 import {
   accountStatus,
@@ -198,12 +198,14 @@ export function ConnectionsScreen({
           room for it. The bar floats over the page from the top edge (bots.css). */}
       <div
         data-bots-top-bar={isMobile || undefined}
-        data-scrolled={isMobile ? titleScrolled : undefined}
+        // A pushed page keeps its title in the bar; the tab root shows it there once scrolled.
+        data-scrolled={isMobile ? titleScrolled || page !== null : undefined}
       >
         {isMobile ? (
           <span
             aria-hidden
             data-bots-bar-title
+            data-pinned={page !== null || undefined}
             className="pointer-events-none absolute inset-x-24 bottom-0 flex h-(--workspace-topbar-height) items-center justify-center truncate text-bot-body font-semibold opacity-0 in-data-[scrolled=true]:opacity-100"
           >
             {title}
@@ -236,11 +238,15 @@ export function ConnectionsScreen({
         }
       >
         <div data-you-column>
-          {isMobile ? (
+          {isMobile && page === null ? (
             <h1 className="truncate px-5 pt-1 pb-2 text-bot-title font-bold">{title}</h1>
           ) : null}
+          {/* Notes need no vault, so they are there while the accounts load. */}
+          {page === null ? <YouNotes environmentId={environmentId} /> : null}
           {state === null ? (
-            <p className="px-4 py-3 text-sm text-muted-foreground max-md:px-5">{t("Loading…")}</p>
+            page === null ? null : (
+              <p className="px-4 py-3 text-sm text-muted-foreground max-md:px-5">{t("Loading…")}</p>
+            )
           ) : account ? (
             <AccountDetail
               environmentId={environmentId}
@@ -270,8 +276,8 @@ export function ConnectionsScreen({
                 onOpenAccount={(site) => setPage({ type: "account", site })}
                 onOpenConnector={(kind) => setPage({ type: "connector", kind })}
                 onSignIn={(site) => void openSheet(site)}
+                onRetry={refresh}
               />
-              <YouNotes environmentId={environmentId} />
               <Section title={t("Secrets")}>
                 {state.secrets.length === 0 ? (
                   <li className="px-4 py-2 text-sm text-muted-foreground max-md:px-5 max-md:text-bot-body">
@@ -607,6 +613,15 @@ function ConnectorDetail({
     );
   };
 
+  // Nothing on this page works without the vault, so it shows the one notice and the way back in.
+  if (!state.available)
+    return (
+      <div data-connector-page className="flex flex-col pb-6 text-sm">
+        <Section>
+          <VaultDownNotice onRetry={onChanged} />
+        </Section>
+      </div>
+    );
   return (
     <div data-connector-page className="flex flex-col pb-6 text-sm">
       <Section>

@@ -11,7 +11,7 @@ import { type ReactNode, useState } from "react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { plural, t, uiLanguage } from "../i18n";
-import { Row, Section } from "./rows";
+import { Row, Section, VaultDownNotice } from "./rows";
 import { SiteIcon } from "./SiteIcon";
 
 const GMAIL_SITE = "mail.google.com";
@@ -59,11 +59,13 @@ export function ConnectSection({
   onOpenAccount,
   onOpenConnector,
   onSignIn,
+  onRetry,
 }: {
   state: ConnectionsState;
   onOpenAccount: (site: string) => void;
   onOpenConnector: (kind: ConnectionView["kind"]) => void;
   onSignIn: (site: string) => void;
+  onRetry: () => void;
 }) {
   const accountItem = (account: AccountView): Item => ({
     key: account.site,
@@ -82,9 +84,10 @@ export function ConnectSection({
         key: view.kind,
         icon: <SiteIcon site={view.kind === "gmail" ? GMAIL_SITE : "slack.com"} />,
         title: CONNECTION_LABEL[view.kind],
+        // While the vault is down the notice above the list speaks for every row.
         value: state.available
           ? `${connectorStatus(view)}${view.watch && view.status === "connected" ? ` · ${t("watching")}` : ""}`
-          : t("Unavailable"),
+          : "",
         error: state.available && view.status === "error",
         onClick: () => onOpenConnector(view.kind),
       },
@@ -110,7 +113,8 @@ export function ConnectSection({
     )
     .map(accountItem);
   return (
-    <Section title={t("Connect")} footer={state.available ? null : t("Vault not answering.")}>
+    <Section title={t("Connect")}>
+      {state.available ? null : <VaultDownNotice onRetry={onRetry} />}
       {[...connectorItems, ...siteItems, ...otherItems].map((item) => (
         <li key={item.key}>
           <Row
@@ -118,18 +122,19 @@ export function ConnectSection({
             title={item.title}
             value={item.value}
             tone={item.error ? "error" : "muted"}
+            disabled={!state.available}
             onClick={item.onClick}
           />
         </li>
       ))}
       <li>
-        <OtherSite onAdd={onSignIn} />
+        <OtherSite disabled={!state.available} onAdd={onSignIn} />
       </li>
     </Section>
   );
 }
 
-function OtherSite({ onAdd }: { onAdd: (site: string) => void }) {
+function OtherSite({ disabled, onAdd }: { disabled: boolean; onAdd: (site: string) => void }) {
   const [text, setText] = useState("");
   const site = siteOf(text);
   return (
@@ -150,10 +155,11 @@ function OtherSite({ onAdd }: { onAdd: (site: string) => void }) {
         spellCheck={false}
         inputMode="url"
         className="min-w-0 flex-1"
+        disabled={disabled}
         value={text}
         onChange={(event) => setText(event.target.value)}
       />
-      <Button size="sm" variant="outline" type="submit" disabled={!site}>
+      <Button size="sm" variant="outline" type="submit" disabled={disabled || !site}>
         {t("Sign in")}
       </Button>
     </form>

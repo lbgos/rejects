@@ -132,21 +132,6 @@ export function NightlyCheck({ environmentId }: { environmentId: EnvironmentId }
     );
   const lastRun = dreams?.lastRun;
   const errors = lastRun?.errors ?? [];
-  const status = running
-    ? t("Checking now")
-    : [
-        dreams?.enabled && dreams.nextRunAt
-          ? t("Next {time}", { time: formatWakeIn(dreams.nextRunAt) })
-          : t("Off"),
-        lastRun
-          ? t("last {time}: {summary}", {
-              time: messageTimeLabel(Date.parse(lastRun.at)),
-              summary: runSummary(lastRun),
-            })
-          : null,
-      ]
-        .filter(Boolean)
-        .join(" · ");
   const bots = readBots(environmentId);
   const settings = useEnvironmentSettings(environmentId);
   const providers =
@@ -179,21 +164,12 @@ export function NightlyCheck({ environmentId }: { environmentId: EnvironmentId }
         <li className={ROW}>
           <div className="min-w-0 flex-1">
             <div className={ROW_TEXT}>{t("Every night")}</div>
-            <div className={cn("line-clamp-2", ROW_META)}>{dreams ? status : t("Loading…")}</div>
+            {dreams?.enabled && dreams.nextRunAt ? (
+              <div className={ROW_META}>
+                {t("Next {time}", { time: formatWakeIn(dreams.nextRunAt) })}
+              </div>
+            ) : null}
           </div>
-          <Button
-            variant="ghost"
-            size="xs"
-            disabled={!dreams || running}
-            onClick={() =>
-              void act(
-                botRequest(environmentId, BOTS_ENDPOINTS.dreamNow, {}),
-                t("Could not start the check"),
-              )
-            }
-          >
-            {t("Run now")}
-          </Button>
           <Switch
             aria-label={t("Check notes every night")}
             checked={dreams?.enabled ?? false}
@@ -206,7 +182,18 @@ export function NightlyCheck({ environmentId }: { environmentId: EnvironmentId }
             }
           />
         </li>
-        <li className={cn(ROW, "flex-wrap gap-y-2")}>
+        {lastRun ? (
+          <li className={ROW}>
+            <div className="min-w-0 flex-1">
+              <div className={ROW_TEXT}>{t("Last check")}</div>
+              <div className={cn("break-words", ROW_META)}>{runSummary(lastRun)}</div>
+            </div>
+            <span className={cn("shrink-0", ROW_META)}>
+              {messageTimeLabel(Date.parse(lastRun.at))}
+            </span>
+          </li>
+        ) : null}
+        <li className={ROW}>
           <div className={cn("min-w-0 flex-1", ROW_TEXT)}>{t("Model")}</div>
           {dreams?.modelSelection ? (
             <Button variant="ghost" size="xs" onClick={() => setModel(null)}>
@@ -214,7 +201,7 @@ export function NightlyCheck({ environmentId }: { environmentId: EnvironmentId }
             </Button>
           ) : null}
           {selection ? (
-            <div data-bot-model-field className="w-full min-w-0 md:w-auto">
+            <div data-bot-model-field className="min-w-0">
               <ProviderModelPicker
                 environmentId={environmentId}
                 disabled={running}
@@ -225,11 +212,29 @@ export function NightlyCheck({ environmentId }: { environmentId: EnvironmentId }
                 modelOptionsByInstance={modelOptionsByInstance}
                 isComposerOwned={false}
                 activeProviderIconClassName={RESTING_PROVIDER_ICON_CLASSNAME}
-                triggerClassName={cn(SETTINGS_PICKER_TRIGGER_CLASSNAME, "max-w-full max-md:w-full")}
+                triggerClassName={cn(SETTINGS_PICKER_TRIGGER_CLASSNAME, "max-w-full")}
                 onInstanceModelChange={(instanceId, model) => setModel({ instanceId, model })}
               />
             </div>
           ) : null}
+        </li>
+        <li>
+          <button
+            type="button"
+            disabled={!dreams || running}
+            className={cn(
+              "w-full px-4 py-2.5 text-left outline-none not-disabled:hover:bg-accent disabled:text-muted-foreground max-md:px-5 max-md:py-2.75 max-md:not-disabled:hover:bg-transparent",
+              ROW_TEXT,
+            )}
+            onClick={() =>
+              void act(
+                botRequest(environmentId, BOTS_ENDPOINTS.dreamNow, {}),
+                t("Could not start the check"),
+              )
+            }
+          >
+            {running ? t("Checking now") : t("Run now")}
+          </button>
         </li>
         {errors.length > 0 ? (
           <li>
