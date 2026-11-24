@@ -342,8 +342,7 @@ function OpenCommandPaletteDialog(props: {
 
   const botItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
   // The route names the open chat; a bot's thread is not always among the loaded threads.
-  const openThreadId =
-    routeTarget?.kind === "server" ? routeTarget.threadRef.threadId : null;
+  const openThreadId = routeTarget?.kind === "server" ? routeTarget.threadRef.threadId : null;
   const openBot = openThreadId ? bots.find((bot) => bot.threadId === openThreadId) : undefined;
   if (primaryEnvironmentId !== null) {
     const environmentId = primaryEnvironmentId;

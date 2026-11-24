@@ -35,6 +35,7 @@ import { SETTINGS_DEVICE_ONLY_PATHS } from "../components/settings/SettingsScope
 import {
   SettingsPageContainer,
   SettingsPhoneBarContext,
+  type SettingsPhoneBarDetail,
 } from "../components/settings/settingsLayout";
 import {
   retainSettingsScope,
@@ -119,6 +120,13 @@ function SettingsContentLayout() {
       : JSON.stringify(search);
   const [restoreSignal, setRestoreSignal] = useState(0);
   const [actionSlot, setActionSlot] = useState<HTMLElement | null>(null);
+  // An item a page opened full-screen on a phone, kept with the page it belongs to so it never
+  // outlives a move to another page.
+  const [pageDetail, setPageDetail] = useState<{
+    readonly pathname: string;
+    readonly detail: SettingsPhoneBarDetail;
+  } | null>(null);
+  const detail = pageDetail?.pathname === location.pathname ? pageDetail.detail : null;
   const m = useMessages();
   const phone = useMediaQuery("max-md");
   const pageLabel = settingsBreadcrumbLabel(location.pathname);
@@ -146,17 +154,29 @@ function SettingsContentLayout() {
             {phone ? (
               <>
                 {/* A pushed page: the chat header's back button, the page title centered. */}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="z-10 ms-3"
-                  aria-label="Back to settings"
-                  render={<Link to="/settings" />}
-                >
-                  <ChevronLeftIcon />
-                </Button>
+                {detail ? (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="z-10 ms-3"
+                    aria-label={pageLabel ? `Back to ${m(pageLabel)}` : "Back"}
+                    onClick={detail.onBack}
+                  >
+                    <ChevronLeftIcon />
+                  </Button>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="z-10 ms-3"
+                    aria-label="Back to settings"
+                    render={<Link to="/settings" />}
+                  >
+                    <ChevronLeftIcon />
+                  </Button>
+                )}
                 <h1 className="pointer-events-none absolute inset-x-18 truncate text-center text-bot-body font-semibold">
-                  {pageLabel ? m(pageLabel) : "Settings"}
+                  {detail ? detail.title : pageLabel ? m(pageLabel) : "Settings"}
                 </h1>
               </>
             ) : (
@@ -180,8 +200,13 @@ function SettingsContentLayout() {
                 phone && pageLabel
                   ? {
                       titles: [pageLabel, m(pageLabel)],
-                      actionSlot,
+                      // An opened item has the bar; the page's own action waits for the list.
+                      actionSlot: detail ? null : actionSlot,
                       onRestored: () => setRestoreSignal((value) => value + 1),
+                      setDetail: (next) =>
+                        setPageDetail(
+                          next === null ? null : { pathname: location.pathname, detail: next },
+                        ),
                     }
                   : null
               }

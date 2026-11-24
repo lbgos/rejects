@@ -221,7 +221,17 @@ export const SettingsPhoneBarContext = createContext<{
   readonly actionSlot: HTMLElement | null;
   /** Remounts the page after its settings were restored to their defaults. */
   readonly onRestored: () => void;
+  /**
+   * A page that opens one of its own items full-screen names it here: the bar takes the item's
+   * title and its Back returns to the page. Null hands the bar back.
+   */
+  readonly setDetail: (detail: SettingsPhoneBarDetail | null) => void;
 } | null>(null);
+
+export interface SettingsPhoneBarDetail {
+  readonly title: string;
+  readonly onBack: () => void;
+}
 
 export function SettingsSection({
   title,
