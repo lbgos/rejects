@@ -37,7 +37,7 @@ import * as Arr from "effect/Array";
 import * as Duration from "effect/Duration";
 import * as Result from "effect/Result";
 import { ChevronRightIcon, PlusIcon } from "lucide-react";
-import { use, useRef, useState, type ReactNode } from "react";
+import { use, useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 
 import { isDesktopLocalConnectionTarget } from "../../connection/desktopLocal";
@@ -128,6 +128,7 @@ import {
   isProviderSettingsEnvironmentAvailable,
   type ProviderEnvironmentAccess,
   type ProviderOperateAccess,
+  resolvePhoneProviderPage,
   resolveRemoteOperateAccess,
   resolveSelectedProviderEnvironmentId,
 } from "./ProviderSettingsPanel.logic";
@@ -814,10 +815,29 @@ export function EnvironmentProviderSettings({
   const phone = useMediaQuery("max-md");
   const bar = use(SettingsPhoneBarContext);
   const phoneBar = phone ? bar : null;
-  const [phoneProviderOpen, setPhoneProviderOpen] = useState(false);
-  // On a phone the page is the list, or the one provider opened from it.
-  const phonePage =
-    phoneBar === null ? null : phoneProviderOpen && selectedRow ? "provider" : "list";
+  // A link to one provider, such as the composer's setup notice, opens on that provider.
+  const [phoneProviderOpen, setPhoneProviderOpen] = useState(targetInstanceId !== undefined);
+  const phonePage = resolvePhoneProviderPage({
+    phone: phoneBar !== null,
+    opened: phoneProviderOpen,
+    hasProvider: selectedRow !== null,
+  });
+  const phoneProviderTitle =
+    phonePage !== "provider" || selectedRow === null
+      ? null
+      : selectedRow.explicitInstance
+        ? providerInstanceName(selectedRow.explicitInstance)
+        : (providerClients.get(selectedRow.driver)?.label ?? String(selectedRow.driver));
+  const publishPhoneProvider = useEffectEvent((title: string | null) => {
+    phoneBar?.setDetail(
+      title === null ? null : { title, onBack: () => setPhoneProviderOpen(false) },
+    );
+  });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- names the open provider in the phone settings bar, which the settings layout owns
+  useEffect(() => {
+    publishPhoneProvider(phoneProviderTitle);
+    return () => publishPhoneProvider(null);
+  }, [phoneProviderTitle]);
 
   const persistInstance = async (
     instanceId: ProviderInstanceId,
@@ -960,22 +980,8 @@ export function EnvironmentProviderSettings({
     toggleModelFavorite: stableToggleModelFavorite,
     selectInstance: (instanceId) => {
       setSelectedInstanceId(instanceId);
-      if (phoneBar === null) return;
       // A phone has room for the list or one provider: the provider opens as its own page.
-      const row = rows.find((candidate) => candidate.instanceId === instanceId);
       setPhoneProviderOpen(true);
-      phoneBar.setDetail({
-        title:
-          row === undefined
-            ? String(instanceId)
-            : row.explicitInstance
-              ? providerInstanceName(row.explicitInstance)
-              : (providerClients.get(row.driver)?.label ?? String(row.driver)),
-        onBack: () => {
-          setPhoneProviderOpen(false);
-          phoneBar.setDetail(null);
-        },
-      });
     },
   };
   // resolveModelPreferences falls back to a fresh `[]`; keep it stable for the rows.

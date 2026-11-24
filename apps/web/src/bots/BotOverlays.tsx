@@ -57,6 +57,7 @@ import {
   formatTokens,
   formatWakeIn,
   groupRepeatedRuns,
+  runsRange,
   messageTimeLabel,
   noteMeta,
   scheduleNamesItsNextRun,
@@ -861,7 +862,6 @@ function ActivityPanel({ target }: { target: ScopedThreadRef }) {
           <ul className={SHEET_LIST}>
             {groupRepeatedRuns(dreams).map((nights) => {
               const [first] = nights;
-              const last = nights.at(-1) ?? first;
               const tokens = nights.reduce(
                 (sum, run) =>
                   sum +
@@ -891,7 +891,7 @@ function ActivityPanel({ target }: { target: ScopedThreadRef }) {
                 <li key={`${first.at}#${first.result}`} className={ACTIVITY_ROW}>
                   <span className={ACTIVITY_TIME}>
                     {nights.length > 1
-                      ? DAY_RANGE.formatRange(Date.parse(first.at), Date.parse(last.at))
+                      ? DAY_RANGE.formatRange(...runsRange(nights))
                       : messageTimeLabel(Date.parse(first.at))}
                   </span>
                   <span

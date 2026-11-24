@@ -8,6 +8,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   buildProviderInstanceOverridePatch,
+  resolvePhoneProviderPage,
   resolveRemoteOperateAccess,
 } from "./ProviderSettingsPanel.logic";
 
@@ -111,4 +112,18 @@ describe("remote operate access", () => {
       }),
     ).toBe("denied");
   });
+});
+
+describe("resolvePhoneProviderPage", () => {
+  it.each([
+    { phone: false, opened: true, hasProvider: true, page: null },
+    { phone: true, opened: false, hasProvider: true, page: "list" },
+    { phone: true, opened: true, hasProvider: true, page: "provider" },
+    { phone: true, opened: true, hasProvider: false, page: "list" },
+  ])(
+    "is $page for phone $phone, opened $opened, provider found $hasProvider",
+    ({ page, ...input }) => {
+      expect(resolvePhoneProviderPage(input)).toBe(page);
+    },
+  );
 });

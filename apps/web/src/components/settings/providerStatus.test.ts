@@ -7,6 +7,7 @@ import {
   getProviderVersionAdvisoryPresentation,
   getProviderStatusKey,
   isProviderAwaitingInstall,
+  resolveProviderSwitchPress,
 } from "./providerStatus";
 
 const provider: ServerProvider = {
@@ -81,6 +82,18 @@ describe("getProviderSummary", () => {
     expect(isProviderAwaitingInstall({ ...missing, enabled: false })).toBe(false);
     expect(isProviderAwaitingInstall(provider)).toBe(false);
   });
+
+  it.each([
+    { installed: false, enabled: true, press: "disable" },
+    { installed: true, enabled: true, press: "disable" },
+    { installed: true, enabled: false, press: "enable" },
+    { installed: false, enabled: false, press: "setup" },
+  ])(
+    "a provider's switch press is $press when installed $installed and enabled $enabled",
+    ({ installed, enabled, press }) => {
+      expect(resolveProviderSwitchPress({ installed }, enabled)).toBe(press);
+    },
+  );
 });
 
 describe("Antigravity with unchecked sign-in", () => {

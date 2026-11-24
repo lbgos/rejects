@@ -54,6 +54,19 @@ export function isProviderAwaitingInstall(
   return provider !== undefined && provider.enabled && !provider.installed;
 }
 
+/**
+ * What pressing a provider's switch does. An enabled provider can always be turned off, installed
+ * or not. One that is off turns on only when there is a CLI to run; with none, the press opens
+ * what setting it up takes.
+ */
+export function resolveProviderSwitchPress(
+  provider: Pick<ServerProvider, "installed"> | undefined,
+  enabled: boolean,
+): "disable" | "enable" | "setup" {
+  if (enabled) return "disable";
+  return provider !== undefined && !provider.installed ? "setup" : "enable";
+}
+
 /** The host a custom endpoint's requests go to, such as `api.example.com`. */
 function endpointHost(endpoint: string | undefined): string | null {
   if (!endpoint) return null;

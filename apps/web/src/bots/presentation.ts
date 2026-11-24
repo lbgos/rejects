@@ -670,6 +670,12 @@ export function usageSourceLabel(source: string): string {
  * "No changes", grouped so the activity list shows each run of them as one row. A night that
  * changed notes keeps its own row.
  */
+/** The first and last moment of a group of runs, oldest first, whatever order the runs came in. */
+export function runsRange(runs: ReadonlyArray<{ readonly at: string }>): readonly [number, number] {
+  const times = runs.map((run) => Date.parse(run.at));
+  return [Math.min(...times), Math.max(...times)];
+}
+
 export function groupRepeatedRuns<
   Run extends { readonly result: string; readonly outcome: string },
 >(runs: ReadonlyArray<Run>): ReadonlyArray<readonly [Run, ...Run[]]> {

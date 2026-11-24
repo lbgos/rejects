@@ -21,6 +21,7 @@ import {
   formatWakeIn,
   scheduleNamesItsNextRun,
   groupRepeatedRuns,
+  runsRange,
   parseTokenCap,
   quoteReply,
   resolveBotState,
@@ -153,6 +154,18 @@ describe("nightly check rows", () => {
       ["No changes", 2],
       ["Model did not answer", 1],
       ["No changes", 1],
+    ]);
+  });
+
+  it("gives a group's range oldest first, though the server lists runs newest first", () => {
+    const nights = [
+      "2026-11-14T03:30:00.000Z",
+      "2026-11-12T03:30:00.000Z",
+      "2026-11-09T03:30:00.000Z",
+    ];
+    expect(runsRange(nights.map((at) => ({ at })))).toEqual([
+      Date.parse("2026-11-09T03:30:00.000Z"),
+      Date.parse("2026-11-14T03:30:00.000Z"),
     ]);
   });
 });

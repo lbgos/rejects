@@ -85,6 +85,7 @@ import {
   getProviderAccount,
   getProviderSummary,
   isProviderAwaitingInstall,
+  resolveProviderSwitchPress,
   getProviderVersionLabel,
 } from "./providerStatus";
 
@@ -797,6 +798,7 @@ export function ProviderInstanceCard({
   const authEmail = account.email;
   const authLabel = account.label;
   const awaitingInstall = isProviderAwaitingInstall(effectiveProvider);
+  const switchPress = resolveProviderSwitchPress(effectiveProvider, enabled);
   const versionLabel = getProviderVersionLabel(liveProvider?.version);
   const versionAdvisory = getProviderVersionAdvisoryPresentation(
     liveProvider?.versionAdvisory,
@@ -1208,15 +1210,18 @@ export function ProviderInstanceCard({
           ) : null}
           {/* The policy refuses switching it on; switching it off stays the user's call. */}
           <ManagedControl reason={enabled ? undefined : managedDriverReason}>
-            {/* With no CLI to run there is nothing to switch on: the switch reads off, and
-                pressing it opens what setting the provider up takes. */}
+            {/* The switch shows the saved setting, so an enabled provider can always be turned
+                off. One that is off and has no CLI to run opens its setup instead of turning on. */}
             <Switch
-              checked={enabled && !awaitingInstall}
+              checked={enabled}
               disabled={readOnly || (projectOverride !== undefined && !canWriteSettings)}
-              onCheckedChange={(checked) =>
-                awaitingInstall ? onSelect?.() : updateEnabled(Boolean(checked))
+              onCheckedChange={() => {
+                if (switchPress === "setup") onSelect?.();
+                else updateEnabled(switchPress === "enable");
+              }}
+              aria-label={
+                switchPress === "setup" ? `Set up ${displayName}` : `Enable ${displayName}`
               }
-              aria-label={awaitingInstall ? `Set up ${displayName}` : `Enable ${displayName}`}
             />
           </ManagedControl>
         </span>

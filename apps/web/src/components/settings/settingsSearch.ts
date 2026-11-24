@@ -525,6 +525,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
+    id: "unpin-confirmation",
+    title: msg("Unpin confirmation"),
+    to: "/settings/general",
+    searchTerms: ["ask before thread chat pinned section"],
+  },
+  {
     id: "delete-confirmation",
     title: msg("Delete confirmation"),
     to: "/settings/general",
