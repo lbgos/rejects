@@ -53,11 +53,15 @@ export class SpeechError extends Schema.TaggedError<SpeechError>()("SpeechError"
   }
 }
 
+export type LocalBackend = "nemotron" | "whisper";
+
 export interface SpeechInput {
   readonly audio: Uint8Array;
   readonly mimeType: string;
   readonly fileName: string;
   readonly cloud: boolean;
+  /** Only this local backend, with no fallback to the other. */
+  readonly backend?: LocalBackend | undefined;
 }
 
 export class SpeechToText extends Context.Service<
@@ -69,7 +73,8 @@ export class SpeechToText extends Context.Service<
       { readonly text: string; readonly backend: "nemotron" | "whisper" | "cloud" },
       SpeechError
     >;
-    readonly ready: () => Effect.Effect<boolean>;
+    readonly ready: (backend?: LocalBackend) => Effect.Effect<boolean>;
+    readonly configured: (backend: LocalBackend) => Effect.Effect<boolean>;
   }
 >()("t3/voice/SpeechToText") {}
 
@@ -308,10 +313,15 @@ const make = Effect.gen(function* () {
     wyomingReady(target, 2_000).pipe(Effect.orElseSucceed(() => false));
 
   return SpeechToText.of({
-    ready: Effect.fn("SpeechToText.ready")(function* () {
+    configured: Effect.fn("SpeechToText.configured")(function* (backend) {
+      return (yield* settings)[backend] !== undefined;
+    }),
+    ready: Effect.fn("SpeechToText.ready")(function* (backend) {
       const current = yield* settings;
-      if (current.nemotron && (yield* nemotronReady(current.nemotron))) return true;
-      if (current.whisper && (yield* whisperReady(current.whisper))) return true;
+      if (backend !== "whisper" && current.nemotron && (yield* nemotronReady(current.nemotron)))
+        return true;
+      if (backend !== "nemotron" && current.whisper && (yield* whisperReady(current.whisper)))
+        return true;
       return false;
     }),
     transcribe: Effect.fn("SpeechToText.transcribe")(function* (input) {
@@ -325,7 +335,7 @@ const make = Effect.gen(function* () {
         ["whisper", current.whisper && whisper(current.whisper, input)],
       ] as const;
       for (const [backend, attempt] of local) {
-        if (!attempt) continue;
+        if (!attempt || (input.backend !== undefined && input.backend !== backend)) continue;
         const result = yield* attempt.pipe(Effect.result);
         if (result._tag === "Success") return { text: result.success, backend };
         if (result.failure.reason !== "unavailable") return yield* result.failure;

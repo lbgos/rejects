@@ -1,4 +1,8 @@
-/** YouTube's own captions come first, since they take seconds; a video without them, and every other site's, is downloaded and transcribed on the owner's speech server, never in the cloud. */
+/**
+ * Every video is downloaded and transcribed by Nemotron on the owner's speech server first: YouTube's
+ * auto captions misspell names and can come in the wrong language. When Nemotron cannot, the result
+ * says so and comes from YouTube's captions, then Whisper; never from the cloud.
+ */
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -23,7 +27,7 @@ const MAX_JOBS = 2;
 const CACHE_MAX_BYTES = 200 * 1024 * 1024;
 
 export class TranscriptError extends Schema.TaggedError<TranscriptError>()("TranscriptError", {
-  stage: Schema.Literals(["url", "range", "stt", "captions"]),
+  stage: Schema.Literals(["url", "range", "media", "stt", "captions"]),
   detail: Schema.String,
 }) {
   override get message() {
@@ -88,6 +92,8 @@ const render = (input: ReadTranscript) =>
     ...sectionNote(input).flatMap((note) => ["", note]),
   ].join("\n");
 
+type Source = Speech.LocalBackend | "captions";
+const speechName = { nemotron: "Nemotron", whisper: "Whisper" } as const;
 const captionFailure = (detail: string) => new TranscriptError({ stage: "captions", detail });
 const sttFailure = (detail: string) => new TranscriptError({ stage: "stt", detail });
 
@@ -229,6 +235,7 @@ const make = Effect.gen(function* () {
   const transcribe = Effect.fn("Transcript.transcribe")(function* (
     link: VideoLink,
     startSeconds: number,
+    backend: Speech.LocalBackend,
     workDir: string,
   ): Effect.fn.Return<ReadTranscript, TranscriptError> {
     const audio = yield* media
@@ -243,37 +250,41 @@ const make = Effect.gen(function* () {
         Effect.mapError(
           (error) =>
             new TranscriptError({
-              stage: error.stage === "range" ? "range" : "stt",
+              stage: error.stage === "range" ? "range" : "media",
               detail: error.message,
             }),
         ),
       );
-    let backend: "nemotron" | "whisper" | "cloud" | undefined;
     const blocks: Array<string> = [];
     for (const chunk of audio.chunks) {
       const bytes = yield* fs
         .readFile(chunk.file)
         .pipe(Effect.mapError(() => sttFailure("Could not read a downloaded audio chunk.")));
       const heard = yield* speech
-        .transcribe({ audio: bytes, mimeType: "audio/wav", fileName: "chunk.wav", cloud: false })
+        .transcribe({
+          audio: bytes,
+          mimeType: "audio/wav",
+          fileName: "chunk.wav",
+          cloud: false,
+          backend,
+        })
         .pipe(Effect.result);
       if (heard._tag === "Failure") {
         // A chunk with no speech, such as music between chapters, is not a failure.
         if (heard.failure.reason === "empty") continue;
         return yield* sttFailure(heard.failure.detail);
       }
-      backend ??= heard.success.backend;
       const text = heard.success.text.trim();
       if (text) blocks.push(`[${clock(chunk.startSeconds)}] ${text}`);
     }
     if (!blocks.length)
-      return yield* sttFailure("The speech server recognized no words in this video.");
+      return yield* sttFailure(`${speechName[backend]} recognized no words in this video.`);
     return {
       title: audio.title,
       durationSeconds: audio.durationSeconds,
       startSeconds,
       endSeconds: audio.endSeconds,
-      source: `local speech recognition (${backend ?? "speech server"})`,
+      source: `local speech recognition (${backend})`,
       body: blocks.join("\n\n"),
     } satisfies ReadTranscript;
   });
@@ -282,6 +293,7 @@ const make = Effect.gen(function* () {
   const fromSpeech = Effect.fn("Transcript.fromSpeech")(function* (
     link: VideoLink,
     startSeconds: number,
+    backend: Speech.LocalBackend,
   ) {
     const root = path.join(config.stateDir, "video-tmp");
     yield* fs
@@ -291,10 +303,28 @@ const make = Effect.gen(function* () {
       const workDir = yield* fs
         .makeTempDirectoryScoped({ directory: root, prefix: "video-" })
         .pipe(Effect.mapError(() => sttFailure("Could not create a transcript work directory.")));
-      if (!(yield* speech.ready()))
-        return yield* sttFailure("Local speech recognition is off or busy.");
-      return yield* jobs.withPermits(1)(transcribe(link, startSeconds, workDir));
+      if (!(yield* speech.ready(backend)))
+        return yield* sttFailure(`${speechName[backend]} is off or busy.`);
+      return yield* jobs.withPermits(1)(transcribe(link, startSeconds, backend, workDir));
     }).pipe(Effect.scoped);
+  });
+
+  const fromCache = Effect.fn("Transcript.fromCache")(function* (keys: ReadonlyArray<string>) {
+    for (const key of keys) {
+      const hit = yield* cache.get(key);
+      if (hit._tag === "Some") return hit.value;
+    }
+    return undefined;
+  });
+
+  /** A standalone bot's call passes no key and leaves nothing in the shared cache. */
+  const keep = Effect.fn("Transcript.keep")(function* (
+    keys: ReadonlyArray<string>,
+    transcript: ReadTranscript,
+  ) {
+    const text = render(transcript);
+    for (const key of keys) yield* cache.put(key, text);
+    return text;
   });
 
   return Transcript.of({
@@ -306,35 +336,49 @@ const make = Effect.gen(function* () {
           detail: "Send a public video link from YouTube, Instagram, TikTok, X or Vimeo.",
         });
       const startSeconds = Math.max(0, Math.floor(input.fromMinutes ?? 0)) * 60;
-      const captionsKey = `${link.url}|${startSeconds}|captions|${input.language ?? ""}`;
-      const speechKey = `${link.url}|${startSeconds}|speech`;
-      const cached = input.cache !== false;
-      for (const key of !cached ? [] : link.youtubeId ? [captionsKey, speechKey] : [speechKey]) {
-        const cached = yield* cache.get(key);
-        if (cached._tag === "Some") return cached.value;
-      }
+      const key = (source: Source) =>
+        input.cache === false
+          ? []
+          : [
+              `${link.url}|${startSeconds}|${source}${source === "captions" ? `|${input.language ?? ""}` : ""}`,
+            ];
 
-      let captionsDetail = "";
+      let missed: TranscriptError | undefined;
+      if (yield* speech.configured("nemotron")) {
+        const kept = yield* fromCache(key("nemotron"));
+        if (kept !== undefined) return kept;
+        const nemotron = yield* fromSpeech(link, startSeconds, "nemotron").pipe(Effect.result);
+        if (nemotron._tag === "Success") return yield* keep(key("nemotron"), nemotron.success);
+        if (nemotron.failure.stage === "range") return yield* nemotron.failure;
+        missed = nemotron.failure;
+      }
+      // An install without Nemotron has nothing to fall back from.
+      const fallback = (text: string) =>
+        missed === undefined
+          ? text
+          : `Fallback: Nemotron could not transcribe this video. ${missed.detail}\n${text}`;
+
+      const keptFallback = yield* fromCache([
+        ...(link.youtubeId ? key("captions") : []),
+        ...key("whisper"),
+      ]);
+      if (keptFallback !== undefined) return fallback(keptFallback);
+      const details = missed === undefined ? [] : [missed.detail];
       if (link.youtubeId) {
         const captions = yield* fromCaptions(link.youtubeId, input.language, startSeconds).pipe(
           Effect.result,
         );
-        if (captions._tag === "Success") {
-          const text = render(captions.success);
-          if (cached) yield* cache.put(captionsKey, text);
-          return text;
-        }
+        if (captions._tag === "Success")
+          return fallback(yield* keep(key("captions"), captions.success));
         if (captions.failure.stage === "range") return yield* captions.failure;
-        captionsDetail = `${captions.failure.detail} `;
+        details.push(captions.failure.detail);
       }
-      const spoken = yield* fromSpeech(link, startSeconds).pipe(Effect.result);
-      if (spoken._tag === "Success") {
-        const text = render(spoken.success);
-        if (cached) yield* cache.put(speechKey, text);
-        return text;
-      }
-      if (spoken.failure.stage === "range") return yield* spoken.failure;
-      return yield* sttFailure(`${captionsDetail}${spoken.failure.detail}`);
+      // The same download already failed for Nemotron; Whisper would fetch it again for nothing.
+      if (missed?.stage === "media") return yield* sttFailure(details.join(" "));
+      const whisper = yield* fromSpeech(link, startSeconds, "whisper").pipe(Effect.result);
+      if (whisper._tag === "Success") return fallback(yield* keep(key("whisper"), whisper.success));
+      if (whisper.failure.stage === "range") return yield* whisper.failure;
+      return yield* sttFailure([...details, whisper.failure.detail].join(" "));
     }),
   });
 });
