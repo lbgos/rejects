@@ -10,7 +10,7 @@ import type { createServerEnvironmentAtoms } from "./server.ts";
 const isEnvironmentRpcUnavailable = Schema.is(EnvironmentRpcUnavailableError);
 
 /** The Usage tab asks each environment with that environment's configured model filter. */
-export function usageSummaryInput(
+function usageSummaryInput(
   input: UsageSummaryInput,
   modelFilter: UsageModelFilter | undefined,
 ): UsageSummaryInput {

@@ -6,7 +6,6 @@ export type ThreadActionMenuId =
   | "new-thread-on-branch"
   | "filter-by-project"
   | "turn-into-project"
-  | "project-settings"
   | "pin"
   | "unpin"
   | "settle"
@@ -26,46 +25,7 @@ export type ThreadActionMenuId =
   | "copy-branch"
   | "copy-thread"
   | "copy-thread-id"
-  | "archive"
   | "delete";
-
-export type DraftActionMenuId =
-  | "copy"
-  | "copy-path"
-  | "copy-branch"
-  | "project-settings"
-  | "discard";
-
-export function buildDraftActionMenuItems(options: {
-  readonly hasPath: boolean;
-  readonly hasBranch: boolean;
-  readonly hasProject: boolean;
-}): ReadonlyArray<ContextMenuItem<DraftActionMenuId>> {
-  return [
-    {
-      id: "copy",
-      label: "Copy",
-      icon: "copy",
-      disabled: !options.hasPath && !options.hasBranch,
-      children: [
-        ...(options.hasPath ? [{ id: "copy-path" as const, label: "Path", icon: "folder" }] : []),
-        ...(options.hasBranch
-          ? [{ id: "copy-branch" as const, label: "Branch", icon: "git-branch" }]
-          : []),
-      ],
-    },
-    ...(options.hasProject
-      ? [{ id: "project-settings" as const, label: "Project settings", icon: "settings" }]
-      : []),
-    {
-      id: "discard",
-      label: "Discard draft",
-      icon: "trash",
-      destructive: true,
-      separatorBefore: true,
-    },
-  ];
-}
 
 export interface ThreadActionMenuState {
   readonly canOperate: boolean;
@@ -81,7 +41,7 @@ export interface ThreadActionMenuState {
   readonly isSnoozed: boolean;
   readonly canSnoozeNow: boolean;
   readonly isRegeneratingTitle: boolean;
-  /** Archive rejects attached providers, so disable it while running. */
+  /** Turning into a project rejects attached providers, so disable it while running. */
   readonly isRunning: boolean;
   readonly supports: {
     readonly settlement: boolean;
@@ -93,6 +53,8 @@ export interface ThreadActionMenuState {
   readonly snoozePresets: ReadonlyArray<SnoozePreset>;
   /** Guest links need their own grant, so the caller checks it instead of `canOperate`. */
   readonly canShareWithGuest?: boolean;
+  /** False in bot projects, which start no coding threads. */
+  readonly canStartThread: boolean;
   /** A No project thread with its own folder, on a server that can promote it. */
   readonly canTurnIntoProject?: boolean;
 }
@@ -102,7 +64,6 @@ export function threadActionRequiresOperate(action: ThreadActionMenuId): boolean
   return ![
     "find",
     "new-thread-on-branch",
-    "project-settings",
     "mark-unread",
     "share-guest",
     "copy",
@@ -120,7 +81,7 @@ export function buildThreadActionMenuItems(
     ...(state.canFind
       ? [{ id: "find" as const, label: "Find in thread", icon: "text-search" }]
       : []),
-    ...(state.branch
+    ...(state.branch && state.canStartThread
       ? [
           {
             id: "new-thread-on-branch" as const,
@@ -238,19 +199,12 @@ export function buildThreadActionMenuItems(
         { id: "copy-thread-id", label: "Thread ID", icon: "hash" },
       ],
     },
-    { id: "project-settings", label: "Project settings", icon: "settings" },
-    {
-      id: "archive",
-      label: "Archive thread",
-      icon: "archive",
-      disabled: state.isRunning,
-      separatorBefore: true,
-    },
     {
       id: "delete",
       label: "Delete",
       destructive: true,
       icon: "trash",
+      separatorBefore: true,
     },
   ];
   return state.canOperate

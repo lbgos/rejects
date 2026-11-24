@@ -1,8 +1,7 @@
 import * as DateTime from "effect/DateTime";
 
 import { resolveDesktopPairingUrl, resolveHostedPairingUrl } from "./pairingUrls";
-import { getPairingTokenFromUrl, setPairingTokenOnUrl } from "@t3tools/shared/remote";
-import { readHostedPairingRequest } from "../../hostedPairing";
+import { setPairingTokenOnUrl } from "@t3tools/shared/remote";
 import {
   type ServerClientSessionRecord,
   type ServerPairingLinkRecord,
@@ -231,69 +230,6 @@ export function parseManualDesktopSshTarget(input: {
     username,
     port,
   };
-}
-
-export function parsePairingUrlFields(
-  input: string,
-): { readonly host: string; readonly pairingCode: string } | null {
-  const trimmed = input.trim();
-  if (!trimmed) return null;
-
-  try {
-    const urlLikeInput =
-      /^[a-zA-Z][a-zA-Z\d+.-]*:\/\//u.test(trimmed) || trimmed.startsWith("//")
-        ? trimmed
-        : `https://${trimmed}`;
-    const url = new URL(urlLikeInput, window.location.origin);
-    const hostedPairingRequest = readHostedPairingRequest(url);
-    if (hostedPairingRequest) {
-      return {
-        host: hostedPairingRequest.host,
-        pairingCode: hostedPairingRequest.token,
-      };
-    }
-
-    const pairingCode = getPairingTokenFromUrl(url);
-    if (!pairingCode) return null;
-    return {
-      host: url.origin,
-      pairingCode,
-    };
-  } catch {
-    return null;
-  }
-}
-
-export function parseRemotePairingFields(input: {
-  readonly host: string;
-  readonly pairingCode: string;
-}): {
-  readonly host: string;
-  readonly pairingCode: string;
-} {
-  const parsedPairingUrl = parsePairingUrlFields(input.host);
-  if (parsedPairingUrl) return parsedPairingUrl;
-
-  const host = input.host.trim();
-  const pairingCode = input.pairingCode.trim();
-  if (!host) {
-    throw new Error("Enter a backend host.");
-  }
-  if (!pairingCode) {
-    throw new Error("Enter a pairing code.");
-  }
-  return { host, pairingCode };
-}
-
-export function formatDesktopSshConnectionError(error: unknown): string {
-  const fallback = "Failed to connect SSH host.";
-  const rawMessage = error instanceof Error ? error.message : fallback;
-  const withoutIpcPrefix = rawMessage.replace(
-    /^Error invoking remote method 'desktop:ensure-ssh-environment':\s*/u,
-    "",
-  );
-  const withoutTaggedErrorPrefix = withoutIpcPrefix.replace(/^Ssh[A-Za-z]+Error:\s*/u, "");
-  return withoutTaggedErrorPrefix.trim() || fallback;
 }
 
 export function sortDesktopPairingLinks(links: ReadonlyArray<ServerPairingLinkRecord>) {

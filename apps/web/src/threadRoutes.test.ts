@@ -26,7 +26,7 @@ describe("threadRoutes", () => {
 
     expect(isThreadRoutePathname("/env-1/thread-1", ref)).toBe(true);
     expect(isThreadRoutePathname("/env-1/thread-1/", ref)).toBe(true);
-    expect(isThreadRoutePathname("/new", ref)).toBe(false);
+    expect(isThreadRoutePathname("/bots", ref)).toBe(false);
     expect(isThreadRoutePathname("/env-1/thread-2", ref)).toBe(false);
     expect(isThreadRoutePathname("/env-2/thread-1", ref)).toBe(false);
     expect(isThreadRoutePathname("/draft/thread-1", ref)).toBe(false);
@@ -55,7 +55,7 @@ describe("threadRoutes", () => {
     const newThread = createRoute({ getParentRoute: () => root, path: "new" });
     const router = createRouter({
       routeTree: root.addChildren([thread, newThread]),
-      history: createMemoryHistory({ initialEntries: ["/new"] }),
+      history: createMemoryHistory({ initialEntries: ["/bots"] }),
     });
     await router.load();
     const ref = scopeThreadRef("local" as never, ThreadId.make("mcp:example"));
@@ -66,7 +66,7 @@ describe("threadRoutes", () => {
     expect(router.state.location.pathname).toBe("/local/mcp%3Aexample");
     expect(router.state.matches.at(-1)?.params).toEqual(ref);
     expect(isThreadRoutePathname(router.state.location.pathname, ref)).toBe(true);
-    await router.navigate({ to: "/new" });
+    await router.navigate({ to: "/bots", search: { thread: undefined } });
     expect(isThreadRoutePathname(router.state.location.pathname, ref)).toBe(false);
   });
 

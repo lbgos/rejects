@@ -18,6 +18,8 @@ import { useNavigate } from "@tanstack/react-router";
 import { MessageSquareIcon } from "lucide-react";
 import { useState } from "react";
 
+import { isBotProject, useBotProjectKeys } from "../bots/state";
+
 import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
@@ -90,8 +92,8 @@ function useConnectedThreadSearch(query: string) {
 }
 
 /**
- * Every visible thread as a palette item, plus, for a non-empty
- * `threadSearchQuery`, the threads whose messages match, best first.
+ * Every visible bot thread as a palette item, plus, for a non-empty
+ * `threadSearchQuery`, the bot threads whose messages match, best first.
  */
 export function useCommandPaletteThreadItems(input: {
   readonly activeThread: { readonly environmentId: EnvironmentId; readonly id: ThreadId } | null;
@@ -99,7 +101,8 @@ export function useCommandPaletteThreadItems(input: {
 }) {
   const { activeThread, threadSearchQuery } = input;
   const navigate = useNavigate();
-  const threads = useVisibleThreadShells();
+  const botProjectKeys = useBotProjectKeys();
+  const threads = useVisibleThreadShells().filter((thread) => isBotProject(botProjectKeys, thread));
   const { projectEnvironmentLocationById } = useEnvironmentLookups();
   const providerEntryByEnvironmentAndInstanceId = useProviderEntryByEnvironmentAndInstanceId();
   const messageSearch = useConnectedThreadSearch(threadSearchQuery);

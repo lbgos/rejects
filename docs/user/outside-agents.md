@@ -13,7 +13,7 @@ app (MCP)**, or use the button in **Settings → Sharing & access**. Pick the
 app and follow the step for that app. Assistants like
 Poke and Claude run in the cloud, so the wizard first asks you to sign in to T3
 Connect and turn it on for the environment. To reach your other machines through
-the same connection, turn on **Linked environments** in Labs and
+the same connection, turn on **Linked environments** in **Settings → Sharing & access** and
 [link them](./remote-access.md#link-another-environment).
 
 When the app opens the sign-in page, choose what it may do and approve with your
@@ -27,9 +27,7 @@ client ID cannot connect.
 
 ## Get the MCP URL
 
-In **Settings → Environments**, open a saved environment's menu and choose
-**Copy MCP URL**. The URL is the environment's address followed by `/mcp`, for
-example:
+The MCP URL is the environment's address followed by `/mcp`, for example:
 
 ```text
 https://<environment-address>/mcp

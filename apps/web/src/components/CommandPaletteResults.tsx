@@ -14,11 +14,7 @@ import {
   type CommandPaletteSubmenuItem,
 } from "./CommandPalette.logic";
 import {
-  CommandCollection,
-  CommandGroup,
-  CommandGroupLabel,
   CommandItem,
-  CommandList,
   CommandListHeading,
   CommandListVirtualized,
   CommandShortcut,
@@ -44,37 +40,6 @@ function CommandPaletteEmptyState(props: { emptyStateMessage?: string; isActions
           ? "No matching actions."
           : "No matching commands, projects, or threads.")}
     </div>
-  );
-}
-
-export function CommandPaletteResults(props: CommandPaletteResultsProps) {
-  if (props.groups.length === 0) {
-    return <CommandPaletteEmptyState {...props} />;
-  }
-
-  return (
-    <CommandList>
-      {props.groups.map((group) => (
-        <CommandGroup items={group.items} key={group.value}>
-          {group.label ? <CommandGroupLabel>{group.label}</CommandGroupLabel> : null}
-          <CommandCollection>
-            {(item) =>
-              item.disabled ? (
-                <DisabledCommandPaletteResultRow item={item} key={item.value} />
-              ) : (
-                <CommandPaletteResultRow
-                  item={item}
-                  key={item.value}
-                  keybindings={props.keybindings}
-                  isActive={props.highlightedItemValue === item.value}
-                  onExecuteItem={props.onExecuteItem}
-                />
-              )
-            }
-          </CommandCollection>
-        </CommandGroup>
-      ))}
-    </CommandList>
   );
 }
 
@@ -162,7 +127,7 @@ export function CommandPaletteVirtualizedResults(props: CommandPaletteVirtualize
   );
 }
 
-export function CommandPaletteTitleIcon(props: { children: ReactNode }) {
+function CommandPaletteTitleIcon(props: { children: ReactNode }) {
   return <span className="flex h-5 shrink-0 items-center self-start pt-0.5">{props.children}</span>;
 }
 

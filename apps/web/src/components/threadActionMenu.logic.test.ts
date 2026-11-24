@@ -5,6 +5,7 @@ import { buildThreadActionMenuItems, type ThreadActionMenuState } from "./thread
 const baseState: ThreadActionMenuState = {
   canOperate: true,
   branch: null,
+  canStartThread: true,
   projectFilter: null,
   isPinned: false,
   isSettled: false,
@@ -37,26 +38,8 @@ describe("buildThreadActionMenuItems", () => {
         isSnoozed: reversed,
       });
       const expected = reversed
-        ? [
-            "unpin",
-            "unsettle",
-            "unsnooze",
-            "rename",
-            "regenerate-title",
-            "auto-settle",
-            "archive",
-            "delete",
-          ]
-        : [
-            "pin",
-            "settle",
-            "snooze",
-            "rename",
-            "regenerate-title",
-            "auto-settle",
-            "archive",
-            "delete",
-          ];
+        ? ["unpin", "unsettle", "unsnooze", "rename", "regenerate-title", "auto-settle", "delete"]
+        : ["pin", "settle", "snooze", "rename", "regenerate-title", "auto-settle", "delete"];
       expect(items.filter((item) => item.disabled).map((item) => item.id)).toEqual(expected);
       expect(
         items.find((item) => item.id === "snooze")?.children?.every((child) => child.disabled) ??
@@ -65,13 +48,22 @@ describe("buildThreadActionMenuItems", () => {
     },
   );
 
-  it("disables archive and turning into a project while the thread is running", () => {
+  it("offers a new thread on the branch only where threads may start", () => {
+    const ids = (canStartThread: boolean) =>
+      buildThreadActionMenuItems({ ...baseState, branch: "main", canStartThread }).map(
+        (item) => item.id,
+      );
+    expect(ids(true)).toContain("new-thread-on-branch");
+    expect(ids(false)).not.toContain("new-thread-on-branch");
+    expect(ids(false)).toContain("copy");
+  });
+
+  it("disables turning into a project while the thread is running", () => {
     const items = buildThreadActionMenuItems({
       ...baseState,
       isRunning: true,
       canTurnIntoProject: true,
     });
-    expect(items.find((item) => item.id === "archive")?.disabled).toBe(true);
     expect(items.find((item) => item.id === "turn-into-project")?.disabled).toBe(true);
   });
 });

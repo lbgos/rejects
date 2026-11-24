@@ -266,18 +266,12 @@ export function shortcutLabelForCommand(
   return shortcut ? formatShortcutLabel(shortcut, platform) : null;
 }
 
-export function threadJumpCommandForIndex(index: number): ThreadJumpKeybindingCommand | null {
-  return THREAD_JUMP_KEYBINDING_COMMANDS[index] ?? null;
-}
-
-export function threadJumpIndexFromCommand(command: string): number | null {
+function threadJumpIndexFromCommand(command: string): number | null {
   const index = THREAD_JUMP_KEYBINDING_COMMANDS.indexOf(command as ThreadJumpKeybindingCommand);
   return index === -1 ? null : index;
 }
 
-export function threadTraversalDirectionFromCommand(
-  command: string | null,
-): "previous" | "next" | null {
+function threadTraversalDirectionFromCommand(command: string | null): "previous" | "next" | null {
   if (command === "thread.previous") return "previous";
   if (command === "thread.next") return "next";
   return null;

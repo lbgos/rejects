@@ -1,5 +1,4 @@
 import {
-  isExplicitRelativePath,
   isUncPath,
   isWindowsAbsolutePath,
   isWindowsDrivePath,
@@ -33,8 +32,6 @@ function preferredPathSeparator(value: string): "/" | "\\" {
 export function hasTrailingPathSeparator(value: string): boolean {
   return (getAbsolutePathKind(value) === "unix" ? /\/$/ : /[\\/]$/).test(value);
 }
-
-export { isExplicitRelativePath as isExplicitRelativeProjectPath };
 
 function splitPathSegments(value: string, separator: "/" | "\\"): string[] {
   return value.split(separator === "/" ? /\/+/ : /[\\/]+/).filter(Boolean);
@@ -87,37 +84,6 @@ export function isFilesystemBrowseQuery(value: string, platform = ""): boolean {
     value.startsWith("/") ||
     value.startsWith("~/") ||
     (allowWindowsPaths && isWindowsAbsolutePath(value))
-  );
-}
-
-export function isUnsupportedWindowsProjectPath(value: string, platform: string): boolean {
-  return isWindowsAbsolutePath(value) && !isWindowsPlatform(platform);
-}
-
-export function resolveProjectPathForDispatch(value: string, cwd?: string | null): string {
-  const trimmedValue = value.trim();
-  if (!isExplicitRelativePath(trimmedValue) || !cwd) {
-    return normalizeProjectPathForDispatch(trimmedValue);
-  }
-
-  const absoluteBase = splitAbsolutePath(normalizeProjectPathForDispatch(cwd));
-  if (!absoluteBase) {
-    return normalizeProjectPathForDispatch(trimmedValue);
-  }
-
-  const nextSegments = [...absoluteBase.segments];
-  for (const segment of trimmedValue.split(/[\\/]+/)) {
-    if (segment.length === 0 || segment === ".") continue;
-    if (segment === "..") {
-      nextSegments.pop();
-      continue;
-    }
-    nextSegments.push(segment);
-  }
-
-  const joinedPath = nextSegments.join(absoluteBase.separator);
-  return normalizeProjectPathForDispatch(
-    joinedPath.length === 0 ? absoluteBase.root : `${absoluteBase.root}${joinedPath}`,
   );
 }
 
@@ -205,4 +171,3 @@ export function canNavigateUp(currentPath: string): boolean {
 
 export * from "./projectCommands.ts";
 export * from "./projectEntities.ts";
-export * from "./projectRemoval.ts";

@@ -76,8 +76,7 @@ applies only to multiline messages when you choose the multiline send option.
 Use `Cmd+Shift+Enter` on macOS or `Ctrl+Shift+Enter` on Windows and Linux to send
 the oldest queued message as a steer. This leaves the current draft intact and
 requires an active turn that supports steering. If that shortcut sends the opposite
-action for your draft, move focus outside the composer to steer the queued message. Change
-`thread.steerQueuedMessage` in **Settings → Keybindings** to use another shortcut.
+action for your draft, move focus outside the composer to steer the queued message.
 
 Press `Option+Up` on macOS or `Alt+Up` on Windows and Linux with the cursor at the
 start of the composer to edit the most recently queued message. Change
@@ -160,13 +159,13 @@ into a normal draft.
 
 ## Suggested next prompt
 
-Turn on **Suggest next prompt** in Settings > Labs. After a Claude or Codex turn completes, the
+Turn on **Suggest next prompt** in **Settings → Chat**. After a Claude or Codex turn completes, the
 empty composer shows a predicted next message. Press `Tab` to fill it in, then edit or send it, or
 press `Escape` to dismiss it. Each suggestion is one extra request that reuses the turn's prompt
 cache, so it uses a little of your plan's usage. Claude skips suggestions on the first turn of a
 thread and near usage limits. Codex needs version 0.165 or later; if T3 Code manages
 Codex, update it in Settings > Providers. Codex follows a change to the setting at once; open Claude
-threads follow it after they restart. Suggestions show on web and desktop.
+chats follow it after they restart. Suggestions show on web and desktop.
 
 ## Edit an earlier prompt
 

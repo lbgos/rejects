@@ -45,7 +45,7 @@ Get the [iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819
 
 ## Why does T3 Connect keep disconnecting?
 
-T3 Connect is our built-in alternative to Tailscale for remote connections. If it keeps dropping, open **Settings > Environments**, find the machine, and select **Details**. The first part marked as failed is the cause. I will not be disappointed if you set up Tailscale as a fallback (I do this personally). [T3 Connect troubleshooting](./t3-connect-troubleshooting.md)
+T3 Connect is our built-in alternative to Tailscale for remote connections. If it keeps dropping, run `rejects connect status` on the host to see which part fails. I will not be disappointed if you set up Tailscale as a fallback (I do this personally). [T3 Connect troubleshooting](./t3-connect-troubleshooting.md)
 
 ## Will I get banned for using my subscription?
 
@@ -57,7 +57,7 @@ If it works in T3 Code, you can trust it is safe.
 
 I don't think T3 Code is the right place to manage a pile of accounts. If we add an auto-switcher, we are risking TOS bans for our users.
 
-A separate work account is fine. Setup for two: [Codex](./providers-codex.md#use-multiple-accounts) · [Claude](./providers-claude.md#separate-accounts-or-configurations). For a bigger pool, manage them outside T3 Code with a self-hosted proxy like [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI). I walked through how I use 6 Claude subs and 3 Codex subs in [this video](https://www.youtube.com/watch?v=D8PikZ1KhUo), and wrote up the setup in [this guide](https://gist.github.com/t3dotgg/59a521d2ee8d70aaf90e280c175072af). Hand it to your agent and it will walk you through it. Early apologies if it gets you banned 💀 After you set up a hub, T3 Code can show its pooled limits under Usage. [Connect a hub](./usage.md#connect-a-cliproxyapi-hub)
+A separate work account is fine. Setup for two: [Codex](./providers-codex.md#use-multiple-accounts) · [Claude](./providers-claude.md#separate-accounts-or-configurations). For a bigger pool, manage them outside T3 Code with a self-hosted proxy like [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI). I walked through how I use 6 Claude subs and 3 Codex subs in [this video](https://www.youtube.com/watch?v=D8PikZ1KhUo), and wrote up the setup in [this guide](https://gist.github.com/t3dotgg/59a521d2ee8d70aaf90e280c175072af). Hand it to your agent and it will walk you through it. Early apologies if it gets you banned 💀
 
 ## Can I use an API key or OpenRouter instead of a subscription?
 
@@ -70,10 +70,6 @@ No. T3 Code is a serious developer tool. Locally runnable models are not capable
 ## Does my code go to T3 servers?
 
 No. Your code and prompts go from your machine to your provider (Anthropic, OpenAI, etc.), not to us. With T3 Connect, traffic rides a Cloudflare tunnel (`cloudflared` on your machine). Our relay sets up the link. It does not proxy your HTTP or WebSocket sessions. T3 Code does send basic product usage events (provider, model, token totals, that kind of thing). No prompts, no file contents. That is the same on Tailscale, LAN, or T3 Connect. Set `T3CODE_TELEMETRY_ENABLED=false` if you want it off. [Product usage data](./telemetry.md)
-
-## Worktrees are eating my disk. How do I clean them up?
-
-Open **Settings → Worktrees → Cleanup** and turn on automatic worktree cleanup. You can also run it now from there. Worktrees add up fast. One user cleared 500 GB. [Storage cleanup](./project-settings.md#storage-cleanup)
 
 ## Is there voice input?
 

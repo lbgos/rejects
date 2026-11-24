@@ -6,17 +6,16 @@ until you send or dismiss it.
 
 ## Share a thread
 
-Guest links are a beta. Turn on **Settings → Labs → Guest links** for the machine that runs the
+Guest links are a beta. Turn on **Settings → Sharing & access → Guest links** for the machine that runs the
 thread. They also need [T3 Connect](./remote-access.md): sign in and link that machine, because the
 link points at its T3 Connect address. The machine must stay online while the guest uses it.
 While the setting is off, every guest link on that machine stops working; links that have not
 expired work again when you turn it back on.
 
-1. Right-click the thread in the sidebar and choose **Share with guest**. It is also in the thread
-   menu and the command palette.
+1. Open the chat's actions menu (**⋯** in the header) and choose **Share with guest**.
 2. Copy the link and send it to one person. It works in one browser and expires after 24 hours.
    Opening it again in that browser takes them back to the thread.
-3. When they send a message, it appears at the end of the thread and the sidebar shows **Request**.
+3. When they send a message, it appears at the end of the chat.
    Choose **Send** to run it as a normal turn, or **Dismiss**. Files they attached show with the
    message, and **Send** includes them.
 

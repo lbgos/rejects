@@ -8,11 +8,7 @@ import {
   assistantCitationFromLocation,
   assistantCitationNavigation,
 } from "../../lib/assistantCitationNavigation";
-import {
-  startMainAppLocationTracking,
-  useCloseAppModal,
-  useNavigateToMainApp,
-} from "./mainAppLocation";
+import { startMainAppLocationTracking, useCloseAppModal } from "./mainAppLocation";
 
 const THREAD_PATH = "/environment-one/thread-one";
 
@@ -30,16 +26,10 @@ const citation: AssistantCitation = {
 
 function ReturnControls() {
   const closeAppModal = useCloseAppModal();
-  const navigateToMainApp = useNavigateToMainApp();
   return (
-    <>
-      <button type="button" onClick={() => void closeAppModal()}>
-        Close modal
-      </button>
-      <button type="button" onClick={() => void navigateToMainApp()}>
-        Back to app
-      </button>
-    </>
+    <button type="button" onClick={() => void closeAppModal()}>
+      Close modal
+    </button>
   );
 }
 
@@ -57,22 +47,13 @@ describe("main app return location", () => {
     const router = screen.router!;
     using _tracking = { [Symbol.dispose]: startMainAppLocationTracking(router) };
 
-    const returnLocation = async (from: string, control: string) => {
-      await settled(router, router.navigate(assistantCitationNavigation(citation, null)));
-      expect(assistantCitationFromLocation(router.state.location.href)).toEqual(citation);
-      await settled(router, router.navigate({ href: from }));
-      await userEvent.click(screen.getByRole("button", { name: control }));
-      await vi.waitFor(() => expect(router.state.location.pathname).toBe(THREAD_PATH));
-      return router.state.location.href;
-    };
+    await settled(router, router.navigate(assistantCitationNavigation(citation, null)));
+    expect(assistantCitationFromLocation(router.state.location.href)).toEqual(citation);
+    await settled(router, router.navigate({ href: "/settings/general" }));
+    await userEvent.click(screen.getByRole("button", { name: "Close modal" }));
+    await vi.waitFor(() => expect(router.state.location.pathname).toBe(THREAD_PATH));
 
-    const closingUsage = await returnLocation("/usage", "Close modal");
-    const sidebarBack = await returnLocation("/pull-requests", "Back to app");
-
-    expect({ closingUsage, sidebarBack }).toEqual({
-      closingUsage: THREAD_PATH,
-      sidebarBack: THREAD_PATH,
-    });
+    expect(router.state.location.href).toBe(THREAD_PATH);
   });
 
   it("leaves no stop on Settings for history back after it closes", async () => {

@@ -3,11 +3,9 @@ import { composerDraftHasUserContent, useComposerDraftStore } from "~/composerDr
 import { resolveEnvironmentMachineKind, type ScopedProjectRef } from "@t3tools/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
-import { FolderPlusIcon } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
 import { useRef, useState } from "react";
 
-import { openCommandPalette } from "~/commandPaletteBus";
 import { shortcutLabelForCommand } from "~/keybindings";
 import { primaryServerKeybindingsAtom } from "~/state/server";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
@@ -56,8 +54,6 @@ import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { resolveProjectDefaultProviderModelSelection } from "../../providerInstances";
 import { resolveNewThreadModelSelection } from "@t3tools/shared/usageLimits";
 
-const ADD_PROJECT_VALUE = "add-project";
-
 interface PickerItem {
   readonly value: string;
   readonly label: string;
@@ -91,7 +87,6 @@ export function DraftHeroHeadline({
   );
   const applyStickyState = useComposerDraftStore((store) => store.applyStickyState);
   const setModelSelection = useComposerDraftStore((store) => store.setModelSelection);
-  const openAddProject = () => openCommandPalette({ open: "add-project" });
   const { scratchEnvironmentId, scratchWorkspaceRootFor, openScratchProject } = useScratchProject();
   const openProjectDraft = useNewThreadHandler();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -163,10 +158,7 @@ export function DraftHeroHeadline({
 
   // Pinning from a row keeps rows in place while the picker is open.
   const pickerItems: readonly PickerItem[] = useOrderWhileOpen(
-    [
-      ...menuEntries.map(({ group }) => ({ value: group.projectKey, label: group.displayName })),
-      { value: ADD_PROJECT_VALUE, label: "Add project" },
-    ],
+    menuEntries.map(({ group }) => ({ value: group.projectKey, label: group.displayName })),
     (item) => item.value,
     pickerOpen,
   );
@@ -174,10 +166,8 @@ export function DraftHeroHeadline({
   const filteredPickerItems =
     pickerSearch.length === 0
       ? pickerItems
-      : pickerItems.filter(
-          (item) =>
-            item.value !== ADD_PROJECT_VALUE &&
-            pickerFilter.contains(item, pickerSearch, (candidate) => candidate.label),
+      : pickerItems.filter((item) =>
+          pickerFilter.contains(item, pickerSearch, (candidate) => candidate.label),
         );
   const selectedPickerItem = pickerItems.find((item) => item.value === activeProjectKey) ?? null;
 
@@ -279,10 +269,6 @@ export function DraftHeroHeadline({
       onValueChange={(item) => {
         if (!item) return;
         setPickerOpen(false);
-        if (item.value === ADD_PROJECT_VALUE) {
-          openAddProject();
-          return;
-        }
         const entry = projectEntryByKey.get(item.value);
         if (!entry || item.value === activeProjectKey) {
           return;
@@ -332,9 +318,7 @@ export function DraftHeroHeadline({
             const entry = projectEntryByKey.get(item.value);
             return (
               <ComboboxItem key={item.value} hideIndicator value={item}>
-                {item.value === ADD_PROJECT_VALUE ? (
-                  <FolderPlusIcon className="size-4 shrink-0" />
-                ) : entry ? (
+                {entry ? (
                   <ProjectFavicon project={entry.group} className="size-4 shrink-0" />
                 ) : null}
                 <Tooltip>
@@ -365,13 +349,9 @@ export function DraftHeroHeadline({
       </ComboboxPopup>
     </Combobox>
   ) : (
-    <button
-      type="button"
-      onClick={openAddProject}
-      className="pointer-events-auto inline min-w-0 max-w-full cursor-pointer border-muted-foreground/35 border-b border-dotted text-muted-foreground/60 transition-colors hover:border-muted-foreground/60 hover:text-muted-foreground/80 focus-visible:rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-    >
-      <DraftProjectName value={activeProjectTitle ?? "Add a project"} singleLine />
-    </button>
+    <span className="inline min-w-0 max-w-full text-muted-foreground/60">
+      <DraftProjectName value={activeProjectTitle ?? "No project"} singleLine />
+    </span>
   );
 
   const noProjectShortcut = shortcutLabelForCommand(keybindings, "chat.newWithoutProject");

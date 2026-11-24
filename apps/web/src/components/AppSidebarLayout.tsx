@@ -47,7 +47,6 @@ import {
   usePanelNavigationSuppression,
 } from "../panelAnimations";
 import { BackgroundThreadAnnouncer } from "./BackgroundThreadAnnouncer";
-import ThreadSidebar from "./Sidebar";
 import { BotOverlays } from "../bots/BotOverlays";
 import { BotTabHost } from "../bots/BotTabHost";
 import { UiSpotlight } from "../bots/UiSpotlight";
@@ -57,7 +56,6 @@ import { useBotUi } from "../bots/ui";
 import "../bots/bots.css";
 import { SidebarBrandWidthProbe } from "./sidebar/SidebarChrome";
 import { isAppModalPage } from "./sidebar/mainAppLocation";
-import type { SidebarRouteReveal } from "./sidebar/routeReveal";
 import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
 import {
   clampThreadSidebarWidth,
@@ -141,10 +139,6 @@ function readInitialThreadSidebarWidth(): number {
   }
 }
 
-function readUsagePageOpen(router: AnyRouter) {
-  return router.state.location.pathname === "/usage";
-}
-
 function isKeybindingCaptureTarget(event: KeyboardEvent) {
   return event.target instanceof HTMLElement && event.target.closest("[data-keybinding-capture]");
 }
@@ -163,7 +157,7 @@ function readRoutePanelsOpen(router: AnyRouter) {
   };
 }
 
-export function registerNavigationHistoryCommands(router: AnyRouter): () => void {
+function registerNavigationHistoryCommands(router: AnyRouter): () => void {
   return registerCommands(
     {
       "navigation.back": (event) => {
@@ -179,10 +173,7 @@ export function registerNavigationHistoryCommands(router: AnyRouter): () => void
     },
     {
       when: (event) => !isKeybindingCaptureTarget(event),
-      context: () => ({
-        ...readRoutePanelsOpen(router),
-        usagePageOpen: readUsagePageOpen(router),
-      }),
+      context: () => readRoutePanelsOpen(router),
     },
   );
 }
@@ -212,28 +203,6 @@ function registerWorkspaceFocusCommands(router: AnyRouter): () => void {
   return () => {
     for (const dispose of disposers) dispose();
   };
-}
-
-// Escape leaves the pull requests page when no scope (a selection, a dialog,
-// a drag) claimed it, so it observes after every other scope.
-function registerPullRequestsEscapeCommand(router: AnyRouter): () => void {
-  return registerCommands(
-    {},
-    {
-      observe: (event, consumed) => {
-        if (consumed || event.repeat || event.isComposing || event.key !== "Escape") return;
-        if (router.state.location.pathname !== "/pull-requests") return;
-        event.preventDefault();
-        const activeElement = document.activeElement;
-        if (activeElement instanceof HTMLElement) activeElement.blur();
-        if (router.state.location.state.__TSR_index !== 0) {
-          window.history.back();
-          return;
-        }
-        void router.navigate({ to: "/" });
-      },
-    },
-  );
 }
 
 const MODIFIER_KEYS = new Set(["Alt", "Control", "Meta", "Shift"]);
@@ -317,7 +286,6 @@ function registerAppShellCommands(router: AnyRouter, shellElement: Element): () 
     registerThreadUndoCommands(router, readSidebarVisible),
     registerNavigationHistoryCommands(router),
     registerWorkspaceFocusCommands(router),
-    registerPullRequestsEscapeCommand(router),
     registerMenuAction("open-settings", () => {
       if (!/^\/settings(\/|$)/.test(router.state.location.pathname))
         void router.navigate({ to: "/settings" });
@@ -330,7 +298,6 @@ function registerAppShellCommands(router: AnyRouter, shellElement: Element): () 
 
 function SidebarControl({ showSidebar }: { readonly showSidebar: boolean }) {
   const router = useRouter();
-  const usagePageOpen = useLocation({ select: (location) => location.pathname === "/usage" });
   // The rendered route, as useBotsMode reads it, so a view transition's snapshot of the old
   // screen never gains the new screen's back button.
   const shown = useRouterState({
@@ -350,9 +317,7 @@ function SidebarControl({ showSidebar }: { readonly showSidebar: boolean }) {
   const botPageOpen = useBotUi((ui) => ui.panel !== null || ui.dialog !== null);
   const environmentIdentificationMode = useEnvironmentIdentificationMode();
   const stageBackdropVariant = useSidebarStageBackdropVariant(environmentIdentificationMode);
-  const shortcutLabel = shortcutLabelForCommand(keybindings, "sidebar.toggle", {
-    context: { usagePageOpen },
-  });
+  const shortcutLabel = shortcutLabelForCommand(keybindings, "sidebar.toggle");
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- window keydown listener that toggles the sidebar on its shortcut
   useEffect(() => {
@@ -375,11 +340,7 @@ function SidebarControl({ showSidebar }: { readonly showSidebar: boolean }) {
         // the toggle stays available everywhere else.
         return;
       }
-      if (
-        resolveShortcutCommand(event, keybindings, { context: { usagePageOpen } }) !==
-        "sidebar.toggle"
-      )
-        return;
+      if (resolveShortcutCommand(event, keybindings) !== "sidebar.toggle") return;
 
       event.preventDefault();
       event.stopPropagation();
@@ -394,7 +355,7 @@ function SidebarControl({ showSidebar }: { readonly showSidebar: boolean }) {
       window.removeEventListener("keydown", onKeyDown, true);
       unsubscribe?.();
     };
-  }, [keybindings, showSidebar, toggleSidebar, usagePageOpen]);
+  }, [keybindings, showSidebar, toggleSidebar]);
 
   // The control lives as long as the shell, so it carries the shell's commands. Created
   // once so re-renders never re-register them.
@@ -474,11 +435,7 @@ export function AppSidebarLayout({
     document.documentElement.setAttribute("data-bots-app", "");
     return () => document.documentElement.removeAttribute("data-bots-app");
   }, [botsMode.active]);
-  const sidebarArea = workspaceAreaProps("sidebar", 0, "Threads");
-  const [sidebarRouteReveal] = useState<SidebarRouteReveal>(() => ({
-    observedKey: null,
-    pendingKey: null,
-  }));
+  const sidebarArea = workspaceAreaProps("sidebar", 0, "Bots");
   const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
     usePanelAnimationSettings();
   const pathname = useLocation({ select: (location) => location.pathname });
@@ -543,7 +500,7 @@ export function AppSidebarLayout({
               data-app-sidebar=""
               {...sidebarArea}
               role="navigation"
-              aria-label={botsMode.active ? "Bots" : "Threads"}
+              aria-label="Bots"
               resizable={{
                 maxWidth: sidebarMaximumWidth,
                 minWidth: sidebarMinimumWidth,
@@ -555,11 +512,7 @@ export function AppSidebarLayout({
               }}
               style={windowControlsInsetStyle}
             >
-              {botsMode.active ? (
-                <BotsSidebar />
-              ) : (
-                <ThreadSidebar routeReveal={sidebarRouteReveal} />
-              )}
+              <BotsSidebar />
               <SidebarRail onDoubleClick={resetSidebarWidth} />
             </Sidebar>
           </>

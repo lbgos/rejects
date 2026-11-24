@@ -6,9 +6,7 @@ import {
   ServerProvider,
   ServerProviderResetCredits,
   ServerProviderUsageWindow,
-  UsageProviderKind,
 } from "@t3tools/contracts";
-import { useAtomValue } from "@effect/atom-react";
 import { normalizeProviderAccentColor } from "@t3tools/client-runtime/state/provider-instance-display";
 import {
   formatResetsIn,
@@ -24,7 +22,6 @@ import { Fragment, useLayoutEffect, useState } from "react";
 
 import { usePrimarySettings } from "../../hooks/useSettings";
 import { observeResize } from "../../lib/observeResize";
-import { environmentPresentations } from "../../state/presentation";
 import { useEnvironmentScope, readEnvironmentScope } from "../../state/session";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -40,7 +37,6 @@ import {
 } from "../ui/alert-dialog";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { UsageLimitsPooled } from "./UsageLimitsPooled";
 import { PROVIDER_PRESENTATION } from "./usageProviders";
 
 const PACE: Record<LimitPace, { readonly label: string; readonly icon: typeof GaugeIcon }> = {
@@ -49,14 +45,14 @@ const PACE: Record<LimitPace, { readonly label: string; readonly icon: typeof Ga
   under: { label: "Under pace: headroom left for the rest of the window", icon: TrendingDownIcon },
 };
 
-export function barColor(driver: ServerProvider["driver"]): string {
+function barColor(driver: ServerProvider["driver"]): string {
   const presentation = Object.values(PROVIDER_PRESENTATION).find(
     (entry) => entry.driverKind === driver,
   );
   return presentation?.color ?? "var(--foreground)";
 }
 
-export function PaceIcon({ pace }: { readonly pace: LimitPace }) {
+function PaceIcon({ pace }: { readonly pace: LimitPace }) {
   const Icon = PACE[pace].icon;
   return (
     <Tooltip>
@@ -101,7 +97,7 @@ function paceMarkStyles(timeLeft: number | null) {
  * Pace mark styles for the bar given the returned ref. Below 6px there is no room for the gap
  * and tick, so the bar draws neither, as the mobile bars do.
  */
-export function usePaceMark(timeLeft: number | null) {
+function usePaceMark(timeLeft: number | null) {
   const [bar, setBar] = useState<HTMLElement | null>(null);
   const [roomy, setRoomy] = useState(false);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- measures the bar DOM width before paint and remeasures through a ResizeObserver
@@ -238,7 +234,7 @@ const OUTCOME_TEXT: Record<ProviderConsumeResetCreditOutcome, string> = {
   alreadyRedeemed: "That credit was already redeemed.",
 };
 
-export function useResetCredit(environmentId: EnvironmentId) {
+function useResetCredit(environmentId: EnvironmentId) {
   const canManageProviders = useEnvironmentScope(environmentId, AuthProvidersManageScope);
   const consume = useAtomCommand(serverEnvironment.consumeResetCredit, { reportFailure: false });
   // Kept after close so the dialog's text survives its exit animation.
@@ -276,7 +272,7 @@ export function useResetCredit(environmentId: EnvironmentId) {
 
 /** Require confirmation because redemption spends credits. Mount outside popovers, which stack above
  * dialogs and unmount on close. */
-export function ResetCreditDialog({
+function ResetCreditDialog({
   open,
   onOpenChange,
   choice,
@@ -348,47 +344,4 @@ export function ResetCredits({
       />
     </div>
   );
-}
-
-/** Advance now only on explicit refresh to avoid page repaints from ticking. */
-export function UsageLimitsSection({
-  selectedEnvironmentIds,
-  hiddenProviders,
-  now,
-}: {
-  readonly selectedEnvironmentIds: ReadonlySet<EnvironmentId> | null;
-  readonly hiddenProviders: ReadonlySet<UsageProviderKind>;
-  readonly now: number;
-}) {
-  const presentations = useAtomValue(environmentPresentations.presentationsWithProvidersAtom);
-  const hiddenDrivers = new Set<ServerProvider["driver"]>(
-    [...hiddenProviders].map((provider) => PROVIDER_PRESENTATION[provider].driverKind),
-  );
-  const isVisible = (driver: ServerProvider["driver"]) => !hiddenDrivers.has(driver);
-  const selected = new Map(
-    [...presentations].flatMap(([id, presentation]) => {
-      if (selectedEnvironmentIds !== null && !selectedEnvironmentIds.has(id)) return [];
-      const config = presentation.serverConfig;
-      if (hiddenDrivers.size === 0 || config === null) return [[id, presentation] as const];
-      return [
-        [
-          id,
-          {
-            ...presentation,
-            serverConfig: {
-              ...config,
-              providers: config.providers.filter((provider) => isVisible(provider.driver)),
-              usageLimitSources: config.usageLimitSources?.flatMap((source) => {
-                const accounts = source.accounts.filter((account) => isVisible(account.driver));
-                return accounts.length === 0 && source.accounts.length > 0
-                  ? []
-                  : [{ ...source, accounts }];
-              }),
-            },
-          },
-        ] as const,
-      ];
-    }),
-  );
-  return <UsageLimitsPooled presentations={selected} now={now} />;
 }

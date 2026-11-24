@@ -1,9 +1,8 @@
 # Text generation models
 
 T3 Code writes some text for you: thread titles, commit messages, pull request titles and
-descriptions, branch names, and voice transcript cleanup. Pick the model for this in
-**Settings → Threads → Text generation model**. **Settings → Source control** and
-**Settings → Voice** can each pick a different one.
+descriptions, branch names, and voice transcript cleanup. **Settings → Voice** can pick a
+different model for transcript cleanup.
 
 By default, a coding agent such as Codex or Claude writes this text, starting a session for each
 request. A **text generator** — a model API that only writes text — is usually faster and cheaper.
@@ -37,6 +36,6 @@ model.
 
 Review guides read the checkout over many steps, so they always use a coding agent. If your source
 control writer model is a text generator, review guides use Codex or Claude instead, and fail if
-neither is set up. To choose which, pick one in **Settings → Source control → Review guide model**.
+neither is set up.
 
 A [managed policy](./managed-policy.md) that limits providers also turns off text generators.

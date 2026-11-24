@@ -10,6 +10,7 @@ import {
 } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { useNavigate, useParams } from "@tanstack/react-router";
+import { openGuestShareDialog } from "../components/chat/guestShareDialogState";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { botRequest } from "../bots/http";
 import { t } from "../i18n";
@@ -35,6 +36,7 @@ export type BotActionId =
   | "memory"
   | "bridge"
   | "screen"
+  | "share-guest"
   | "rename"
   | "edit"
   | "delete";
@@ -52,6 +54,7 @@ export function botActions(input: {
   readonly bot: Pick<BotSummary, "threadId" | "unread" | "muted">;
   readonly schedules: ReadonlyArray<Pick<ScheduledTask, "enabled">>;
   readonly where: "row" | "header";
+  readonly canShareWithGuest?: boolean;
 }): BotAction[] {
   const { bot, schedules, where } = input;
   const screen = { id: "screen" as const, label: t("Screen"), icon: "monitor" };
@@ -95,6 +98,9 @@ export function botActions(input: {
     { id: "memory", label: t("Memory"), icon: "brain" },
     { id: "bridge", label: t("Bridge"), icon: "shield-check" },
     ...(where === "row" ? [screen] : []),
+    ...(input.canShareWithGuest
+      ? [{ id: "share-guest" as const, label: t("Share with guest"), icon: "share" }]
+      : []),
     { id: "rename", label: t("Rename"), icon: "pencil", separatorBefore: true },
     { id: "edit", label: t("Edit job and model"), icon: "sliders" },
     ...(isBuiltinBot(bot)
@@ -270,6 +276,8 @@ export function useBotActions(environmentId: EnvironmentId) {
       case "screen":
         if (routeThreadId !== bot.threadId) await open(bot);
         return openBotPanel(scopeThreadRef(environmentId, bot.threadId), id);
+      case "share-guest":
+        return openGuestShareDialog(scopeThreadRef(environmentId, bot.threadId));
       case "mark-read":
       case "mark-unread":
         try {

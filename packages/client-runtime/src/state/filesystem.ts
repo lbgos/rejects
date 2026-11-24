@@ -7,10 +7,7 @@ import {
 } from "@t3tools/contracts";
 import { Atom } from "effect/reactivity";
 
-import type {
-  EnvironmentConnectionPhase,
-  EnvironmentConnectionPresentation,
-} from "../connection/presentation.ts";
+import type { EnvironmentConnectionPresentation } from "../connection/presentation.ts";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import {
   canNavigateUp,
@@ -131,12 +128,6 @@ export function createBrowseNavigationCoordinator() {
       return true;
     },
   };
-}
-
-export function canPreloadBrowsePath(
-  connectionPhase: EnvironmentConnectionPhase | null | undefined,
-): boolean {
-  return connectionPhase === "connected";
 }
 
 export function createFilesystemEnvironmentAtoms<R, E>(

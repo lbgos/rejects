@@ -19,7 +19,6 @@ import type {
   SourceControlRepositoryVisibility,
   VcsStatusResult,
 } from "@t3tools/contracts";
-import { useNavigate } from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import { useEffect, useEffectEvent, useId, useRef, useState } from "react";
 import { useDeadlinePassed } from "../hooks/useDeadline";
@@ -211,7 +210,7 @@ function getPublishProviderReadiness(input: {
   if (!discovered) {
     return {
       ready: false,
-      hint: "Provider status unavailable. Open Settings -> Source control and rescan.",
+      hint: "Provider status unavailable.",
     };
   }
   if (discovered.status !== "available") {
@@ -222,7 +221,7 @@ function getPublishProviderReadiness(input: {
       ready: false,
       hint:
         Option.getOrNull(discovered.auth.detail) ??
-        `${discovered.label} is not authenticated. Open Settings -> Source control for setup guidance.`,
+        `${discovered.label} is not signed in on the server.`,
     };
   }
   return { ready: true, hint: null };
@@ -468,7 +467,6 @@ interface PublishRepositoryDialogProps {
 
 export function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
   const openLink = useOpenLink(props.threadRef);
-  const navigate = useNavigate();
   const sourceControlDiscovery = useEnvironmentQuery(
     props.environmentId === null
       ? null
@@ -617,11 +615,6 @@ export function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
     }
   };
 
-  const openSourceControlSettings = () => {
-    handleOpenChange(false);
-    void navigate({ to: "/settings/source-control" });
-  };
-
   return (
     <Dialog open={props.open} onOpenChange={handleOpenChange}>
       <WizardPopup>
@@ -671,24 +664,11 @@ export function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
                         {option.label}
                       </span>
                       <Tooltip>
-                        <TooltipTrigger
-                          render={
-                            <Button
-                              variant="warning-outline"
-                              size="micro"
-                              onClick={(event) => {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                openSourceControlSettings();
-                              }}
-                            >
-                              Setup Required
-                            </Button>
-                          }
-                        />
+                        <TooltipTrigger render={<span className="shrink-0 text-xs text-warning" />}>
+                          Setup required
+                        </TooltipTrigger>
                         <TooltipPopup side="top" align="end">
-                          {readiness.hint ??
-                            "Open Settings -> Source control to configure this provider."}
+                          {readiness.hint ?? "This provider is not set up on this server."}
                         </TooltipPopup>
                       </Tooltip>
                     </div>

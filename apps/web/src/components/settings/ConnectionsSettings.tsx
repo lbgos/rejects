@@ -6,6 +6,7 @@ import { type ReactNode, useState } from "react";
 import {
   AuthAccessReadScope,
   AuthAccessWriteScope,
+  AuthSettingsWriteScope,
   AuthEnvironmentMaintainScope,
   AuthRelayReadScope,
   AuthRelayWriteScope,
@@ -39,15 +40,13 @@ import { settingsScopeEnvironmentLabel } from "./settingsScopeAxis";
 import { useAccessEnvironment } from "./useAccessEnvironment";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { ManagedByOrganization } from "../ManagedPolicy";
-import { LocalEnvironmentSetting } from "./LocalEnvironmentSetting";
 import { searchableSetting } from "./settingsSearch";
 import { ConnectDeviceApprovalSettings } from "./ConnectDeviceApprovalSettings";
 import { EnvironmentIconMenu } from "./EnvironmentIconPicker";
 import { FoldedSettingsSection } from "./FoldedSettingsSection";
 import { LinkedEnvironmentsSettings } from "./LinkedEnvironmentsSettings";
+import { SavedEnvironmentsSettings } from "./SavedEnvironmentsSettings";
 import { usePeerLinkHosts } from "~/state/peerLinks";
-import { LoadBalancingSettings } from "./LoadBalancingSettings";
-import { PullRequestRoutingSettings } from "./PullRequestRoutingSettings";
 import { Input } from "../ui/input";
 import {
   Dialog,
@@ -86,7 +85,6 @@ import {
   supportsDesktopAppUpdate,
 } from "~/versionSkew";
 import { authEnvironment } from "~/state/auth";
-import { environmentCatalog } from "~/connection/catalog";
 import {
   readEnvironmentScope,
   useEnvironmentScope,
@@ -99,23 +97,11 @@ import {
 } from "~/state/desktopNetworkAccess";
 import { desktopWslStateAtom, refreshDesktopWslState } from "~/state/desktopWslState";
 import { useDesktopUpdateState } from "~/state/desktopUpdate";
-import {
-  type EnvironmentPresentation,
-  useEnvironment,
-  useEnvironments,
-  usePrimaryEnvironment,
-} from "~/state/environments";
-import { requestConfirmDialog } from "~/confirmDialog";
+import { useEnvironment, useEnvironments, usePrimaryEnvironment } from "~/state/environments";
 import { useUpdateEnvironmentSettings } from "~/hooks/useSettings";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { environmentIdsKey } from "~/state/environmentAtomList";
-import { environmentUpdateStatesAtom, serverEnvironment } from "~/state/server";
-import {
-  ServerUpdateAction,
-  ServerUpdateProgress,
-  ServerUpdatesAction,
-  type ServerUpdateTarget,
-} from "../ServerUpdateAction";
+import { serverEnvironment } from "~/state/server";
+import { ServerUpdateAction, ServerUpdateProgress } from "../ServerUpdateAction";
 import {
   sortDesktopPairingLinks,
   summarizeAuthorizedClients,
@@ -134,12 +120,7 @@ import {
   PairingClientsList,
 } from "./AuthorizedClientsSettings";
 import { ITEM_ROW_CLASSNAME } from "./itemRows";
-import {
-  CloudLinkRow,
-  CloudRemoteEnvironmentRows,
-  SavedBackendListRow,
-} from "./SavedEnvironmentRows";
-import { AddEnvironmentDialog } from "./AddEnvironmentDialog";
+import { CloudLinkRow } from "./SavedEnvironmentRows";
 import {
   type ConnectDeviceRevokeRequest,
   RevokeConnectDeviceDialog,
@@ -165,15 +146,7 @@ function LocalVersionStatusLabel() {
 }
 
 /** Environments lists the machines this app connects to; access covers who may reach one of them. */
-export function ConnectionsSettings({ view }: { readonly view: "environments" | "access" }) {
-  return view === "access" ? (
-    <AccessSettings />
-  ) : (
-    <ConnectionsSettingsContent view="environments" accessEnvironmentId={null} />
-  );
-}
-
-function AccessSettings() {
+export function ConnectionsSettings() {
   // A link that names an environment, such as the MCP wizard's, opens the page on it. The
   // settings layout remounts this page when the link changes.
   const linkedEnvironmentId = useSearch({
@@ -235,7 +208,6 @@ function AccessSettings() {
   return (
     <ConnectionsSettingsContent
       key={accessEnvironmentId ?? "none"}
-      view="access"
       accessEnvironmentId={accessEnvironmentId}
       accessEnvironmentPicker={picker}
     />
@@ -243,11 +215,9 @@ function AccessSettings() {
 }
 
 function ConnectionsSettingsContent({
-  view,
   accessEnvironmentId,
   accessEnvironmentPicker = null,
 }: {
-  readonly view: "environments" | "access";
   readonly accessEnvironmentId: EnvironmentId | null;
   readonly accessEnvironmentPicker?: ReactNode;
 }) {
@@ -255,10 +225,6 @@ function ConnectionsSettingsContent({
   const { environments } = useEnvironments();
   const primaryEnvironment = usePrimaryEnvironment();
   const peerLinkHosts = usePeerLinkHosts();
-  const removeEnvironment = useAtomCommand(environmentCatalog.remove, { reportFailure: false });
-  const setEnvironmentEnabled = useAtomCommand(environmentCatalog.setEnabled, {
-    reportFailure: false,
-  });
   const primaryEnvironmentId = primaryEnvironment?.environmentId ?? null;
   const accessEnvironment = useEnvironment(accessEnvironmentId);
   // Desktop network, Tailscale, and WSL controls change the backend this app spawned.
@@ -269,53 +235,6 @@ function ConnectionsSettingsContent({
     ? (accessSessionState.data.permissions ?? accessSessionState.data.scopes ?? null)
     : null;
   const currentAuthPolicy = desktopBridge ? null : (accessSessionState.data?.auth.policy ?? null);
-  const savedEnvironments = environments.filter(
-    (environment) => environment.entry.target._tag !== "PrimaryConnectionTarget",
-  );
-  const listedEnvironments = savedEnvironments.filter(
-    (environment) => !isDesktopLocalConnectionTarget(environment.entry.target),
-  );
-  const savedUpdateStates = useAtomValue(
-    environmentUpdateStatesAtom(
-      environmentIdsKey(savedEnvironments.map(({ environmentId }) => environmentId)),
-    ),
-  );
-  const savedServerUpdateStates = savedEnvironments.map((environment, index) => ({
-    environment,
-    updateStatus: savedUpdateStates[index]!.status,
-  }));
-  const savedServerUpdateTargets = savedServerUpdateStates.flatMap(
-    ({ environment, updateStatus }): ServerUpdateTarget[] => {
-      const mismatch = resolveServerConfigVersionMismatch(environment.serverConfig);
-      const selfUpdate = resolveServerSelfUpdateCapability(environment.serverConfig);
-      const desktopAppUpdate = supportsDesktopAppUpdate(environment.serverConfig);
-      if (
-        !mismatch ||
-        updateStatus === "running" ||
-        !environment.entry.enabled ||
-        environment.connection.phase !== "connected" ||
-        isDesktopLocalConnectionTarget(environment.entry.target) ||
-        selfUpdate === null ||
-        (selfUpdate === "desktop-managed" && !desktopAppUpdate)
-      ) {
-        return [];
-      }
-      return [
-        {
-          environmentId: environment.environmentId,
-          serverLabel: environment.label,
-          selfUpdate,
-          installation: environment.serverConfig?.environment.capabilities.serverInstallation,
-          desktopAppUpdate,
-          targetVersion: mismatch.clientVersion,
-        },
-      ];
-    },
-  );
-  const loadBalancingEnvironments = [
-    ...(primaryEnvironment ? [primaryEnvironment] : []),
-    ...savedEnvironments.filter((environment) => environment.entry.enabled),
-  ].filter((environment) => environment.connection.phase !== "unsupported");
   const [desktopServerExposureMutationError, setDesktopServerExposureMutationError] = useState<
     string | null
   >(null);
@@ -337,19 +256,6 @@ function ConnectionsSettingsContent({
     string | null
   >(null);
   const [isRevokingOtherDesktopClients, setIsRevokingOtherDesktopClients] = useState(false);
-  const [addBackendDialogOpen, setAddBackendDialogOpen] = useState(false);
-  const [routeTarget, setRouteTarget] = useState<EnvironmentPresentation | null>(null);
-  const [savedBackendError, setSavedBackendError] = useState<string | null>(null);
-  const handleAddBackendDialogOpenChange = (open: boolean) => {
-    setAddBackendDialogOpen(open);
-    if (open) {
-      setRouteTarget(null);
-    } else {
-      setSavedBackendError(null);
-    }
-  };
-  const [removingSavedEnvironmentId, setRemovingSavedEnvironmentId] =
-    useState<EnvironmentId | null>(null);
   const [isUpdatingDesktopServerExposure, setIsUpdatingDesktopServerExposure] = useState(false);
   const [isUpdatingTailscaleServe, setIsUpdatingTailscaleServe] = useState(false);
   const [isUpdatingWslBackend, setIsUpdatingWslBackend] = useState(false);
@@ -389,13 +295,13 @@ function ConnectionsSettingsContent({
   );
   const canReadAccess = useEnvironmentScope(accessEnvironmentId, AuthAccessReadScope);
   const canWriteAccess = useEnvironmentScope(accessEnvironmentId, AuthAccessWriteScope);
+  const canWriteSettings = useEnvironmentScope(accessEnvironmentId, AuthSettingsWriteScope);
   const canReadRelay = useEnvironmentScope(accessEnvironmentId, AuthRelayReadScope);
   const canMaintain = useEnvironmentScope(accessEnvironmentId, AuthEnvironmentMaintainScope);
   const canManageRelay = useEnvironmentScope(accessEnvironmentId, AuthRelayWriteScope);
   const canManageLocalBackend = isPrimaryAccess && !isLocalEnvironmentDisabled() && canMaintain;
-  const showsAccess = view === "access";
   const authAccessChanges = useEnvironmentQuery(
-    showsAccess && canReadAccess && accessEnvironmentId !== null
+    canReadAccess && accessEnvironmentId !== null
       ? authEnvironment.accessChanges({
           environmentId: accessEnvironmentId,
           input: null,
@@ -410,10 +316,10 @@ function ConnectionsSettingsContent({
     reportFailure: false,
   });
   const desktopNetworkAccess = useEnvironmentQuery(
-    showsAccess && canManageLocalBackend && desktopBridge ? desktopNetworkAccessStateAtom : null,
+    canManageLocalBackend && desktopBridge ? desktopNetworkAccessStateAtom : null,
   );
   const desktopWsl = useEnvironmentQuery(
-    showsAccess && canManageLocalBackend && desktopBridge ? desktopWslStateAtom : null,
+    canManageLocalBackend && desktopBridge ? desktopWslStateAtom : null,
   );
   const desktopWslState = desktopWsl.data;
   const desktopWslError = desktopWslMutationError ?? desktopWsl.error;
@@ -655,54 +561,6 @@ function ConnectionsSettingsContent({
       );
     }
     setIsRevokingOtherDesktopClients(false);
-  };
-
-  const handleSetSavedBackendEnabled = async (environmentId: EnvironmentId, enabled: boolean) => {
-    setSavedBackendError(null);
-    const result = await setEnvironmentEnabled({ environmentId, enabled });
-    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-      const error = squashAtomCommandFailure(result);
-      const message =
-        error instanceof Error
-          ? error.message
-          : `Failed to switch the backend ${enabled ? "on" : "off"}.`;
-      setSavedBackendError(message);
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: `Could not switch backend ${enabled ? "on" : "off"}`,
-          description: message,
-        }),
-      );
-    }
-  };
-
-  const removeSavedBackend = async (environment: EnvironmentPresentation) => {
-    const environmentId = environment.environmentId;
-    setRemovingSavedEnvironmentId(environmentId);
-    setSavedBackendError(null);
-    const result = await removeEnvironment(environmentId);
-    setRemovingSavedEnvironmentId(null);
-    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-      const error = squashAtomCommandFailure(result);
-      const message = error instanceof Error ? error.message : "Failed to remove backend.";
-      setSavedBackendError(message);
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Could not remove backend",
-          description: message,
-        }),
-      );
-    }
-  };
-
-  const handleRemoveSavedBackend = async (environment: EnvironmentPresentation) => {
-    const confirmed = await requestConfirmDialog(
-      `Remove ${environment.label} from this device?\nThis forgets its pairing, credentials, and cached threads here. Switch it off instead to keep it saved.`,
-      { variant: "destructive" },
-    );
-    if (confirmed === true) await removeSavedBackend(environment);
   };
 
   // T3 Connect devices waiting for approval have their own list.
@@ -1660,63 +1518,79 @@ function ConnectionsSettingsContent({
     </>
   );
 
-  if (showsAccess) return <SettingsPageContainer>{primarySettings}</SettingsPageContainer>;
-
   return (
     <SettingsPageContainer>
-      {desktopBridge ? (
-        <SettingsSection id="this-app" title="This app">
-          <LocalEnvironmentSetting />
+      {primarySettings}
+      {accessServerConfig !== null ? (
+        <SettingsSection title="Sharing">
+          <SharingSwitchRow
+            {...searchableSetting("guest-links")}
+            description="Share a chat with a guest who watches it live in their browser and sends messages you approve. Turning it off stops every guest link."
+            checked={accessServerConfig.settings.guestSharingEnabled}
+            onChange={(enabled) => updateAccessSettings({ guestSharingEnabled: enabled })}
+            canWrite={canWriteSettings}
+            // Guests arrive through T3 Connect; turning guest links off still works without it.
+            managed={
+              accessServerConfig.settings.guestSharingEnabled
+                ? undefined
+                : managedCapabilityDenial(accessServerConfig.managedPolicy, "connect")
+            }
+          />
+          {accessServerConfig.environment.capabilities.peerLinks === true ? (
+            <SharingSwitchRow
+              {...searchableSetting("linked-environments-beta")}
+              description="Let agents and bots here work on your other machines, and theirs here. Turn it on for each machine, then link them. While off, nothing new starts over a link; running tasks finish."
+              checked={accessServerConfig.settings.linkedEnvironmentsEnabled}
+              onChange={(enabled) => updateAccessSettings({ linkedEnvironmentsEnabled: enabled })}
+              canWrite={canWriteSettings}
+            />
+          ) : null}
         </SettingsSection>
       ) : null}
-      <SettingsSection
-        {...searchableSetting("remote-environments")}
-        title="Environments"
-        headerAction={
-          <div className="flex items-center gap-1">
-            {savedServerUpdateTargets.length > 0 ? (
-              <ServerUpdatesAction targets={savedServerUpdateTargets} variant="ghost-muted" />
-            ) : null}
-            <AddEnvironmentDialog
-              open={addBackendDialogOpen}
-              routeTarget={routeTarget}
-              error={savedBackendError}
-              savedEnvironments={savedEnvironments}
-              onOpenChange={handleAddBackendDialogOpenChange}
-              onErrorChange={setSavedBackendError}
-            />
-          </div>
-        }
-      >
-        {listedEnvironments.map((environment) => (
-          <SavedBackendListRow
-            key={environment.environmentId}
-            environment={environment}
-            removingEnvironmentId={removingSavedEnvironmentId}
-            onSetEnabled={handleSetSavedBackendEnabled}
-            onRemove={handleRemoveSavedBackend}
-            onAddRoute={(target) => {
-              setRouteTarget(target);
-              setSavedBackendError(null);
-              setAddBackendDialogOpen(true);
-            }}
-          />
-        ))}
-        <CloudRemoteEnvironmentRows
-          primaryEnvironmentId={primaryEnvironmentId}
-          savedEnvironments={savedEnvironments}
-        />
-      </SettingsSection>
-      {peerLinkHosts.map((environment, index) => (
+      {accessEnvironment !== null &&
+      peerLinkHosts.some((host) => host.environmentId === accessEnvironmentId) ? (
         <LinkedEnvironmentsSettings
-          key={environment.environmentId}
-          environmentId={environment.environmentId}
-          environmentLabel={peerLinkHosts.length > 1 ? environment.label : null}
-          isSearchTarget={index === 0}
+          environmentId={accessEnvironment.environmentId}
+          environmentLabel={null}
+          isSearchTarget
         />
-      ))}
-      <LoadBalancingSettings environments={loadBalancingEnvironments} />
-      <PullRequestRoutingSettings environments={loadBalancingEnvironments} />
+      ) : null}
+      <SavedEnvironmentsSettings />
     </SettingsPageContainer>
+  );
+}
+
+function SharingSwitchRow({
+  id,
+  title,
+  description,
+  checked,
+  onChange,
+  canWrite,
+  managed,
+}: {
+  readonly id: string;
+  readonly title: string;
+  readonly description: string;
+  readonly checked: boolean;
+  readonly onChange: (enabled: boolean) => void;
+  readonly canWrite: boolean;
+  readonly managed?: string | undefined;
+}) {
+  return (
+    <SettingsRow
+      id={id}
+      title={title}
+      description={description}
+      managed={managed}
+      control={
+        <Switch
+          checked={checked}
+          disabled={!canWrite || managed !== undefined}
+          onCheckedChange={(next) => onChange(Boolean(next))}
+          aria-label={title}
+        />
+      }
+    />
   );
 }

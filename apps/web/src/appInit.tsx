@@ -27,7 +27,6 @@ import {
   startBotNotifications,
   startThreadNotifications,
 } from "./components/ThreadNotificationCoordinator";
-import { startGuideRunNotifications } from "./components/pullRequest/guide/PullRequestGuideRunCoordinator";
 import { APP_BASE_NAME, APP_DISPLAY_NAME, APP_STAGE_LABEL, APP_VERSION } from "./branding";
 import { resolveServerBackedAppDisplayName, resolveWindowTitle } from "./branding.logic";
 import { isElectron } from "./env";
@@ -279,7 +278,7 @@ export function startAppServices(): AppRouter {
     pendingThreadIdsAtom: threadEnvironment.pendingThreadIdsAtom,
   });
   startMainAppLocationTracking(router);
-  startWorkspaceFocus(router);
+  startWorkspaceFocus();
   startBackgroundThreadAnnouncements(appAtomRegistry, router);
   startThreadVisitedMigration(appAtomRegistry);
 
@@ -290,7 +289,6 @@ export function startAppServices(): AppRouter {
   startPermissionUpdateNotices(router);
   startThreadNotifications(appAtomRegistry, router);
   startBotNotifications(appAtomRegistry, router);
-  startGuideRunNotifications(appAtomRegistry, router);
   startStuckControlDetection({
     routeId: () => router.state.matches.at(-1)?.routeId,
     onRoute: (listener) => router.subscribe("onResolved", listener),

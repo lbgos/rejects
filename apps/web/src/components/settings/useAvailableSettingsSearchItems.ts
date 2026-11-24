@@ -12,10 +12,7 @@ import { useEnvironmentQuery } from "~/state/query";
 import { useEnvironmentScope } from "~/state/session";
 import { isWslSettingsRowVisible } from "./ConnectionsSettings.logic";
 import { isProviderSettingsEnvironmentAvailable } from "./ProviderSettingsPanel.logic";
-import {
-  filterAvailableSettingsSearchItems,
-  getThreadAutoSettlementSearchAvailability,
-} from "./settingsSearch";
+import { filterAvailableSettingsSearchItems } from "./settingsSearch";
 
 export function useAvailableSettingsSearchItems() {
   const { environments } = useEnvironments();
@@ -29,21 +26,12 @@ export function useAvailableSettingsSearchItems() {
         hasServerConfig: environment.serverConfig !== null,
       }),
     ) === true;
-  // Any machine that offers it; the row then shows for a settings scope where all selected ones do.
-  const hasFastWorktreeCheckoutEnvironment =
-    environments.some(
-      (environment) =>
-        environment.connection.phase === "connected" &&
-        environment.serverConfig?.environment.capabilities.fastWorktreeCheckout === true,
-    ) === true;
   const hasTextGeneratorsEnvironment =
     environments.some(
       (environment) =>
         environment.serverConfig !== null &&
         environment.serverConfig.managedPolicy?.limits?.providers?.allowedDrivers === undefined,
     ) === true;
-  const hasThreadAutoSettlement =
-    getThreadAutoSettlementSearchAvailability(environments).eligibleEnvironmentIds.length > 0;
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const canMaintain = useEnvironmentScope(primaryEnvironmentId, AuthEnvironmentMaintainScope);
   const hasPeerLinkHost = usePeerLinkHosts().length > 0;
@@ -69,10 +57,8 @@ export function useAvailableSettingsSearchItems() {
     hasProviderSettingsEnvironment,
     canManageLocalBackend,
     isWslSettingsRowVisible: wslSettingsRowVisible,
-    hasThreadAutoSettlement,
     managedTunnelActive,
     hasPeerLinkHost,
-    hasFastWorktreeCheckoutEnvironment,
     hasTextGeneratorsEnvironment,
     hasPrimaryEnvironment: primaryEnvironmentId !== null,
     hasCallPolicy,

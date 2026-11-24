@@ -16,7 +16,7 @@ export interface T3ProjectFileState {
   scripts: ReadonlyArray<T3ProjectFileScript>;
 }
 
-export function useT3ProjectFileState(
+function useT3ProjectFileState(
   environmentId: EnvironmentId,
   cwd: string | null,
 ): T3ProjectFileState {

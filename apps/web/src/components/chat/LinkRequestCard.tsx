@@ -393,7 +393,7 @@ function LinkRequestDialog(props: {
             {useExisting ? (
               <p className="text-xs text-muted-foreground">
                 This environment is already linked to {targetName}. The agent can use that link as
-                it is; change its access in Settings → Environments.
+                it is; change its access in Settings → Sharing & access.
               </p>
             ) : null}
             {error !== null ? (

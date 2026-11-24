@@ -214,7 +214,7 @@ export const PreviewCloseInput = Schema.Struct({
 });
 export type PreviewCloseInput = typeof PreviewCloseInput.Type;
 
-export const BROWSER_RECORDING_FRAME_RATES = [30, 60] as const;
+const BROWSER_RECORDING_FRAME_RATES = [30, 60] as const;
 export const BrowserRecordingFrameRate = Schema.Literals(BROWSER_RECORDING_FRAME_RATES);
 export type BrowserRecordingFrameRate = typeof BrowserRecordingFrameRate.Type;
 export const DEFAULT_BROWSER_RECORDING_FRAME_RATE: BrowserRecordingFrameRate = 30;

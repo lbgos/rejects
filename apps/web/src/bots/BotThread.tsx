@@ -5,11 +5,13 @@ import {
   type ModelSelection,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
+import { useAtomValue } from "@effect/atom-react";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { EllipsisIcon, PauseIcon } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { resolveSidebarThreadStatus } from "../components/Sidebar.logic";
 import type { ComposerBannerStackItem } from "../components/chat/ComposerBannerStack";
+import { canShareWithGuestAtom } from "../components/chat/guestShareAvailability";
 import { Button } from "../components/ui/button";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../components/ui/menu";
 import { useComposerHandleContext } from "../composerHandleContext";
@@ -191,6 +193,7 @@ function BotHeader({ target }: { target: ScopedThreadRef }) {
   const bot = useBot(target.environmentId, target.threadId);
   const schedules = useBotSchedules(target);
   const { run } = useBotActions(target.environmentId);
+  const canShareWithGuest = useAtomValue(canShareWithGuestAtom(target.environmentId));
   if (!bot) return null;
   return (
     <div data-bot-header className="flex min-w-0 flex-1 items-center gap-2">
@@ -202,7 +205,12 @@ function BotHeader({ target }: { target: ScopedThreadRef }) {
         </div>
       </div>
       <div data-bot-header-actions className="flex shrink-0 items-center">
-        <BotActionsMenu bot={bot} schedules={schedules} onRun={run} />
+        <BotActionsMenu
+          bot={bot}
+          schedules={schedules}
+          onRun={run}
+          canShareWithGuest={canShareWithGuest}
+        />
       </div>
     </div>
   );
@@ -233,10 +241,12 @@ function BotActionsMenu({
   bot,
   schedules,
   onRun,
+  canShareWithGuest,
 }: {
   bot: BotSummary;
   schedules: ReturnType<typeof useBotSchedules>;
   onRun: ReturnType<typeof useBotActions>["run"];
+  canShareWithGuest: boolean;
 }) {
   return (
     <Menu>
@@ -252,7 +262,7 @@ function BotActionsMenu({
         <EllipsisIcon />
       </MenuTrigger>
       <MenuPopup data-bot-surface align="end" collisionPadding={menuCollisionPadding()}>
-        {botActions({ bot, schedules, where: "header" }).flatMap((action) => {
+        {botActions({ bot, schedules, where: "header", canShareWithGuest }).flatMap((action) => {
           const Icon = BOT_ACTION_ICONS[action.icon];
           const item = (
             <MenuItem

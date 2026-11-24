@@ -1,4 +1,3 @@
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import type {
   EnvironmentId,
@@ -84,31 +83,4 @@ export function draftModelSelectionApplies(
   threadStarted: boolean,
 ): boolean {
   return !threadStarted || draft?.modelSelectionExplicit === true;
-}
-
-export function resolveThreadActionProjectRef(
-  context: ChatThreadActionContext,
-): ScopedProjectRef | null {
-  if (context.activeThread) {
-    return scopeProjectRef(context.activeThread.environmentId, context.activeThread.projectId);
-  }
-  if (context.activeDraftThread) {
-    return scopeProjectRef(
-      context.activeDraftThread.environmentId,
-      context.activeDraftThread.projectId,
-    );
-  }
-  return context.defaultProjectRef;
-}
-
-export async function startNewThreadFromContext(
-  context: ChatThreadActionContext,
-): Promise<boolean> {
-  const projectRef = resolveThreadActionProjectRef(context);
-  if (!projectRef) {
-    return false;
-  }
-
-  await context.handleNewThread(projectRef);
-  return true;
 }

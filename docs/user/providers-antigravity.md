@@ -119,9 +119,7 @@ Antigravity groups subagent activity into batches. Open a batch and select
 **Subagent work** (**Work** on mobile) to read each child's role, prompt, and recent steps. This view
 is read only: you cannot message or control individual subagents, and an idle
 batch does not confirm that every child succeeded. If Antigravity did not record
-which children a batch started, the view says so. See
-[agent work](./thread-sidebar.md#inspect-agent-work) for where to inspect
-activity.
+which children a batch started, the view says so.
 
 ## Accounts and removal
 
@@ -155,10 +153,6 @@ before starting more work. Ordinary follow-ups wait until the running turn ends.
 T3 does not support Antigravity goal status, pause, resume, or clear commands.
 
 ## Check access and troubleshoot
-
-Open **Usage > Limits** to see the remaining Gemini and shared Claude/GPT allowances
-for Google sign-ins. Each group has separate five-hour and weekly limits and reset
-times. Limits refresh with provider status and include usage outside T3 Code.
 
 A server restart keeps your Google sign-in. The provider shows the saved account
 until a session, a refresh, or a sign-out reports something new.

@@ -3,14 +3,11 @@ import type {
   EnvironmentId,
   ServerConfig,
   ServerSettings,
-  SourceControlDiscoveryResult,
   SourceControlRepositoryInfo,
 } from "@t3tools/contracts";
 import { SourceControlProviderKind } from "@t3tools/contracts";
 import { cloneUrlRepositoryPath } from "@t3tools/shared/cloneUrl";
-import { newProjectFolderName } from "@t3tools/shared/path";
 import * as Arr from "effect/Array";
-import * as Option from "effect/Option";
 import * as Order from "effect/Order";
 
 import {
@@ -68,18 +65,8 @@ export type AddProjectCloneFlow =
 const ADD_PROJECT_REMOTE_PROVIDER_SOURCES: ReadonlyArray<SourceControlProviderKind> =
   sourceControlClients.definitions.map((definition) => definition.kind);
 
-export function addProjectRemoteSourceLabel(source: AddProjectRemoteSource): string {
+function addProjectRemoteSourceLabel(source: AddProjectRemoteSource): string {
   return source === "url" ? "Git URL" : sourceControlClients.get(source).pickerLabel;
-}
-
-export function addProjectRemoteSourcePathHint(source: AddProjectRemoteSource): string {
-  return source === "url" ? "URL" : sourceControlClients.get(source).repositoryPathHint;
-}
-
-export function addProjectRemoteSourceProvider(
-  source: AddProjectRemoteSource,
-): SourceControlProviderKind | null {
-  return source === "url" ? null : source;
 }
 
 const REPOSITORY_SHORTHAND = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9._-]+(?:\.git)?$/;
@@ -161,35 +148,6 @@ export function sortAddProjectProviderSources(
   );
 }
 
-const READY: AddProjectRemoteSourceReadinessEntry = { ready: true, hint: null };
-const UNAVAILABLE: AddProjectRemoteSourceReadinessEntry = {
-  ready: false,
-  hint: "Provider status unavailable. Open Source Control settings and rescan.",
-};
-
-export function buildAddProjectRemoteSourceReadiness(
-  discovery: SourceControlDiscoveryResult | null,
-): AddProjectRemoteSourceReadiness {
-  const providerByKind = new Map(
-    (discovery?.sourceControlProviders ?? []).map((provider) => [provider.kind, provider]),
-  );
-  return (source) => {
-    if (source === "url") return READY;
-    const provider = providerByKind.get(source);
-    if (!provider) return UNAVAILABLE;
-    if (provider.status !== "available") return { ready: false, hint: provider.installHint };
-    if (provider.auth.status === "unauthenticated") {
-      return {
-        ready: false,
-        hint:
-          Option.getOrNull(provider.auth.detail) ??
-          `${provider.label} is not authenticated. Open Source Control settings for setup guidance.`,
-      };
-    }
-    return READY;
-  };
-}
-
 export function getAddProjectInitialQuery(baseDirectory: string | null | undefined): string {
   const trimmed = baseDirectory?.trim() ?? "";
   return trimmed.length === 0 ? "~/" : ensureBrowseDirectoryPath(trimmed);
@@ -244,49 +202,12 @@ export function getCloneDestinationPath(
   return `${base}${base.endsWith("\\") ? name.replaceAll("/", "\\") : name}`;
 }
 
-export function getNewProjectPathPreview(newProjectsRoot: string, name: string): string {
-  return getCloneDestinationPath(newProjectsRoot, newProjectFolderName(name));
-}
-
 export interface NewProjectPublishTarget {
   readonly definition: SourceControlDefinition;
   readonly owner: string | null;
 }
 
-export function getNewProjectPublishTargets(
-  discovery: SourceControlDiscoveryResult | null,
-  offered: OfferedSourceControlProviders | undefined,
-): ReadonlyArray<NewProjectPublishTarget> {
-  const readiness = buildAddProjectRemoteSourceReadiness(discovery);
-  return sourceControlClients.definitions.flatMap((definition) => {
-    if (!isSourceControlProviderOffered(offered, definition.kind)) return [];
-    if (!readiness(definition.kind).ready) return [];
-    const provider = discovery?.sourceControlProviders.find(
-      (candidate) => candidate.kind === definition.kind,
-    );
-    const placement = definition.newRepositoryOwner(
-      provider ? Option.getOrNull(provider.auth.account) : null,
-    );
-    return placement === null ? [] : [{ definition, owner: placement.owner }];
-  });
-}
-
-export function getNewProjectPublishTarget(
-  targets: ReadonlyArray<NewProjectPublishTarget>,
-  kind: SourceControlProviderKind | null,
-): NewProjectPublishTarget | null {
-  return targets.find((target) => target.definition.kind === kind) ?? targets[0] ?? null;
-}
-
-export function getNewProjectRepository(
-  target: Pick<NewProjectPublishTarget, "owner">,
-  workspaceRoot: string,
-): string {
-  const folderName = workspaceRoot.split(/[\\/]/).filter(Boolean).at(-1) ?? "";
-  return target.owner ? `${target.owner}/${folderName}` : folderName;
-}
-
-export function getCloneDestinationBrowsePath(input: {
+function getCloneDestinationBrowsePath(input: {
   readonly browseDirectoryPath: string;
   readonly selectedDirectoryName: string;
   readonly cloneDirectoryName: string;

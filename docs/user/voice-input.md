@@ -97,7 +97,7 @@ sees the recording, which runs in T3 Code itself.
 **Dictation shortcut** in Voice settings picks how the keybinding behaves:
 **Auto** tap-toggles or records while held, **Hold** records only while the keys
 are down, and **Toggle** always needs a second press. Change the chord itself in
-[Keybindings settings](./keybindings.md).
+`keybindings.json` in the server's state directory.
 
 ## Improve recognition
 

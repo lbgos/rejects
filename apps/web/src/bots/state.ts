@@ -85,7 +85,7 @@ export function readBots(environmentId: EnvironmentId): readonly BotSummary[] {
 export function subscribeBots(listener: () => void): () => void {
   return useBotStore.subscribe(listener);
 }
-export function readBotProjectKeys(): ReadonlySet<string> {
+function readBotProjectKeys(): ReadonlySet<string> {
   return useBotStore.getState().projectKeys;
 }
 export function isBotThread(
@@ -93,12 +93,6 @@ export function isBotThread(
   thread: { readonly projectId: string },
 ): boolean {
   return isBotProject(readBotProjectKeys(), { environmentId, projectId: thread.projectId });
-}
-export function withoutBotThreads<
-  T extends { readonly environmentId: string; readonly projectId: string },
->(keys: ReadonlySet<string>, threads: readonly T[]): readonly T[] {
-  if (keys.size === 0) return threads;
-  return threads.filter((thread) => !isBotProject(keys, thread));
 }
 export function withoutBotProjects<
   T extends { readonly environmentId: string; readonly id: string },
@@ -191,14 +185,6 @@ export function isBotProject(
   item: { readonly environmentId: string; readonly projectId: string },
 ) {
   return keys.has(`${item.environmentId}:${item.projectId}`);
-}
-export function useUnreadBotCount() {
-  return useBotStore((s) =>
-    Object.values(s.byEnvironment).reduce(
-      (count, bots) => count + bots.filter((b) => b.unread).length,
-      0,
-    ),
-  );
 }
 /**
  * Opening a bot reads its notification once; a later "Mark unread" stays unread. A cold start

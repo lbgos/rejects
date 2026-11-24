@@ -1,5 +1,6 @@
 import { BotChromeContext } from "../bots/context";
 import { botPanelOn, useBotUi } from "../bots/ui";
+import { isBotProject, useBotProjectKeys } from "../bots/state";
 import { ChildThreadApprovals } from "./chat/ChildThreadApprovals";
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
@@ -231,10 +232,7 @@ import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl"
 import { isPreviewFocused } from "../lib/previewFocus";
 import { getTerminalFocusOwner } from "../lib/terminalFocus";
 import { draftModelSelectionApplies, threadHasStarted } from "../lib/chatThreadActions";
-import {
-  deriveLogicalProjectKeyFromSettings,
-  selectProjectGroupingSettings,
-} from "@t3tools/client-runtime/state/project-grouping";
+import { selectProjectGroupingSettings } from "@t3tools/client-runtime/state/project-grouping";
 import {
   isSameSidebarThreadRef,
   useSidebarPendingFileDropStore,
@@ -1154,19 +1152,14 @@ export default function ChatView(props: ChatViewProps) {
     startNewThreadForProject(activeProjectRef, handleNewThread);
   };
   const handleNewThreadInActiveProjectStable = useStableCallback(handleNewThreadInActiveProject);
+  const botProjectKeys = useBotProjectKeys();
+  const inBotProject = activeProject
+    ? isBotProject(botProjectKeys, {
+        environmentId: activeProject.environmentId,
+        projectId: activeProject.id,
+      })
+    : false;
   const projectGroupingSettings = selectProjectGroupingSettings(settings);
-  const activeDraftLogicalProjectKey =
-    !isServerThread && activeProject
-      ? deriveLogicalProjectKeyFromSettings(activeProject, projectGroupingSettings)
-      : undefined;
-  const handleOpenDraftProjectSettings = () => {
-    if (!activeDraftLogicalProjectKey) return;
-    void navigate({
-      to: "/projects/$projectKey",
-      params: { projectKey: activeDraftLogicalProjectKey },
-    });
-  };
-  const handleOpenDraftProjectSettingsStable = useStableCallback(handleOpenDraftProjectSettings);
   const activeEnvironmentBootstrapComplete = useEnvironmentShellHasSnapshot(
     activeThread?.environmentId ?? null,
   );
@@ -3425,10 +3418,9 @@ export default function ChatView(props: ChatViewProps) {
                 parentThreadLink={headerParentThreadLink}
                 onOpenThread={onOpenRelatedThreadStable}
                 rightPanelOpen={inlineRightPanelOwnsTitleBar}
-                onNewThreadInProject={handleNewThreadInActiveProjectStable}
-                {...(activeDraftLogicalProjectKey
-                  ? { onOpenProjectSettings: handleOpenDraftProjectSettingsStable }
-                  : {})}
+                onNewThreadInProject={
+                  inBotProject ? undefined : handleNewThreadInActiveProjectStable
+                }
                 {...(threadFindEnabled ? { onFindInThread: openThreadFindStable } : {})}
               />
             )}

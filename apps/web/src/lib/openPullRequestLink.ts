@@ -1,7 +1,6 @@
 import { parsePullRequestAnchor } from "@t3tools/shared/pullRequestAnchor";
 import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
-import { useNavigate } from "@tanstack/react-router";
 import { type MouseEvent } from "react";
 
 import {
@@ -61,7 +60,6 @@ export function useOpenChangeRequestLink(
   targetEnvironmentId?: EnvironmentId,
   onCommitUnavailable?: () => void,
 ) => boolean {
-  const navigate = useNavigate();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const openInApp = useClientSettings((settings) => settings.pullRequestLinksOpenInApp);
   const ignoreWhitespace = useClientSettings((settings) => settings.diffIgnoreWhitespace);
@@ -90,49 +88,20 @@ export function useOpenChangeRequestLink(
       });
       if (target === null) return false;
       const { project, repository, number, host } = target;
+      // Without a thread panel to show it in, the link opens like any other.
+      if (!resolvedPanelRef) return false;
       const revealUrl = parsePullRequestAnchor(targetUrl) === null ? undefined : targetUrl;
-      const pullRequestsSearch = {
+      useRightPanelStore.getState().openPullRequest(resolvedPanelRef, {
+        // The standalone PR panel has a synthetic ref; each tab keeps its real environment.
+        ...(resolvedPanelRef.environmentId === project.environmentId
+          ? {}
+          : { environmentId: project.environmentId }),
+        projectId: project.id,
+        ...(host === undefined ? {} : { host }),
         repository,
+        url: targetUrl,
+        ...(revealUrl === undefined ? {} : { revealUrl }),
         number,
-        ...(host === undefined ? {} : { selectedHost: host }),
-        selectedProjectId: project.id,
-        selectedEnvironmentId: project.environmentId,
-      };
-      if (resolvedPanelRef) {
-        useRightPanelStore.getState().openPullRequest(resolvedPanelRef, {
-          // The standalone PR panel has a synthetic ref; each tab keeps its real environment.
-          ...(resolvedPanelRef.environmentId === project.environmentId
-            ? {}
-            : { environmentId: project.environmentId }),
-          projectId: project.id,
-          ...(host === undefined ? {} : { host }),
-          repository,
-          url: targetUrl,
-          ...(revealUrl === undefined ? {} : { revealUrl }),
-          number,
-        });
-        if (!resolvedThreadRef) {
-          void navigate({
-            to: "/pull-requests",
-            search: (previous) => ({
-              ...previous,
-              involvement: previous.involvement ?? "all",
-              state: previous.state ?? "all",
-              ...pullRequestsSearch,
-            }),
-            replace: true,
-          });
-        }
-        return true;
-      }
-      void navigate({
-        to: "/pull-requests",
-        search: {
-          involvement: "all",
-          state: "all",
-          ...pullRequestsSearch,
-          ...(revealUrl === undefined ? {} : { selectedUrl: revealUrl }),
-        },
       });
       return true;
     };

@@ -7,15 +7,11 @@ A T3 Connect connection goes through four parts, in this order:
 3. **The host's tunnel** (cloudflared on the host) carries the request to the host.
 4. **T3 Code on the host** answers.
 
-When a connection fails, open **Settings > Environments**, find the environment,
-and select **Details**. The first part marked as failed is the cause. Find its
-section below.
-
-To see the host's side, run `rejects connect status` on the host, or open
+When a connection fails, run `rejects connect status` on the host, or open
 **Settings > Sharing & access** on the host. Both check the host's T3 Connect
 address from the host, and say why it fails. `rejects connect` runs the same check
-when it finishes setup. This check cannot test another device's network. For a
-problem on one device, use **Details** on that device.
+when it finishes setup. This check cannot test another device's network. Find
+the failing part's section below.
 
 ## The host's tunnel is offline
 

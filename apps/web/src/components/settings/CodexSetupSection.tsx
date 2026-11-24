@@ -314,7 +314,6 @@ function ManagedCodexSetup({
   const clientCallback = !handoff && prefersClientCallback(local);
   const remoteWeb = clientCallback && !window.desktopBridge;
   const returnUrl = new URL(window.location.href);
-  if (returnUrl.pathname === "/welcome") returnUrl.hash = `agents:${environmentId}`;
   if (returnUrl.pathname === "/settings/providers")
     returnUrl.searchParams.set("instanceId", instanceId);
   const needsManualCallback = remoteWeb;
@@ -493,7 +492,6 @@ function ManagedCodexSetup({
     setTransferFailed(false);
     setRequestedMethodId(methodId);
     const returnUrl = new URL(window.location.href);
-    if (returnUrl.pathname === "/welcome") returnUrl.hash = `agents:${environmentId}`;
     if (returnUrl.pathname === "/settings/providers")
       returnUrl.searchParams.set("instanceId", instanceId);
     const { clientCallback, remoteWeb, primaryAuthEnvironmentId } =
