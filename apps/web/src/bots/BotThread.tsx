@@ -221,8 +221,8 @@ function BotHeader({ target }: { target: ScopedThreadRef }) {
     <div data-bot-header className="flex min-w-0 flex-1 items-center gap-2">
       <div className="flex min-w-0 flex-1 items-center gap-2">
         <BotAvatar bot={bot} className="size-7 bg-bot-fill ring-0" />
-        <div className="flex min-w-0 flex-col">
-          <h2 className="truncate text-sm font-medium">{bot.name}</h2>
+        <div data-bot-header-title className="flex min-w-0 flex-col">
+          <h2 className="max-w-full truncate text-sm font-medium">{bot.name}</h2>
           <BotHeaderSubtitle target={target} />
         </div>
       </div>
