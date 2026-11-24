@@ -135,7 +135,9 @@ html[data-theme-id] [data-bots-mode="true"] [data-chat-header],
    composer and the tab bar float and span nothing, so content fades to the page over
    `--bots-edge-fade` and is gone `--bots-edge-gap` before their top edge: no text reads under,
    between or beside them. `--bots-fade-end` is how much of the scroller's bottom the
-   chrome covers. A static mask; scrolling repaints nothing extra. */
+   chrome covers. A scroller that sets `--bots-fade-start` to the height of the bar over it
+   fades in under that bar too, over `--bots-edge-fade-start`. A static mask; scrolling repaints
+   nothing extra. */
 :root[data-bots-app] {
   --bots-edge-fade: 1.5rem;
   --bots-edge-gap: 0.375rem;
@@ -146,6 +148,8 @@ html[data-theme-id] [data-bots-mode="true"] [data-chat-header],
     [data-bots-scroller],
     [data-settings-index-list] [data-slot="scroll-area-viewport"]
   ) {
+  --bots-fade-start: 0px;
+  --bots-edge-fade-start: 0px;
   --bots-fade-end: 0px;
 }
 :root[data-bots-app]
@@ -156,11 +160,15 @@ html[data-theme-id] [data-bots-mode="true"] [data-chat-header],
   ) {
   -webkit-mask-image: linear-gradient(
     to bottom,
+    transparent var(--bots-fade-start),
+    #000 calc(var(--bots-fade-start) + var(--bots-edge-fade-start)),
     #000 calc(100% - var(--bots-fade-end) - var(--bots-edge-gap) - var(--bots-edge-fade)),
     transparent calc(100% - var(--bots-fade-end) - var(--bots-edge-gap))
   );
   mask-image: linear-gradient(
     to bottom,
+    transparent var(--bots-fade-start),
+    #000 calc(var(--bots-fade-start) + var(--bots-edge-fade-start)),
     #000 calc(100% - var(--bots-fade-end) - var(--bots-edge-gap) - var(--bots-edge-fade)),
     transparent calc(100% - var(--bots-fade-end) - var(--bots-edge-gap))
   );
@@ -180,6 +188,23 @@ html[data-theme-id] [data-bots-mode="true"] [data-chat-header],
   :has(> .chat-scroll-to-bottom)
   .messages-timeline-scroll {
   --bots-edge-gap: 3.25rem;
+}
+/* A phone's transcript is prose on the page: a line dissolves over half its height at each edge,
+   under the header and over the composer. */
+@media (max-width: 767px) {
+  :root[data-bots-app] [data-bots-mode="true"] .messages-timeline-scroll {
+    --bots-edge-fade: 0.75rem;
+    --bots-fade-start: var(--bot-chat-header-height);
+    --bots-edge-fade-start: 0.75rem;
+  }
+  /* A phone's disc is 2.25rem tall, 0.625rem over the composer's lane: the transcript is gone
+     0.375rem above its top, as it is above the composer. */
+  :root[data-bots-app]
+    [data-bots-mode="true"]
+    :has(> .chat-scroll-to-bottom)
+    .messages-timeline-scroll {
+    --bots-edge-gap: 4rem;
+  }
 }
 /* A tab screen's list ends above the tab bar. */
 @media (max-width: 767px) {
@@ -1954,11 +1979,22 @@ html[data-bots-app]:has(
    on a pseudo-element behind the bar's content and follow the bar's scrolled state (set by its
    scroller), in one short fade: nothing is painted while the page is still, and the edge is the
    same in a still frame as it is on screen. */
-:root[data-bots-app] :is([data-chat-header], [data-bots-top-bar], [data-settings-page-header]) {
+:root[data-bots-app]
+  :is(
+    [data-chat-header],
+    [data-bots-top-bar],
+    [data-settings-page-header],
+    [data-bots-page] > header
+  ) {
   isolation: isolate;
 }
 :root[data-bots-app]
-  :is([data-chat-header], [data-bots-top-bar], [data-settings-page-header])::after {
+  :is(
+    [data-chat-header],
+    [data-bots-top-bar],
+    [data-settings-page-header],
+    [data-bots-page] > header
+  )::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -1973,13 +2009,19 @@ html[data-bots-app]:has(
   :is(
     [data-chat-header],
     [data-bots-top-bar],
-    [data-settings-page-header]
+    [data-settings-page-header],
+    [data-bots-page] > header
   )[data-scrolled="true"]::after {
   opacity: 1;
 }
 @media (prefers-reduced-motion: no-preference) {
   :root[data-bots-app]
-    :is([data-chat-header], [data-bots-top-bar], [data-settings-page-header])::after {
+    :is(
+      [data-chat-header],
+      [data-bots-top-bar],
+      [data-settings-page-header],
+      [data-bots-page] > header
+    )::after {
     transition: opacity 180ms ease-out !important;
   }
 }
@@ -2088,12 +2130,26 @@ html[data-bots-app]:has(
     color: var(--muted-foreground);
     opacity: 1;
   }
-  /* A pushed page names itself in the middle of its bar: a chat by its bot, as a panel does. */
+  /* A pushed page names itself on the screen's axis: a chat by its bot, as a panel does. The lane
+     runs between the two discs at equal insets. Its side columns are equal while the name fits,
+     so the name and the state under it are centred; the avatar hangs at the end of the first. A
+     name too long for that takes the last column's room before it is cut. */
   :root[data-bots-app] [data-bot-header] > :first-child {
-    justify-content: center;
+    position: absolute;
+    inset-inline: 3.5rem;
+    bottom: 0;
+    display: grid;
+    grid-template-columns: minmax(1.75rem, 1fr) minmax(0, auto) minmax(0, 1fr);
+    height: var(--workspace-topbar-height);
   }
   :root[data-bots-app] [data-bot-header] [data-bot-avatar] {
-    margin-inline-start: 0.5rem;
+    justify-self: end;
+  }
+  :root[data-bots-app] [data-bot-header-title] {
+    align-items: center;
+  }
+  :root[data-bots-app] [data-bot-header-actions] {
+    margin-inline-start: auto;
   }
   :root[data-bots-app] [data-bots-page] > header [data-slot="button"] {
     border: 1px solid transparent;
@@ -2104,9 +2160,12 @@ html[data-bots-app]:has(
       linear-gradient(180deg, var(--bots-raised-top), var(--bots-raised-bottom)) border-box;
     box-shadow: var(--bots-raised-shadow);
   }
-  /* The composer's placeholder reads on the lit capsule. */
+  /* The composer's placeholder reads on the lit capsule, on one line: a long bot name is cut. */
   :root[data-bots-app] [data-bot-composer="true"] [data-composer-placeholder] {
+    overflow: hidden;
     color: color-mix(in srgb, var(--foreground) 60%, transparent);
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   /* Code keeps its lines: a wrapped line loses the indentation that carries its meaning, so a
      long one scrolls sideways inside the well. The well's far edge is shaded only while more
