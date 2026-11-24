@@ -247,24 +247,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/appearance",
   },
   {
-    id: "project-grouping",
-    title: msg("Project grouping"),
-    to: "/settings/general",
-    searchTerms: ["combine matching repositories environments sidebar"],
-  },
-  {
-    id: "project-order",
-    title: msg("Project order"),
-    to: "/settings/general",
-    searchTerms: ["sort projects sidebar manual created recent"],
-  },
-  {
-    id: "working-shelf",
-    title: msg("Working section"),
-    to: "/settings/general",
-    searchTerms: ["hide fold running monitoring threads inbox sidebar shelf"],
-  },
-  {
     id: "tool-call-visibility",
     title: "Tool calls in chat",
     to: "/settings/chat",
