@@ -51,7 +51,10 @@ import { BotOverlays } from "../bots/BotOverlays";
 import { BotTabHost } from "../bots/BotTabHost";
 import { UiSpotlight } from "../bots/UiSpotlight";
 import { BotsSidebar } from "../bots/BotsSidebar";
+import { needsFirstRun } from "../bots/firstRun.logic";
+import { usePrimaryEnvironmentId } from "../state/environments";
 import { useBotsMode } from "../bots/mode";
+import { useBots, useBotsLoaded } from "../bots/state";
 import { useBotUi } from "../bots/ui";
 import "../bots/bots.css";
 import { SidebarBrandWidthProbe } from "./sidebar/SidebarChrome";
@@ -435,12 +438,19 @@ function SidebarControl({ showSidebar }: { readonly showSidebar: boolean }) {
 
 export function AppSidebarLayout({
   children,
-  showSidebar = true,
+  showSidebar: sidebarWanted = true,
 }: {
   children: ReactNode;
   showSidebar?: boolean;
 }) {
   const botsMode = useBotsMode();
+  // First run is a page of its own, as on a phone: the sidebar has no bots to list until setup
+  // has made the main bot.
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const setupBots = useBots(primaryEnvironmentId);
+  const botsLoaded = useBotsLoaded(primaryEnvironmentId);
+  const settingUp = botsMode.home && botsLoaded && needsFirstRun(setupBots);
+  const showSidebar = sidebarWanted && !settingUp;
   // bots.css keys off this attribute, not `:root:has()`: Chromium restyles the whole document for a
   // root `:has()` on every DOM change, such as a streamed paragraph or the working timer's tick.
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- mirrors bots mode onto <html>, outside React's tree, before paint

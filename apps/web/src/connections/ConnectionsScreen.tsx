@@ -236,7 +236,7 @@ export function ConnectionsScreen({
         className={cn(
           "min-h-0 flex-1 overflow-y-auto",
           isMobile && "pt-(--bot-chat-header-height)",
-          isMobile && page === null ? "pb-(--bots-tab-bar-space)" : "pb-safe",
+          isMobile && page === null ? "pb-(--bots-tab-bar-clearance)" : "pb-safe",
         )}
         onScroll={
           isMobile ? (event) => setTitleScrolled(event.currentTarget.scrollTop > 40) : undefined
@@ -285,24 +285,18 @@ export function ConnectionsScreen({
             />
           ) : page?.type === "account" ? (
             // A site nobody signed in to yet: its page offers the sign-in. While the vault is down
-            // the notice says so above it, and the sign-in waits.
-            <>
-              {state.available ? null : (
-                <Section>
-                  <VaultDownNotice onRetry={refresh} />
-                </Section>
-              )}
-              <Section footer={t("A bot uses this sign-in only after you allow it here.")}>
-                <li>
-                  <Row
-                    title={t("Sign in")}
-                    value={t("Not connected")}
-                    disabled={!state.available}
-                    onClick={() => void openSheet(page.site)}
-                  />
-                </li>
-              </Section>
-            </>
+            // the notice sits in the same group, right over the sign-in it blocks.
+            <Section footer={t("A bot uses this sign-in only after you allow it here.")}>
+              {state.available ? null : <VaultDownNotice onRetry={refresh} />}
+              <li>
+                <Row
+                  title={t("Sign in")}
+                  value={state.available ? t("Not connected") : t("Unavailable")}
+                  disabled={!state.available}
+                  onClick={() => void openSheet(page.site)}
+                />
+              </li>
+            </Section>
           ) : (
             <>
               <Section title={t("Secrets")}>
@@ -640,23 +634,21 @@ function ConnectorDetail({
     );
   };
 
-  // Nothing on this page works without the vault: the notice says so once, over the connector's
-  // way in, which waits until the vault answers.
+  // Nothing on this page works without the vault: the notice says so once, in the group whose
+  // way in it blocks, which waits until the vault answers.
   if (!state.available)
     return (
       <div data-connector-page className="flex flex-col pb-6 text-sm">
         <Section>
           <VaultDownNotice onRetry={onChanged} />
-        </Section>
-        {view.kind === "gmail" ? (
-          <Section>
+          {view.kind === "gmail" ? (
             <li className={ACTION_ROW}>
               <Button size="sm" variant="outline" disabled>
                 {view.account ? t("Reconnect") : t("Connect")}
               </Button>
             </li>
-          </Section>
-        ) : null}
+          ) : null}
+        </Section>
       </div>
     );
   return (

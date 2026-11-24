@@ -686,6 +686,7 @@ function Toasts({ position }: { position: ToastPosition }) {
                 </button>
               </div>
               <Toast.Content
+                data-slot="toast-content"
                 className={cn(
                   // overflow-x:clip preserves visible vertical overflow; hidden would force overflow-y:auto
                   // and clip detail panels.

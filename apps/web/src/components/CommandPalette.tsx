@@ -3,7 +3,6 @@ import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environ
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeftIcon,
-  BotIcon,
   ClockIcon,
   MessageSquareIcon,
   MonitorIcon,
@@ -15,7 +14,6 @@ import {
   TextSearchIcon,
   UserIcon,
 } from "lucide-react";
-import { BotAvatar } from "../bots/BotAvatar";
 import { useBotsMode } from "../bots/mode";
 import { useBots } from "../bots/state";
 import { openBotDialog, openBotPanel } from "../bots/ui";
@@ -350,36 +348,6 @@ function OpenCommandPaletteDialog(props: {
     const inBotsApp = async () => {
       if (!botsMode.active) await navigate({ to: "/bots", search: { thread: undefined } });
     };
-    if (bots.length > 0) {
-      botItems.push({
-        kind: "submenu",
-        value: "action:open-bot",
-        searchTerms: ["bot", "open", "chat", "switch"],
-        title: t("Open bot…"),
-        icon: <BotIcon className={ITEM_ICON_CLASS} />,
-        addonIcon: <BotIcon className={ADDON_ICON_CLASS} />,
-        groups: [
-          {
-            value: "open-bot",
-            label: t("Bots"),
-            items: bots.map((bot) => ({
-              kind: "action" as const,
-              value: `bot:${bot.threadId}`,
-              searchTerms: ["bot", bot.name, bot.description ?? ""],
-              title: bot.name,
-              ...(bot.description ? { description: bot.description } : {}),
-              icon: <BotAvatar bot={bot} className="size-5 shrink-0" />,
-              run: async () => {
-                await navigate({
-                  to: "/$environmentId/$threadId",
-                  params: { environmentId, threadId: bot.threadId },
-                });
-              },
-            })),
-          },
-        ],
-      });
-    }
     botItems.push({
       kind: "action",
       value: "action:new-bot",
@@ -424,15 +392,7 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
-  // Bots are opened from their own group, so they stay out of the recent threads.
-  const botThreadValues = new Set(
-    bots.map((bot) => `thread:${primaryEnvironmentId}:${bot.threadId}`),
-  );
-  const rootGroups = buildRootGroups({
-    botItems,
-    actionItems,
-    recentThreadItems: recentThreadItems.filter((item) => !botThreadValues.has(item.value)),
-  });
+  const rootGroups = buildRootGroups({ botItems, actionItems, recentThreadItems });
   // Every setting goes to the palette's own matcher, so settings get the same
   // word starts and typo tolerance as chats.
   const settingsSearchItems: CommandPaletteActionItem[] = settingsForThisPlatform(

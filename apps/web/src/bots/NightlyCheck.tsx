@@ -12,7 +12,6 @@ import {
   RESTING_PROVIDER_ICON_CLASSNAME,
 } from "../components/chat/ProviderModelPicker";
 import { SETTINGS_PICKER_TRIGGER_CLASSNAME } from "../components/settings/settingsLayout";
-import { Button } from "../components/ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../components/ui/collapsible";
 import { Switch } from "../components/ui/switch";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
@@ -142,6 +141,7 @@ export function NightlyCheck({ environmentId }: { environmentId: EnvironmentId }
     );
   const lastRun = dreams?.lastRun;
   const [allChanges, setAllChanges] = useState(false);
+  const [openChange, setOpenChange] = useState<string | null>(null);
   const changes = dreams?.changes ?? [];
   const errors = lastRun?.errors ?? [];
   const bots = readBots(environmentId);
@@ -196,13 +196,16 @@ export function NightlyCheck({ environmentId }: { environmentId: EnvironmentId }
         </li>
         {lastRun ? (
           <li className={ROW}>
+            {/* The outcome has the row's width; only the time shares the label's line. */}
             <div className="min-w-0 flex-1">
-              <div className={ROW_TEXT}>{t("Last check")}</div>
+              <div className="flex items-baseline justify-between gap-3">
+                <span className={ROW_TEXT}>{t("Last check")}</span>
+                <span className={cn("shrink-0", ROW_META)}>
+                  {messageTimeLabel(Date.parse(lastRun.at))}
+                </span>
+              </div>
               <div className={cn("break-words", ROW_META)}>{runSummary(lastRun)}</div>
             </div>
-            <span className={cn("shrink-0", ROW_META)}>
-              {messageTimeLabel(Date.parse(lastRun.at))}
-            </span>
           </li>
         ) : null}
         <li className={ROW}>
@@ -306,44 +309,67 @@ export function NightlyCheck({ environmentId }: { environmentId: EnvironmentId }
             {(allChanges ? changes : changes.slice(0, CHANGES_SHOWN)).map((change) => {
               const removed = change.after.length === 0;
               const shown = removed ? change.before : change.after;
-              const was =
-                change.op === "rewrite" || change.op === "merge"
-                  ? t("was {notes}", {
-                      notes: change.before.map((note) => `“${note.text}”`).join(", "),
-                    })
-                  : null;
+              const before = change.op === "rewrite" || change.op === "merge" ? change.before : [];
+              const hasDetail = Boolean(change.reason) || before.length > 0;
+              const open = openChange === change.id;
+              const summary = (
+                <>
+                  <div
+                    className={cn(
+                      "break-words",
+                      ROW_TEXT,
+                      removed && "text-muted-foreground line-through",
+                    )}
+                  >
+                    {shown.map((note) => note.text).join(" / ")}
+                  </div>
+                  <div className={cn("truncate", ROW_META)}>
+                    {[
+                      t(OP_LABEL[change.op]),
+                      owner(change),
+                      messageTimeLabel(Date.parse(change.at)),
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </div>
+                </>
+              );
               return (
-                <li key={change.id} className={ROW}>
+                <li key={change.id} data-memory-change className={ROW}>
                   <div className="min-w-0 flex-1">
-                    <div
-                      className={cn(
-                        "break-words",
-                        ROW_TEXT,
-                        removed && "text-muted-foreground line-through",
-                      )}
-                    >
-                      {shown.map((note) => note.text).join(" / ")}
-                    </div>
-                    <div className={cn("line-clamp-3 break-words", ROW_META)}>
-                      {[
-                        t(OP_LABEL[change.op]),
-                        owner(change),
-                        messageTimeLabel(Date.parse(change.at)),
-                        change.reason,
-                        was,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </div>
+                    {/* A change is its note and one line of facts; why, and what the note was, open
+                        on a press. */}
+                    {hasDetail ? (
+                      <button
+                        type="button"
+                        aria-expanded={open}
+                        className="block w-full min-w-0 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                        onClick={() => setOpenChange(open ? null : change.id)}
+                      >
+                        {summary}
+                      </button>
+                    ) : (
+                      summary
+                    )}
+                    {open ? (
+                      <div className={cn("mt-1.5 space-y-1 break-words", ROW_META)}>
+                        {change.reason ? <p>{change.reason}</p> : null}
+                        {before.map((note) => (
+                          <p key={note.text}>{t("Was: {note}", { note: `“${note.text}”` })}</p>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                   {change.undone ? (
                     <span className={cn("shrink-0", ROW_META)}>{t("Undone")}</span>
                   ) : (
-                    <Button
-                      variant="ghost"
-                      size="xs"
+                    <button
+                      type="button"
                       // Its label ends on the row's trailing edge, where "Undone" ends.
-                      className="-me-2 shrink-0"
+                      className={cn(
+                        "-me-2 shrink-0 rounded-md px-2 py-1 text-bot-action outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset max-md:min-h-11",
+                        ROW_TEXT,
+                      )}
                       onClick={() =>
                         void act(
                           botRequest(environmentId, BOTS_ENDPOINTS.undoDream, { id: change.id }),
@@ -354,7 +380,7 @@ export function NightlyCheck({ environmentId }: { environmentId: EnvironmentId }
                       }
                     >
                       {t("Undo")}
-                    </Button>
+                    </button>
                   )}
                 </li>
               );

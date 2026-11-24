@@ -77,7 +77,8 @@ const COPY = {
     backToLanguages: "Назад до мов",
     slow: "Головного бота створено. Відкрийте його в «Ботах», коли з’єднання оновиться.",
     failed: "Не вдалося зберегти. Перевірте дані та спробуйте ще раз.",
-    failedAnswer: "Налаштування не завершилося. Виберіть відповідь ще раз.",
+    failedAnswer: "Налаштування не завершилося. Вашу відповідь збережено.",
+    retry: "Спробувати ще раз",
   },
   ru: {
     model: "Модель для ботов",
@@ -115,7 +116,8 @@ const COPY = {
     backToLanguages: "Назад к языкам",
     slow: "Главный бот создан. Откройте его в «Ботах», когда соединение обновится.",
     failed: "Не удалось сохранить. Проверьте данные и попробуйте ещё раз.",
-    failedAnswer: "Настройка не завершилась. Выберите ответ ещё раз.",
+    failedAnswer: "Настройка не завершилась. Ваш ответ сохранён.",
+    retry: "Попробовать ещё раз",
   },
   en: {
     model: "Model for your bots",
@@ -153,7 +155,8 @@ const COPY = {
     backToLanguages: "Back to languages",
     slow: "The main bot is created. Open it from Bots when the connection catches up.",
     failed: "Could not save. Check the details and try again.",
-    failedAnswer: "Setup did not finish. Choose an answer again to retry.",
+    failedAnswer: "Setup did not finish. Your answer is kept.",
+    retry: "Try again",
   },
 } as const;
 
@@ -241,6 +244,8 @@ export function FirstRun({ environmentId }: { environmentId: EnvironmentId }) {
   const [selection, setSelection] = useState<ModelSelection | undefined>(undefined);
   const [busy, setBusy] = useState<BotPreferences["experience"] | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
+  // The answer a failed setup was started with, so the retry does not ask again.
+  const [answered, setAnswered] = useState<(typeof EXPERIENCES)[number] | null>(null);
   const navigate = useNavigate();
 
   const pickLanguage = (picked: UiLanguage) => {
@@ -255,6 +260,7 @@ export function FirstRun({ environmentId }: { environmentId: EnvironmentId }) {
   const start = async (picked: UiLanguage, experience: (typeof EXPERIENCES)[number]) => {
     if (busy) return;
     setBusy(experience);
+    setAnswered(experience);
     setFailure(null);
     try {
       const main = await botRequest(environmentId, BOTS_ENDPOINTS.setup, {
@@ -373,25 +379,31 @@ export function FirstRun({ environmentId }: { environmentId: EnvironmentId }) {
       return page(
         copy.question,
         "cortex",
-        <Section
-          footer={
-            failure ? (
-              <span role="alert" className="text-destructive-foreground">
-                {failure}
-              </span>
-            ) : undefined
-          }
-        >
-          {EXPERIENCES.map((experience) => (
-            <li key={experience}>
-              <Row
-                title={copy[experience]}
-                value={busy === experience ? "…" : ""}
-                onClick={() => void start(language, experience)}
-              />
-            </li>
-          ))}
-        </Section>,
+        <>
+          <Section
+            footer={
+              failure ? (
+                <span role="alert" className="text-destructive-foreground">
+                  {failure}
+                </span>
+              ) : undefined
+            }
+          >
+            {EXPERIENCES.map((experience) => (
+              <li key={experience}>
+                <Row
+                  title={copy[experience]}
+                  value={busy === experience ? "…" : failure && answered === experience ? "✓" : ""}
+                  onClick={() => void start(language, experience)}
+                />
+              </li>
+            ))}
+          </Section>
+          {/* The retry is where the failure is said, and keeps the answer already given. */}
+          {failure && answered ? (
+            <StepAction onClick={() => void start(language, answered)}>{copy.retry}</StepAction>
+          ) : null}
+        </>,
       );
   }
 }

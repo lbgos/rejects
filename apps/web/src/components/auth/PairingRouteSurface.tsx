@@ -19,7 +19,7 @@ export function PairingPendingSurface() {
   return (
     <StandalonePage>
       <StandalonePageHeader
-        title="Pairing with this environment"
+        title="Pairing with this server"
         description="Validating the pairing link and preparing your session."
       />
     </StandalonePage>
@@ -175,7 +175,7 @@ export function HostedPairingRouteSurface() {
     });
     if (result._tag === "Success") {
       setStatus("paired");
-      setMessage(`${request.label || "The environment"} is saved in this browser.`);
+      setMessage(`${request.label || "The server"} is saved in this browser.`);
       return;
     }
 

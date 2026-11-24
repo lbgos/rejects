@@ -237,9 +237,6 @@ function McpConsent({
     return (
       <StandalonePage>
         <ConnectAgentHeading title="This sign-in cannot continue" description={loaded.message} />
-        <p className="mt-4 text-sm text-muted-foreground">
-          Close this page and start the sign-in again from your agent.
-        </p>
         {footer}
       </StandalonePage>
     );
