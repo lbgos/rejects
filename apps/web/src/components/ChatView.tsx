@@ -3499,9 +3499,9 @@ export default function ChatView(props: ChatViewProps) {
                   : undefined
               }
               // Keep the overlay's transparent margins clear of transcript paint and hit targets. A
-              // bot chat's transcript fades out as it reaches the composer instead (bots.css reads
-              // the height). Preserve the list's geometry and end inset for anchoring and
-              // scroll-to-end.
+              // bot chat clips its scroller alone (bots.css reads the height), so its jump disc can
+              // stand in the composer's area. Preserve the list's geometry and end inset for
+              // anchoring and scroll-to-end.
               style={
                 isDraftHeroState
                   ? undefined
