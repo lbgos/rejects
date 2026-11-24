@@ -22,7 +22,7 @@ export function WorkspaceFileDropOverlay() {
 /**
  * Sits `bottom` pixels up, clear of the composer and its attached banners. The summary names
  * what waits at the end of the timeline, which is out of view while it shows. `compact` (bot
- * chats) is a round arrow centred over the composer, inside the transcript's fade.
+ * chats) is a round arrow; in bots mode bots.css moves it into the composer's area.
  */
 export function ScrollToEndButton(props: {
   readonly bottom: number;

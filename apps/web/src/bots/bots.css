@@ -98,7 +98,7 @@
 }
 
 /* The chat header runs from the top edge over the transcript (ChatView). It is solid: what
-   scrolls under it fades out at its edge (the scroller's mask below), never through it. */
+   scrolls under it is cut at its edge, never read through it. */
 html[data-theme-id] [data-bots-mode="true"] [data-chat-header],
 :root[data-bots-app] [data-chat-header] {
   height: var(--bot-chat-header-height);
@@ -130,45 +130,26 @@ html[data-theme-id] [data-bots-mode="true"] [data-chat-header],
   padding-bottom: var(--bots-tab-bar-clearance);
 }
 
-/* Scroll edges: one rule for every scroller under chrome. A top bar is opaque and spans the page,
-   so content is cut at its edge, and the bar draws a hairline while anything is under it. The
-   composer and the tab bar float and span nothing, so content fades to the page over
-   `--bots-edge-fade` and is gone `--bots-edge-gap` before their top edge: no text reads under,
-   between or beside them. `--bots-fade-end` is how much of the scroller's bottom the
-   chrome covers. A scroller that sets `--bots-fade-start` to the height of the bar over it
-   fades in under that bar too, over `--bots-edge-fade-start`. A static mask; scrolling repaints
-   nothing extra. */
+/* Scroll edges of the list screens: one rule for every list under chrome. A top bar is opaque and
+   spans the page, so content is cut at its edge, and the bar draws a hairline while anything is
+   under it. The tab bar floats and spans nothing, so rows fade to the page over
+   `--bots-edge-fade` and are gone `--bots-edge-gap` before its top edge: nothing reads under or
+   beside it. `--bots-fade-end` is how much of the scroller's bottom the chrome covers. A static
+   mask; scrolling repaints nothing extra. */
 :root[data-bots-app] {
   --bots-edge-fade: 1.5rem;
   --bots-edge-gap: 0.375rem;
 }
 :root[data-bots-app]
-  :is(
-    [data-bots-mode="true"] .messages-timeline-scroll,
-    [data-bots-scroller],
-    [data-settings-index-list] [data-slot="scroll-area-viewport"]
-  ) {
-  --bots-fade-start: 0px;
-  --bots-edge-fade-start: 0px;
+  :is([data-bots-scroller], [data-settings-index-list] [data-slot="scroll-area-viewport"]) {
   --bots-fade-end: 0px;
-}
-:root[data-bots-app]
-  :is(
-    [data-bots-mode="true"] .messages-timeline-scroll,
-    [data-bots-scroller],
-    [data-settings-index-list] [data-slot="scroll-area-viewport"]
-  ) {
   -webkit-mask-image: linear-gradient(
     to bottom,
-    transparent var(--bots-fade-start),
-    #000 calc(var(--bots-fade-start) + var(--bots-edge-fade-start)),
     #000 calc(100% - var(--bots-fade-end) - var(--bots-edge-gap) - var(--bots-edge-fade)),
     transparent calc(100% - var(--bots-fade-end) - var(--bots-edge-gap))
   );
   mask-image: linear-gradient(
     to bottom,
-    transparent var(--bots-fade-start),
-    #000 calc(var(--bots-fade-start) + var(--bots-edge-fade-start)),
     #000 calc(100% - var(--bots-fade-end) - var(--bots-edge-gap) - var(--bots-edge-fade)),
     transparent calc(100% - var(--bots-fade-end) - var(--bots-edge-gap))
   );
@@ -178,32 +159,77 @@ html[data-theme-id] [data-bots-mode="true"] [data-chat-header],
   -webkit-mask-image: none;
   mask-image: none;
 }
-/* The composer's measured height starts at its lane's 12px of clear space. */
+
+/* A chat's transcript keeps its full contrast to both edges. The header is a solid bar over its
+   top. The composer's area is the same kind of bar at its bottom: the transcript is cut where
+   that area starts (ChatView measures it), and the area draws the bars' hairline while the
+   transcript is scrolled up under it. */
 :root[data-bots-app] [data-bots-mode="true"] .messages-timeline-scroll {
-  --bots-fade-end: max(var(--bot-composer-height, 0px) - 12px, 0px);
+  clip-path: inset(0 0 var(--bot-composer-height, 0px) 0);
 }
-/* The jump-to-latest disc stands on the page: with it up, the transcript ends above it. */
+:root[data-bots-app] [data-bots-mode="true"] [data-chat-composer-overlay]::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 1px;
+  background: var(--bots-bar-edge);
+  opacity: 0;
+  pointer-events: none;
+}
 :root[data-bots-app]
   [data-bots-mode="true"]
   :has(> .chat-scroll-to-bottom)
-  .messages-timeline-scroll {
-  --bots-edge-gap: 3.25rem;
+  ~ [data-chat-composer-overlay]::before {
+  opacity: 1;
 }
-/* A phone's transcript is prose on the page: a line dissolves over half its height at each edge,
-   under the header and over the composer. */
-@media (max-width: 767px) {
-  :root[data-bots-app] [data-bots-mode="true"] .messages-timeline-scroll {
-    --bots-edge-fade: 0.75rem;
-    --bots-fade-start: var(--bot-chat-header-height);
-    --bots-edge-fade-start: 0.75rem;
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-bots-app] [data-bots-mode="true"] [data-chat-composer-overlay]::before {
+    transition: opacity 180ms ease-out !important;
   }
-  /* A phone's disc is 2.25rem tall, 0.625rem over the composer's lane: the transcript is gone
-     0.375rem above its top, as it is above the composer. */
+}
+/* The jump-to-latest disc stands in the composer's area, so it never covers the transcript. On a
+   wide lane it sits in the gutter after the composer, level with its top edge. */
+@media (min-width: 640px) {
+  :root[data-bots-app] [data-bots-mode="true"] .chat-scroll-to-bottom {
+    bottom: calc(var(--bot-composer-height, 0px) - 2.5rem) !important;
+    justify-content: flex-start;
+    padding: 0 calc(env(safe-area-inset-right) + 3rem) 0 calc(env(safe-area-inset-left) + 3rem);
+  }
+  :root[data-bots-app] [data-bots-mode="true"] .chat-scroll-to-bottom > * {
+    margin-inline-start: calc((100% + min(100%, var(--chat-content-max-width))) / 2 + 0.5rem);
+  }
+}
+/* A narrow lane has no gutter: the disc ends the composer's row, as the attach disc starts it,
+   and the capsule between them gives up that much of its width. */
+@media (max-width: 639px) {
+  :root[data-bots-app] [data-bots-mode="true"] .chat-scroll-to-bottom {
+    bottom: max(env(safe-area-inset-bottom), 0.5rem) !important;
+    justify-content: flex-end;
+    padding: 0 calc(env(safe-area-inset-right) + 0.75rem) 0 0;
+  }
+  :root[data-bots-app][data-keyboard-open] [data-bots-mode="true"] .chat-scroll-to-bottom {
+    bottom: 0.5rem !important;
+  }
+  :root[data-bots-app] [data-bots-mode="true"] .chat-scroll-to-bottom [data-slot="button"] {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
   :root[data-bots-app]
     [data-bots-mode="true"]
     :has(> .chat-scroll-to-bottom)
-    .messages-timeline-scroll {
-    --bots-edge-gap: 4rem;
+    ~ [data-chat-composer-overlay]
+    [data-bot-composer="true"]
+    [data-chat-composer-surface] {
+    padding-inline-end: 3.25rem;
+  }
+  :root[data-bots-app]
+    [data-bots-mode="true"]
+    :has(> .chat-scroll-to-bottom)
+    ~ [data-chat-composer-overlay]
+    [data-bot-composer="true"]
+    [data-chat-composer-surface]::after {
+    inset-inline-end: 3.25rem;
   }
 }
 /* A tab screen's list ends above the tab bar. */
@@ -1821,7 +1847,8 @@ html[data-bots-app]:has(
       [data-bots-tab-bar] > .surface-glass,
       [data-bots-tab-search],
       [data-bots-mode="true"] [data-composer-banner-surface],
-      [data-bot-composer="true"] [data-chat-composer-attach] button
+      [data-bot-composer="true"] [data-chat-composer-attach] button,
+      [data-bots-mode="true"] .chat-scroll-to-bottom [data-slot="button"]
     ),
   :root[data-bots-app] [data-bot-composer="true"] [data-chat-composer-surface]::after {
     border-color: transparent;
