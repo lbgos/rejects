@@ -1,17 +1,12 @@
 import type { AnyRouter } from "@tanstack/react-router";
 
-import {
-  dispatchCommandPalette,
-  isCommandPaletteMounted,
-  useCommandPaletteStore,
-} from "../commandPaletteStore";
-import { overlayModeForCommand } from "../components/CommandPalette.logic";
+import { dispatchCommandPalette, isCommandPaletteMounted } from "../commandPaletteStore";
 import { APPEARANCE_OPTIONS, notifyThemeSaveFailure } from "../components/CommandPaletteThemeItems";
 import { toggleThemeEditorForTheme } from "../components/settings/themeEditorStore";
 import { toastManager } from "../components/ui/toast";
 import { getThemeSnapshot, setAppearanceMode } from "../hooks/useTheme";
 import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
-import { type CommandHandler, type CommandScopeOptions, registerCommands } from "./dispatcher";
+import { type CommandScopeOptions, registerCommands } from "./dispatcher";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { resolveThreadRouteTarget } from "../threadRoutes";
 
@@ -20,17 +15,8 @@ function consume(event: KeyboardEvent): void {
   event.stopPropagation();
 }
 
-const toggleOverlay =
-  (command: Parameters<typeof overlayModeForCommand>[0]): CommandHandler =>
-  (event) => {
-    const mode = overlayModeForCommand(command);
-    if (mode === null) return false;
-    consume(event);
-    dispatchCommandPalette({ _tag: "ToggleMode", mode });
-  };
-
 /**
- * Palette, theme and usage shortcuts. They read the route, panels and theme
+ * Palette and theme shortcuts. They read the route, panels and theme
  * when the key is pressed, and are live only while the palette is mounted.
  */
 export function installCommandPaletteCommands(
@@ -41,23 +27,6 @@ export function installCommandPaletteCommands(
     const target = resolveThreadRouteTarget(router.state.matches.at(-1)?.params ?? {});
     return target?.kind === "server" ? target.threadRef : null;
   };
-
-  // A child search (files, contents) goes back to the palette on Escape before
-  // its own widgets or the dialog can treat the key as a close.
-  const disposeEscape = registerCommands(
-    {},
-    {
-      capture: true,
-      when: isCommandPaletteMounted,
-      onKeyDown: (event) => {
-        if (event.isComposing || event.keyCode === 229 || event.key !== "Escape") return false;
-        const { open, mode } = useCommandPaletteStore.getState();
-        if (!open || mode === "command") return false;
-        consume(event);
-        dispatchCommandPalette({ _tag: "BackToCommand" });
-      },
-    },
-  );
 
   const disposeCommands = registerCommands(
     {
@@ -87,14 +56,10 @@ export function installCommandPaletteCommands(
         const { theme, themeHalves, resolvedTheme } = getThemeSnapshot();
         toggleThemeEditorForTheme({ theme, themeHalves, initialAppearance: resolvedTheme });
       },
-      "usage.open": (event) => {
+      "commandPalette.toggle": (event) => {
         consume(event);
-        dispatchCommandPalette({ _tag: "SetOpen", open: false });
-        void router.navigate({ to: "/usage" });
+        dispatchCommandPalette({ _tag: "Toggle" });
       },
-      "commandPalette.toggle": toggleOverlay("commandPalette.toggle"),
-      "filePicker.toggle": toggleOverlay("filePicker.toggle"),
-      "projectSearch.toggle": toggleOverlay("projectSearch.toggle"),
     },
     {
       ...options,
@@ -112,14 +77,10 @@ export function installCommandPaletteCommands(
             ? selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, threadRef) ===
               "preview"
             : false,
-          usagePageOpen: router.state.location.pathname === "/usage",
         };
       },
     },
   );
 
-  return () => {
-    disposeEscape();
-    disposeCommands();
-  };
+  return disposeCommands;
 }

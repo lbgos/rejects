@@ -82,7 +82,7 @@ export interface ResolvedPeerLink {
 }
 
 export const LINKED_ENVIRONMENTS_OFF =
-  "Linked environments is off on this machine. Turn it on in Settings → Labs.";
+  "Linked environments is off on this machine. Turn it on in Settings → Sharing & access.";
 
 /**
  * Links from this environment to others. Linking signs this environment in to
@@ -93,7 +93,7 @@ export const LINKED_ENVIRONMENTS_OFF =
 export class PeerLinks extends Context.Service<
   PeerLinks,
   {
-    /** Whether the Linked environments beta (Settings → Labs) is on here. */
+    /** Whether Linked environments (Settings → Sharing & access) is on here. */
     readonly enabled: Effect.Effect<boolean>;
     readonly link: (input: PeerLinkCreateInput) => Effect.Effect<PeerLink, PeerLinkError>;
     readonly list: Effect.Effect<ReadonlyArray<PeerLinkSummary>, PeerLinkError>;

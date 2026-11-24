@@ -75,7 +75,7 @@ function repositoryOf(owner: string, name: string): PromptLinkRepository | null 
   return { owner, name: trimmedName };
 }
 
-export function parsePromptLinkRepository(value: string): PromptLinkRepository | null {
+function parsePromptLinkRepository(value: string): PromptLinkRepository | null {
   const trimmed = value.trim();
   const url = /^https?:\/\/(?:www\.)?github\.com\/([^/?#]+)\/([^/?#]+)\/?$/i.exec(trimmed);
   const short = /^([^/\s]+)\/([^/\s]+)$/.exec(trimmed);
@@ -95,10 +95,6 @@ function parsePromptLinkPullRequest(value: string): PromptLinkPullRequest | null
   return repository && Number.isSafeInteger(number) && number > 0
     ? { ...repository, number }
     : null;
-}
-
-export function promptLinkPullRequestUrl(pullRequest: PromptLinkPullRequest): string {
-  return `https://github.com/${pullRequest.owner}/${pullRequest.name}/pull/${pullRequest.number}`;
 }
 
 function readPrompt(params: URLSearchParams): PromptLinkResult<LinkedPrompt | null> {

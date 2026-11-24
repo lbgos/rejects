@@ -287,7 +287,7 @@ export function DeviceSetup(props: {
   );
 }
 
-export function DeviceHubSetupStatus({
+function DeviceHubSetupStatus({
   state,
   pending,
   compact = false,
@@ -339,7 +339,7 @@ function DevicePlatformSetup(props: {
   );
 }
 
-export function AgentDeviceSetupStatus(props: {
+function AgentDeviceSetupStatus(props: {
   readonly state: DeviceServiceState;
   readonly pending: boolean;
   readonly compact?: boolean;

@@ -281,11 +281,11 @@ describe.each([
       { replace: true },
     );
 
-    testState.router.state.location.href = "/usage";
+    testState.router.state.location.href = "/settings/general";
     testState.completeProjectFileRead(null);
     await pendingOpen;
 
-    expect(testState.router.state.location.href).toBe("/usage");
+    expect(testState.router.state.location.href).toBe("/settings/general");
     expect(testState.router.navigate).not.toHaveBeenCalled();
     expect(testState.draftStore.setLogicalProjectDraftThreadId).not.toHaveBeenCalled();
   });

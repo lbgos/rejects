@@ -325,12 +325,12 @@ the other: launch, message, wait on and stop its threads, answer their
 questions, and manage its queues, projects and scheduled tasks.
 
 Linked environments is a beta. Turn it on for both machines in **Settings →
-Labs**; on mobile, **Settings → Labs** lists each connected machine. While it is
+Sharing & access**. While it is
 off on either machine, agents start nothing over a link between them. A task
 already running on the other machine still finishes, and if that machine has it
 off, its result arrives once it is back on.
 
-On the machine you will work from, open **Settings → Environments → Linked environments**,
+On the machine you will work from, open **Settings → Sharing & access → Linked environments**,
 choose **Link**, and pick the other machine or enter its address. The list
 holds the machines this app knows and those on your T3 Connect account. If this
 app has an address for that machine and is connected to it with a session that

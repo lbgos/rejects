@@ -6,7 +6,6 @@ export type ThreadActionMenuId =
   | "new-thread-on-branch"
   | "filter-by-project"
   | "turn-into-project"
-  | "project-settings"
   | "pin"
   | "unpin"
   | "settle"
@@ -28,44 +27,6 @@ export type ThreadActionMenuId =
   | "copy-thread-id"
   | "archive"
   | "delete";
-
-export type DraftActionMenuId =
-  | "copy"
-  | "copy-path"
-  | "copy-branch"
-  | "project-settings"
-  | "discard";
-
-export function buildDraftActionMenuItems(options: {
-  readonly hasPath: boolean;
-  readonly hasBranch: boolean;
-  readonly hasProject: boolean;
-}): ReadonlyArray<ContextMenuItem<DraftActionMenuId>> {
-  return [
-    {
-      id: "copy",
-      label: "Copy",
-      icon: "copy",
-      disabled: !options.hasPath && !options.hasBranch,
-      children: [
-        ...(options.hasPath ? [{ id: "copy-path" as const, label: "Path", icon: "folder" }] : []),
-        ...(options.hasBranch
-          ? [{ id: "copy-branch" as const, label: "Branch", icon: "git-branch" }]
-          : []),
-      ],
-    },
-    ...(options.hasProject
-      ? [{ id: "project-settings" as const, label: "Project settings", icon: "settings" }]
-      : []),
-    {
-      id: "discard",
-      label: "Discard draft",
-      icon: "trash",
-      destructive: true,
-      separatorBefore: true,
-    },
-  ];
-}
 
 export interface ThreadActionMenuState {
   readonly canOperate: boolean;
@@ -102,7 +63,6 @@ export function threadActionRequiresOperate(action: ThreadActionMenuId): boolean
   return ![
     "find",
     "new-thread-on-branch",
-    "project-settings",
     "mark-unread",
     "share-guest",
     "copy",
@@ -238,7 +198,6 @@ export function buildThreadActionMenuItems(
         { id: "copy-thread-id", label: "Thread ID", icon: "hash" },
       ],
     },
-    { id: "project-settings", label: "Project settings", icon: "settings" },
     {
       id: "archive",
       label: "Archive thread",

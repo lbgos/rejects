@@ -32,12 +32,6 @@ export function useProjectClone(ref: ScopedProjectRef | null): ProjectCloneSnaps
   return useAtomValue(ref === null ? EMPTY_CLONE_ATOM : projectCloneAtom(scopedProjectKey(ref)));
 }
 
-export function useEnvironmentProjectClones(
-  environmentId: EnvironmentId,
-): ReadonlyArray<ProjectCloneSnapshot> {
-  return useAtomValue(environmentProjectClonesAtom(environmentId));
-}
-
 const silencedCloneToasts = new Set<string>();
 
 /**
@@ -47,8 +41,4 @@ const silencedCloneToasts = new Set<string>();
  */
 export function silenceProjectCloneToasts(ref: ScopedProjectRef) {
   silencedCloneToasts.add(scopedProjectKey(ref));
-}
-
-export function isProjectCloneToastSilenced(ref: ScopedProjectRef): boolean {
-  return silencedCloneToasts.has(scopedProjectKey(ref));
 }

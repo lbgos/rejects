@@ -5,7 +5,7 @@ import { type ComposerThreadTarget, useComposerDraftStore } from "~/composerDraf
 
 import { toastManager } from "../ui/toast";
 
-export function warnAboutHiddenCharacters(prompt: LinkedPrompt): void {
+function warnAboutHiddenCharacters(prompt: LinkedPrompt): void {
   if (prompt.hiddenCharacters === 0) return;
   toastManager.add({
     type: "warning",

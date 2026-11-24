@@ -13,7 +13,6 @@ import {
   type ScopedThreadRef,
   type ThreadId,
 } from "@t3tools/contracts";
-import { useRouter } from "@tanstack/react-router";
 
 import { pickSnoozePreset, resolveSnoozePresets } from "../components/Sidebar.snooze";
 import {
@@ -32,17 +31,9 @@ import {
   readEnvironmentServerConfigLoaded,
   readEnvironmentSupportsAutoSettleOptOut,
   readThreadShell,
-  useProjects,
 } from "../state/entities";
-import { usePrimaryEnvironmentId } from "../state/environments";
 import { readLocalApi } from "../localApi";
 import { configuredHostedAppUrl } from "../hostedPairing";
-import {
-  deriveLogicalProjectKeyFromSettings,
-  derivePhysicalProjectKey,
-  selectProjectGroupingSettings,
-} from "@t3tools/client-runtime/state/project-grouping";
-import { buildPhysicalToLogicalProjectKeyMap } from "../sidebarProjectGrouping";
 import { threadRuntimeCanArchive } from "@t3tools/client-runtime/state/models";
 import { useCopyToClipboard } from "./useCopyToClipboard";
 import { useNewThreadHandler } from "./useHandleNewThread";
@@ -67,15 +58,6 @@ export function useThreadActionMenu(input: {
   readonly canShareWithGuest: boolean;
 }) {
   const { threadRef, projectCwd, onStartRename, onFind, canShareWithGuest } = input;
-  const router = useRouter();
-  const projects = useProjects();
-  const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
-  const logicalProjectKeyByPhysicalKey = buildPhysicalToLogicalProjectKeyMap({
-    projects,
-    settings: projectGroupingSettings,
-    primaryEnvironmentId,
-  });
   const {
     settleThread,
     unsettleThread,
@@ -188,21 +170,6 @@ export function useThreadActionMenu(input: {
         case "find":
           onFind?.(threadRef);
           return;
-        case "project-settings": {
-          const project = projects.find(
-            (candidate) =>
-              candidate.environmentId === thread.environmentId && candidate.id === thread.projectId,
-          );
-          if (!project) return;
-          const projectKey =
-            logicalProjectKeyByPhysicalKey.get(derivePhysicalProjectKey(project)) ??
-            deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings);
-          void router.navigate({
-            to: "/projects/$projectKey",
-            params: { projectKey },
-          });
-          return;
-        }
         case "new-thread-on-branch": {
           const result = await settlePromise(() =>
             handleNewThread(scopeProjectRef(threadRef.environmentId, thread.projectId), {

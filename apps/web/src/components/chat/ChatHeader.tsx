@@ -24,7 +24,6 @@ import { Badge } from "../ui/badge";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
 import { useThreadActionMenu } from "~/hooks/useThreadActionMenu";
-import { readLocalApi } from "~/localApi";
 import { threadEnvironment } from "../../state/threads";
 import { canShareWithGuestAtom } from "./guestShareAvailability";
 import { useAtomValue } from "@effect/atom-react";
@@ -54,7 +53,6 @@ interface ChatHeaderProps {
   onOpenThread: (threadId: ThreadId) => void;
   rightPanelOpen: boolean;
   onNewThreadInProject: () => void;
-  onOpenProjectSettings?: (() => void) | undefined;
   onFindInThread?: ((threadRef: ScopedThreadRef) => void) | undefined;
 }
 
@@ -79,7 +77,6 @@ export const ChatHeader = memo(function ChatHeader({
   onOpenThread,
   rightPanelOpen,
   onNewThreadInProject,
-  onOpenProjectSettings,
   onFindInThread,
 }: ChatHeaderProps) {
   const activeProjectName = activeProject?.isScratch ? "No project" : activeProject?.title;
@@ -217,21 +214,8 @@ export const ChatHeader = memo(function ChatHeader({
   };
   const handleHeaderContextMenu = (event: ReactMouseEvent) => {
     if (renamingTitle !== null) return;
-    if (!isServerThread && onOpenProjectSettings === undefined) return;
+    if (!isServerThread) return;
     event.preventDefault();
-    if (!isServerThread) {
-      const api = readLocalApi();
-      if (!api) return;
-      void api.contextMenu
-        .show([{ id: "project-settings", label: "Project settings", icon: "settings" }], {
-          x: event.clientX,
-          y: event.clientY,
-        })
-        .then((action) => {
-          if (action === "project-settings") onOpenProjectSettings?.();
-        });
-      return;
-    }
     openMenu({ x: event.clientX, y: event.clientY });
   };
   const handleRenameKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {

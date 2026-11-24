@@ -98,8 +98,8 @@ export const SidebarAutoSettleAfterDays = Schema.Number.check(
 export type SidebarAutoSettleAfterDays = typeof SidebarAutoSettleAfterDays.Type;
 const DEFAULT_SIDEBAR_AUTO_SETTLE_AFTER_DAYS: SidebarAutoSettleAfterDays = 7;
 
-export const MAX_SNOOZE_PRESET_MINUTES = 30 * 24 * 60;
-export const MAX_SNOOZE_PRESETS = 8;
+const MAX_SNOOZE_PRESET_MINUTES = 30 * 24 * 60;
+const MAX_SNOOZE_PRESETS = 8;
 export const SnoozePresetDay = Schema.Literals([
   "today",
   "tomorrow",
@@ -250,16 +250,12 @@ export type DefaultThemePreference = typeof DefaultThemePreference.Type;
 export const DefaultAppearancePreference = Schema.Literals(["", "light", "dark", "system"]);
 export type DefaultAppearancePreference = typeof DefaultAppearancePreference.Type;
 
-export const DEFAULT_BROWSER_VIEWPORT: PreviewViewportSetting = FILL_PREVIEW_VIEWPORT;
-export const DEFAULT_BROWSER_AUTO_SHOW_FLOATING_PREVIEW = true;
-export {
-  BROWSER_RECORDING_FRAME_RATES,
-  BrowserRecordingFrameRate,
-  DEFAULT_BROWSER_RECORDING_FRAME_RATE,
-} from "./preview.ts";
+const DEFAULT_BROWSER_VIEWPORT: PreviewViewportSetting = FILL_PREVIEW_VIEWPORT;
+const DEFAULT_BROWSER_AUTO_SHOW_FLOATING_PREVIEW = true;
+export { BrowserRecordingFrameRate, DEFAULT_BROWSER_RECORDING_FRAME_RATE } from "./preview.ts";
 export const BrowserLinkTarget = Schema.Literals(["system", "app"]);
 export type BrowserLinkTarget = typeof BrowserLinkTarget.Type;
-export const DEFAULT_BROWSER_LINK_TARGET: BrowserLinkTarget = "system";
+const DEFAULT_BROWSER_LINK_TARGET: BrowserLinkTarget = "system";
 /**
  * What the address bar searches with when the input is not an address.
  * "custom" uses `browserCustomSearchUrl`, a template with `%s` for the query.
@@ -274,8 +270,8 @@ export const BrowserSearchEngine = Schema.Literals([
   "custom",
 ]);
 export type BrowserSearchEngine = typeof BrowserSearchEngine.Type;
-export const DEFAULT_BROWSER_SEARCH_ENGINE: BrowserSearchEngine = "duckduckgo";
-export const BROWSER_CUSTOM_SEARCH_URL_MAX_LENGTH = 2048;
+const DEFAULT_BROWSER_SEARCH_ENGINE: BrowserSearchEngine = "duckduckgo";
+const BROWSER_CUSTOM_SEARCH_URL_MAX_LENGTH = 2048;
 export const BrowserCustomSearchUrl = Schema.String.check(
   Schema.isMaxLength(BROWSER_CUSTOM_SEARCH_URL_MAX_LENGTH),
 );

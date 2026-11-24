@@ -1,15 +1,8 @@
-import {
-  BotIcon,
-  ArrowLeftIcon,
-  ArrowRightIcon,
-  ChartNoAxesColumnIcon,
-  SettingsIcon,
-} from "lucide-react";
+import { ArrowLeftIcon, ArrowRightIcon } from "lucide-react";
 import type { UiTarget } from "@t3tools/contracts";
-import { useUnreadBotCount } from "../../bots/state";
 import type { ReactNode } from "react";
 import { memo } from "react";
-import { Link, useLocation, useNavigate } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 
 import { useAtomValue } from "@effect/atom-react";
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
@@ -21,7 +14,6 @@ import {
 } from "../../navigationHistory";
 import { primaryServerKeybindingsAtom } from "../../state/server";
 import { cn } from "../../lib/utils";
-import { usePullRequestsSupported } from "../../state/environments";
 import { APP_BASE_NAME } from "~/branding";
 import {
   resolveEnvironmentIdentificationPillLabel,
@@ -31,19 +23,8 @@ import {
 } from "../SidebarStageBackdrop";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
-import {
-  SidebarFooter,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarTrigger,
-  useSidebar,
-} from "../ui/sidebar";
+import { SidebarMenuButton, SidebarMenuItem, SidebarTrigger } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
-import { isSidebarUtilityPage, useNavigateToMainApp } from "./mainAppLocation";
-import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
-import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { observeResize } from "~/lib/observeResize";
 
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
@@ -223,102 +204,3 @@ export function SidebarUtilityItem({
     </SidebarMenuItem>
   );
 }
-
-const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
-  const navigate = useNavigate();
-  const navigateToMainApp = useNavigateToMainApp();
-  const { isMobile, setOpenMobile } = useSidebar();
-  const isOnUtilityPage = useLocation({
-    select: (location) => isSidebarUtilityPage(location.pathname),
-  });
-  const pullRequestsSupported = usePullRequestsSupported();
-  const unreadBots = useUnreadBotCount();
-  const showDeveloperNavigation = false;
-  const closeMobileSidebar = () => {
-    if (isMobile) {
-      setOpenMobile(false);
-    }
-  };
-  const handlePullRequestsClick = () => {
-    closeMobileSidebar();
-    void navigate({
-      to: "/pull-requests",
-      search: readPullRequestListPreferences(),
-    });
-  };
-  const handleSettingsClick = () => {
-    closeMobileSidebar();
-    void navigate({ to: "/settings" });
-  };
-
-  const handleUsageClick = () => {
-    if (isMobile) {
-      setOpenMobile(false);
-    }
-    void navigate({ to: "/usage" });
-  };
-
-  const handleBackClick = () => {
-    closeMobileSidebar();
-    void navigateToMainApp();
-  };
-
-  return (
-    <SidebarMenu className="flex-row items-center">
-      {isOnUtilityPage ? (
-        <SidebarMenuItem className="min-w-0 flex-1">
-          <SidebarMenuButton onClick={handleBackClick}>
-            <ArrowLeftIcon />
-            <span>Back</span>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
-      ) : (
-        <>
-          <SidebarUtilityItem
-            icon={
-              <span className="relative">
-                <BotIcon />
-                {unreadBots > 0 ? (
-                  <span className="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-foreground" />
-                ) : null}
-              </span>
-            }
-            label={unreadBots > 0 ? `Bots, ${unreadBots} unread` : "Bots"}
-            onClick={() => {
-              closeMobileSidebar();
-              void navigate({ to: "/bots", search: { thread: undefined } });
-            }}
-          />
-          <SidebarUtilityItem
-            icon={<SettingsIcon />}
-            label="Settings"
-            onClick={handleSettingsClick}
-          />
-          {showDeveloperNavigation && pullRequestsSupported ? (
-            <SidebarUtilityItem
-              icon={<PullRequestGlyph.pullRequest />}
-              label="Pull requests"
-              onClick={handlePullRequestsClick}
-            />
-          ) : null}
-          {showDeveloperNavigation && (
-            <SidebarUtilityItem
-              icon={<ChartNoAxesColumnIcon />}
-              label="Usage"
-              onClick={handleUsageClick}
-            />
-          )}
-        </>
-      )}
-      <SidebarThreadUndoNotice />
-    </SidebarMenu>
-  );
-});
-
-export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
-  return (
-    <SidebarFooter>
-      <SidebarUtilityMenu />
-    </SidebarFooter>
-  );
-});

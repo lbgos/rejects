@@ -1,29 +1,23 @@
-import { type ServerLifecycleWelcomePayload } from "@t3tools/contracts";
-import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import {
   Outlet,
   Link,
   createRootRoute,
   type ErrorComponentProps,
   useLocation,
-  useNavigate,
   useRouter,
 } from "@tanstack/react-router";
 import { CheckIcon, CopyIcon } from "lucide-react";
-import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { APP_DISPLAY_NAME, APP_VERSION } from "../branding";
 import { AppSidebarLayout } from "../components/AppSidebarLayout";
+import { ClientSettingsGate } from "../components/ClientSettingsGate";
 import { CommandPalette } from "../components/CommandPalette";
 import { CustomSnoozeDialogHost } from "../components/CustomSnoozeDialog";
 import { GuestShareDialogHost } from "../components/chat/GuestShareControls";
-import { AddProjectToMachineDialogHost } from "../components/AddProjectToMachineDialog";
 import { ConfirmDialogHost } from "../components/ConfirmDialogHost";
 import { DevReplayHost } from "../components/DevReplayHost";
 import { RelayClientInstallDialog } from "../components/cloud/RelayClientInstallDialog";
-import { FirstRunGate } from "../components/onboarding/FirstRunGate";
 import { ReopenClosedViewShortcut } from "../components/ReopenClosedViewShortcut";
-import { ProjectCloneToastCoordinator } from "../components/ProjectCloneToastCoordinator";
 import { ChatGptWelcomeCoordinator } from "../components/settings/ChatGptWelcomeCoordinator";
 import { ThemeEditorHost } from "../components/settings/ThemeEditorHost";
 import { ViewportDebug } from "../components/ViewportDebug";
@@ -33,22 +27,11 @@ import { StandalonePage, StandalonePageHeader } from "../components/ui/standalon
 import { AnchoredToastProvider, ToastProvider } from "../components/ui/toast";
 import { isChunkLoadError } from "../lib/chunkReloadGuard";
 import { UseInAnotherAppDialogHost } from "../components/mcp/UseInAnotherAppDialog";
-import { useClientSettings } from "../hooks/useSettings";
-import {
-  deriveLogicalProjectKeyFromSettings,
-  derivePhysicalProjectKeyFromPath,
-  selectProjectGroupingSettings,
-} from "@t3tools/client-runtime/state/project-grouping";
-import { useUiStateStore } from "../uiStateStore";
 import { configureClientTracing } from "../observability/clientTracing";
 import { resolveInitialServerAuthGateState } from "../environments/primary";
 import { GUEST_PAGE_PATH } from "../guestPage";
 import { hasHostedPairingRequest, isHostedStaticApp } from "../hostedPairing";
-import { useHostedPromptLinkLanding } from "../components/promptLinks/HostedPromptLinkLanding";
 import { isLocalEnvironmentDisabled } from "../localEnvironment";
-import { useAtomValue } from "@effect/atom-react";
-import { primaryServerConfigAtom, primaryServerWelcomeAtom } from "../state/server";
-import { readProject } from "../state/entities";
 
 export const Route = createRootRoute({
   beforeLoad: async ({ location }) => {
@@ -101,8 +84,7 @@ function RootRouteNotFoundView() {
       <div className="flex max-w-sm flex-col items-center gap-4 text-center">
         <h1 className="text-lg font-medium text-foreground">Page not found</h1>
         <p className="text-sm text-muted-foreground">
-          This link doesn't point to a page in {APP_DISPLAY_NAME}. Go home to choose a project or
-          start a thread.
+          This link doesn't point to a page in {APP_DISPLAY_NAME}.
         </p>
         <Button render={<Link to="/" replace />}>Go home</Button>
       </div>
@@ -112,7 +94,7 @@ function RootRouteNotFoundView() {
 
 function RootRouteView() {
   // Above every branch: app services raise toasts for the whole page, so the surface they write to
-  // must not unmount when the root switches branches (for example /welcome to the app shell).
+  // must not unmount when the root switches branches (for example /pair to the app shell).
   return (
     <ToastProvider>
       <AnchoredToastProvider>
@@ -126,37 +108,11 @@ function RootRouteBranch() {
   const pathname = useLocation({ select: (location) => location.pathname });
   const { authGateState } = Route.useRouteContext();
   const primaryEnvironmentAuthenticated = authGateState.status === "authenticated";
-  // A sync IPC read; the setting only changes across a relaunch.
-  // Once true, stays true: a visit to /welcome means the bootstrap already chose a route.
-  const [returningFromWelcome, setReturningFromWelcome] = useState(pathname === "/welcome");
-  if (pathname === "/welcome" && !returningFromWelcome) setReturningFromWelcome(true);
-  const hostedPromptLinkLanding = useHostedPromptLinkLanding(
-    authGateState.status === "hosted-static",
-  );
 
   if (pathname === GUEST_PAGE_PATH) return <Outlet />;
 
   if (pathname === "/pair") {
     return <Outlet />;
-  }
-
-  // Handle links before onboarding redirects lose them.
-  if (hostedPromptLinkLanding !== null) {
-    return hostedPromptLinkLanding;
-  }
-
-  if (pathname === "/welcome") {
-    return (
-      <>
-        <CustomSnoozeDialogHost />
-        <GuestShareDialogHost />
-        <CommandPalette>
-          <AppSidebarLayout>
-            <Outlet />
-          </AppSidebarLayout>
-        </CommandPalette>
-      </>
-    );
   }
 
   if (authGateState.status !== "authenticated" && authGateState.status !== "hosted-static") {
@@ -175,26 +131,18 @@ function RootRouteBranch() {
     <>
       <ChatGptWelcomeCoordinator />
       <ViewportDebug />
-      <FirstRunGate
-        enabled={primaryEnvironmentAuthenticated}
-        hostedStatic={authGateState.status === "hosted-static"}
-      >
+      <ClientSettingsGate>
         <RelayClientInstallDialog />
         <ReopenClosedViewShortcut />
         <ConfirmDialogHost />
         <CustomSnoozeDialogHost />
         <GuestShareDialogHost />
-        <ProjectCloneToastCoordinator />
-        <AddProjectToMachineDialogHost />
         <UseInAnotherAppDialogHost />
         {import.meta.env.DEV && primaryEnvironmentAuthenticated ? <DevReplayHost /> : null}
-        {primaryEnvironmentAuthenticated ? (
-          <EventRouter skipInitialBootstrapNavigation={returningFromWelcome} />
-        ) : null}
         {appShell}
         {/* Keep the theme editor above the router so drafts survive navigation. */}
         <ThemeEditorHost />
-      </FirstRunGate>
+      </ClientSettingsGate>
     </>
   );
 }
@@ -291,71 +239,4 @@ function errorReport(error: unknown, pathname: string): string {
     cause = cause instanceof Error ? cause.cause : undefined;
   }
   return lines.join("\n");
-}
-
-function EventRouter({
-  skipInitialBootstrapNavigation,
-}: {
-  readonly skipInitialBootstrapNavigation: boolean;
-}) {
-  const navigate = useNavigate();
-  const pathname = useLocation({ select: (loc) => loc.pathname });
-  const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
-  const serverConfig = useAtomValue(primaryServerConfigAtom);
-  const serverWelcome = useAtomValue(primaryServerWelcomeAtom);
-  const readPathname = useEffectEvent(() => pathname);
-  const handledBootstrapThreadIdRef = useRef<string | null>(null);
-  const skipInitialBootstrapNavigationRef = useRef(skipInitialBootstrapNavigation);
-
-  const handleWelcome = useEffectEvent((payload: ServerLifecycleWelcomePayload | null) => {
-    if (!payload) return;
-
-    void (async () => {
-      if (!payload.bootstrapProjectId || !payload.bootstrapThreadId) {
-        return;
-      }
-      const bootstrapProject = readProject(
-        scopeProjectRef(payload.environment.environmentId, payload.bootstrapProjectId),
-      );
-      const bootstrapProjectKey =
-        (bootstrapProject
-          ? deriveLogicalProjectKeyFromSettings(bootstrapProject, projectGroupingSettings)
-          : null) ??
-        (serverConfig?.cwd
-          ? derivePhysicalProjectKeyFromPath(payload.environment.environmentId, serverConfig.cwd)
-          : null) ??
-        scopedProjectKey(
-          scopeProjectRef(payload.environment.environmentId, payload.bootstrapProjectId),
-        );
-      useUiStateStore.getState().setProjectExpanded(bootstrapProjectKey, true);
-
-      if (readPathname() !== "/") {
-        return;
-      }
-      if (skipInitialBootstrapNavigationRef.current) {
-        skipInitialBootstrapNavigationRef.current = false;
-        handledBootstrapThreadIdRef.current = payload.bootstrapThreadId;
-        return;
-      }
-      if (handledBootstrapThreadIdRef.current === payload.bootstrapThreadId) {
-        return;
-      }
-      await navigate({
-        to: "/$environmentId/$threadId",
-        params: {
-          environmentId: payload.environment.environmentId,
-          threadId: payload.bootstrapThreadId,
-        },
-        replace: true,
-      });
-      handledBootstrapThreadIdRef.current = payload.bootstrapThreadId;
-    })().catch(() => undefined);
-  });
-
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- expands the bootstrap project in the UI store and navigates the router on a server welcome
-  useEffect(() => {
-    handleWelcome(serverWelcome);
-  }, [serverWelcome]);
-
-  return null;
 }

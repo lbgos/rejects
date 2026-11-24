@@ -27,7 +27,7 @@ export function usageEnvironmentProgress(
     : ({ phase: "stale" } as const);
 }
 
-export function updatingProvidersLabel(
+function updatingProvidersLabel(
   providers: readonly UsageProviderKind[],
   providerLabel: (provider: UsageProviderKind) => string,
 ) {

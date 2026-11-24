@@ -273,7 +273,8 @@ const withSenderThread = (
 const linkedEnvironmentsOff = HttpServerResponse.jsonUnsafe(
   {
     error: "linked_environments_off",
-    message: "Linked environments is off on this machine. Turn it on in its Settings → Labs.",
+    message:
+      "Linked environments is off on this machine. Turn it on in its Settings → Sharing & access.",
   },
   { status: 403, headers: { "cache-control": "no-store" } },
 );

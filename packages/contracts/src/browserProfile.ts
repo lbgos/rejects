@@ -1,7 +1,7 @@
 import * as Schema from "effect/Schema";
 import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 
-export const BROWSER_PROFILE_NAME_MAX_LENGTH = 48;
+const BROWSER_PROFILE_NAME_MAX_LENGTH = 48;
 export const BROWSER_PROFILE_MAX_COUNT = 24;
 
 /** Control characters could collide with client cache-key delimiters and select another partition. */

@@ -4,13 +4,9 @@ import { GUEST_PAGE_PATH } from "../../guestPage";
 import { withoutAssistantCitationHash } from "../../lib/assistantCitationNavigation";
 import { resolveThreadRouteTarget, type ThreadRouteTarget } from "../../threadRoutes";
 
-/** Settings and Usage open as modals over the last main-app view. */
+/** Settings opens as a modal over the last main-app view. */
 export function isAppModalPage(pathname: string) {
-  return pathname === "/settings" || pathname.startsWith("/settings/") || pathname === "/usage";
-}
-
-export function isSidebarUtilityPage(pathname: string) {
-  return pathname.startsWith("/projects/") || pathname === "/pull-requests";
+  return pathname === "/settings" || pathname.startsWith("/settings/");
 }
 
 // Pages the root route always renders without the app shell, so they are never
@@ -18,12 +14,11 @@ export function isSidebarUtilityPage(pathname: string) {
 // are still recorded; they are real app URLs, so returning to one is harmless.
 const SHELL_LESS_PATHS = new Set(["/pair", "/connect-agent", GUEST_PAGE_PATH]);
 
-let mainAppHref: string | null = null;
 let appModalReturnHref: string | null = null;
 let appModalReturnHistoryIndex: number | null = null;
 let appModalReturnThreadTarget: ThreadRouteTarget | null = null;
 
-/** Remembers where Settings, Usage, and the utility pages lead back to. */
+/** Remembers where Settings leads back to. */
 export function startMainAppLocationTracking(router: AnyRouter): () => void {
   const record = () => {
     const { pathname } = router.state.location;
@@ -36,28 +31,22 @@ export function startMainAppLocationTracking(router: AnyRouter): () => void {
     appModalReturnThreadTarget = resolveThreadRouteTarget(
       router.state.matches.at(-1)?.params ?? {},
     );
-    if (!isSidebarUtilityPage(pathname)) mainAppHref = href;
   };
   record();
   return router.subscribe("onResolved", record);
 }
 
-/** The thread Settings or Usage opened over, for views mounted while the modal is open. */
+/** The thread Settings opened over, for views mounted while the modal is open. */
 export function getAppModalReturnThreadTarget() {
   return appModalReturnThreadTarget;
 }
 
-export function useNavigateToMainApp() {
-  const navigate = useNavigate();
-  return () => navigate({ href: mainAppHref ?? "/" });
-}
-
-/** Leaves Settings or Usage for the page that opened it. */
+/** Leaves Settings for the page that opened it. */
 export function useCloseAppModal() {
   const navigate = useNavigate();
   const router = useRouter();
   return () => {
-    const href = appModalReturnHref ?? mainAppHref ?? "/";
+    const href = appModalReturnHref ?? "/";
     const returnIndex = appModalReturnHistoryIndex ?? 0;
     const steps = router.state.location.state.__TSR_index - returnIndex;
     if (returnIndex === 0 || steps <= 0) return navigate({ href });

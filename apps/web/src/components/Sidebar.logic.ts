@@ -9,7 +9,6 @@ import {
   isAtomCommandInterrupted,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
-import { defaultAnimateLayoutChanges, type AnimateLayoutChanges } from "@dnd-kit/sortable";
 import {
   threadSearchMatchKey,
   threadSearchSubject,
@@ -18,7 +17,6 @@ import {
 import { foldSearchQuery, rankSearchItems, scoreThreadSearch } from "@t3tools/shared/paletteSearch";
 import {
   isListedThreadLineage,
-  type ContextMenuItem,
   type EnvironmentId,
   type ResolvedKeybindingsConfig,
   type ScopedThreadRef,
@@ -72,18 +70,6 @@ export function shouldNavigateAfterThreadPark(input: {
 
 export const THREAD_JUMP_HINT_SHOW_DELAY_MS = 200;
 
-export function resolveSidebarRowAccessibility(input: {
-  readonly title: string;
-  readonly statusLabel: string | null;
-  readonly projectDisplayName: string | null;
-  readonly isActive: boolean;
-}): { readonly label: string; readonly current: "page" | undefined } {
-  return {
-    label: [input.title, input.statusLabel, input.projectDisplayName].filter(Boolean).join(", "),
-    current: input.isActive ? "page" : undefined,
-  };
-}
-
 // Each prewarm retains growing thread detail and a live subscription, multiplying heap and server load.
 const SIDEBAR_ROW_SUBSCRIPTION_OVERSCAN_PX = 160;
 
@@ -107,30 +93,6 @@ export function useSidebarRowSubscriptionLease(isActive: boolean): {
       });
     },
   };
-}
-
-const fileDragClears = new Set<(active: false) => void>();
-function clearFileDrags() {
-  const clears = [...fileDragClears];
-  fileDragClears.clear();
-  for (const clear of clears) clear(false);
-}
-
-/**
- * A file drag that ends outside every drop target (Escape, or a drop elsewhere)
- * sends no dragleave to the row it last entered, so the window's dragend clears it.
- */
-export function setFileDragActive(setActive: (active: boolean) => void, active: boolean) {
-  setActive(active);
-  if (typeof window === "undefined") return;
-  if (!active) {
-    if (fileDragClears.delete(setActive) && fileDragClears.size === 0) {
-      window.removeEventListener("dragend", clearFileDrags);
-    }
-    return;
-  }
-  if (fileDragClears.size === 0) window.addEventListener("dragend", clearFileDrags, { once: true });
-  fileDragClears.add(setActive);
 }
 
 /**
@@ -164,13 +126,6 @@ export function useSnoozeWakeClock(
   return clockMs;
 }
 
-// Live status that says the cwd is not a repository means the checkout was removed.
-export function withoutRemovedCheckout<
-  T extends { readonly branch: string | null; readonly worktreePath: string | null },
->(thread: T, gitStatus: { readonly isRepo?: boolean | undefined } | null): T {
-  return gitStatus?.isRepo === false ? { ...thread, branch: null, worktreePath: null } : thread;
-}
-
 export function useRetainedValue<T>(key: string | null, value: T | null): T | null {
   const [retained, setRetained] = React.useState<{
     readonly key: string;
@@ -184,23 +139,9 @@ export function useRetainedValue<T>(key: string | null, value: T | null): T | nu
 }
 
 // Sortable owns drag transforms; replaying committed order would animate drops twice.
-export const animateSidebarLayoutChanges: AnimateLayoutChanges = (args) =>
-  args.isSorting ? defaultAnimateLayoutChanges(args) : false;
-
 // Snoozed rows cannot accept drops without a wake time. Working rows only drag out as chat context.
 
 export type SidebarSection = "pinned" | "active" | "working" | "snoozed" | "settled";
-
-export function resolveSidebarThreadSection(input: {
-  readonly snoozed: boolean;
-  readonly settled: boolean;
-  readonly pinned: boolean;
-}): SidebarSection {
-  if (input.snoozed) return "snoozed";
-  if (input.settled) return "settled";
-  if (input.pinned) return "pinned";
-  return "active";
-}
 
 const SIDEBAR_MARKER_PREFIX = "sidebar-marker-";
 
@@ -213,7 +154,7 @@ export type SidebarListMarker =
   | "snoozed-header"
   | "settled-header";
 
-export function sidebarMarkerId(marker: SidebarListMarker): string {
+function sidebarMarkerId(marker: SidebarListMarker): string {
   return `${SIDEBAR_MARKER_PREFIX}${marker}`;
 }
 
@@ -221,7 +162,7 @@ export type SidebarListItem =
   | { readonly kind: "thread"; readonly key: string; readonly section: SidebarSection }
   | { readonly kind: "marker"; readonly marker: SidebarListMarker };
 
-export function sidebarListItemId(item: SidebarListItem): string {
+function sidebarListItemId(item: SidebarListItem): string {
   return item.kind === "thread" ? item.key : sidebarMarkerId(item.marker);
 }
 
@@ -321,17 +262,6 @@ export function resolveSidebarSweepKeys(
   const target = orderedKeys.indexOf(targetKey);
   if (origin === -1 || target === -1) return [];
   return orderedKeys.slice(Math.min(origin, target), Math.max(origin, target) + 1).filter(canApply);
-}
-
-export function sidebarThreadKeyAtY(list: HTMLElement, y: number): string | null {
-  const viewport = list.closest('[data-slot="scroll-area-viewport"]')?.getBoundingClientRect();
-  const visibleY = viewport ? Math.min(Math.max(y, viewport.top), viewport.bottom - 1) : y;
-  let key: string | null = null;
-  for (const row of list.querySelectorAll<HTMLElement>("li[data-thread-item]")) {
-    if (key !== null && row.getBoundingClientRect().top > visibleY) break;
-    key = row.dataset.threadItem ?? null;
-  }
-  return key;
 }
 
 export function resolveSidebarReorderableThreadKeys(input: {
@@ -490,43 +420,6 @@ export function planSidebarThreadDrop(input: {
   }
 }
 
-export function applySidebarThreadDrop<
-  T extends Pick<
-    SidebarThreadSummary,
-    | "pinnedAt"
-    | "pinOrderKey"
-    | "activeOrderKey"
-    | "snoozedAt"
-    | "snoozedUntil"
-    | "settledAt"
-    | "settledOverride"
-    | "unsettledAt"
-  >,
->(thread: T, section: "pinned" | "active" | "settled", now: string, orderKey?: string): T {
-  const wasSettled = thread.settledOverride === "settled";
-  const awake = { ...thread, snoozedAt: null, snoozedUntil: null };
-  if (section === "settled") {
-    return {
-      ...awake,
-      pinnedAt: null,
-      pinOrderKey: null,
-      activeOrderKey: null,
-      settledOverride: "settled",
-      settledAt: wasSettled ? (thread.settledAt ?? now) : now,
-      unsettledAt: null,
-    };
-  }
-  const resumed = wasSettled
-    ? { ...awake, settledOverride: "active" as const, settledAt: null, unsettledAt: now }
-    : awake;
-  return {
-    ...resumed,
-    pinnedAt: section === "pinned" ? (thread.pinnedAt ?? now) : null,
-    pinOrderKey: section === "pinned" ? (orderKey ?? thread.pinOrderKey) : null,
-    ...(section === "active" && orderKey !== undefined ? { activeOrderKey: orderKey } : {}),
-  };
-}
-
 type SidebarProject = {
   id: string;
   title: string;
@@ -551,8 +444,6 @@ type LogicalSidebarProject = SidebarProject & {
     projectId: string;
   }[];
 };
-
-type ThreadTraversalDirection = "previous" | "next";
 
 /** Exclude only successful deletions from shared-worktree checks. */
 export async function deleteSelectedThreadEntries<
@@ -609,7 +500,7 @@ export function resolveSidebarRowThreadId(
  * `delegatedUnderParent` holds the tasks linked environments run for a thread
  * the sidebar lists, by thread key; they show under that thread, as subagents do.
  */
-export function filterSidebarV2VisibleThreads<
+function filterSidebarV2VisibleThreads<
   T extends Pick<SidebarThreadSummary, "archivedAt" | "environmentId" | "id" | "lineage"> & {
     projectId: string;
   },
@@ -629,31 +520,6 @@ export function filterSidebarV2VisibleThreads<
       (scopedProjectKeys === null ||
         scopedProjectKeys.has(`${thread.environmentId}:${thread.projectId}`)),
   );
-}
-
-export function buildBulkTitleRegenerationContextMenuItem(input: {
-  supportedCount: number;
-  actionableCount: number;
-}): ContextMenuItem<"regenerate-title"> | null {
-  if (input.supportedCount === 0) return null;
-  if (input.actionableCount === 0) {
-    return {
-      id: "regenerate-title",
-      label: `Regenerating… (${input.supportedCount})`,
-      disabled: true,
-    };
-  }
-  return {
-    id: "regenerate-title",
-    label: `Regenerate titles (${input.actionableCount})`,
-  };
-}
-
-export function buildBulkUnpinContextMenuItem(input: {
-  pinnedCount: number;
-}): ContextMenuItem<"unpin"> | null {
-  if (input.pinnedCount === 0) return null;
-  return { id: "unpin", label: `Unpin (${input.pinnedCount})` };
 }
 
 export interface ThreadStatusPill {
@@ -822,23 +688,6 @@ export function isTrailingDoubleClick(detail: number): boolean {
   return detail > 1;
 }
 
-function nodeClosest(node: object | null, selector: string): unknown {
-  if (node === null || !("closest" in node) || typeof node.closest !== "function") return null;
-  return node.closest(selector);
-}
-
-export function isSidebarNestedLinkClick(target: EventTarget | null): boolean {
-  if (target == null || typeof target !== "object") return false;
-  if (nodeClosest(target, "a[href]") !== null) return true;
-  const parent =
-    "parentElement" in target &&
-    target.parentElement !== null &&
-    typeof target.parentElement === "object"
-      ? target.parentElement
-      : null;
-  return nodeClosest(parent, "a[href]") !== null;
-}
-
 /** The "New thread in" picker opens unless there is one open project or none; then the current context decides. */
 export function shouldCreateNewThreadInCurrentProject(
   shiftKey: boolean,
@@ -885,33 +734,6 @@ export function orderItemsByPreferredIds<TItem, TId>(input: {
   });
   const remaining = items.filter((_, index) => !emittedIndexes.has(index));
   return [...ordered, ...remaining];
-}
-
-export function resolveAdjacentThreadId<T>(input: {
-  threadIds: readonly T[];
-  currentThreadId: T | null;
-  direction: ThreadTraversalDirection;
-}): T | null {
-  const { currentThreadId, direction, threadIds } = input;
-
-  if (threadIds.length === 0) {
-    return null;
-  }
-
-  if (currentThreadId === null) {
-    return direction === "previous" ? (threadIds.at(-1) ?? null) : (threadIds[0] ?? null);
-  }
-
-  const currentIndex = threadIds.indexOf(currentThreadId);
-  if (currentIndex === -1) {
-    return null;
-  }
-
-  if (direction === "previous") {
-    return currentIndex > 0 ? (threadIds[currentIndex - 1] ?? null) : null;
-  }
-
-  return currentIndex < threadIds.length - 1 ? (threadIds[currentIndex + 1] ?? null) : null;
 }
 
 export type SidebarThreadStatus =
@@ -1097,22 +919,7 @@ export type SidebarV2TopStatusKind =
   | "woke"
   | "working";
 
-export function firstValidTimestampMs(
-  ...candidates: ReadonlyArray<string | null | undefined>
-): number {
-  for (const candidate of candidates) {
-    if (candidate == null) continue;
-    const parsed = Date.parse(candidate);
-    if (!Number.isNaN(parsed)) return parsed;
-  }
-  return 0;
-}
-
-export { sortActiveThreadsByOrderKey as sortThreadsForSidebar } from "@t3tools/client-runtime/state/thread-sort";
-export {
-  sortInboxThreadsByReturn,
-  sortWorkingThreadsBySend,
-} from "@t3tools/client-runtime/state/thread-inbox";
+export { sortInboxThreadsByReturn } from "@t3tools/client-runtime/state/thread-inbox";
 
 export { pinOrderKeyBetween } from "@t3tools/client-runtime/state/thread-sort";
 export { sortPinnedThreadsByOrderKey as sortPinnedThreadsForSidebar } from "@t3tools/client-runtime/state/thread-sort";
@@ -1166,40 +973,6 @@ export function pullRequestMatchesSearchQuery(
   if (normalizedQuery.length === 0) return false;
   const haystack = normalizeSearchText(threadPullRequestSearchTerms(pullRequest).join(" "));
   return normalizedQuery.split(" ").every((token) => haystack.includes(token));
-}
-
-export function filterSidebarProjectScopeItems<TItem extends { readonly value: string }>(input: {
-  items: readonly TItem[];
-  query: string;
-  matches: (item: TItem, query: string) => boolean;
-}): readonly TItem[] {
-  const query = input.query.trim();
-  if (query.length === 0) return input.items;
-  return input.items.filter((item) => item.value !== "all" && input.matches(item, query));
-}
-
-interface SidebarProjectScopeMenuState {
-  readonly open: boolean;
-  readonly query: string;
-}
-
-type SidebarProjectScopeMenuAction =
-  | { readonly type: "query-changed"; readonly query: string }
-  | { readonly type: "open-changed"; readonly open: boolean }
-  | { readonly type: "project-settings-opened" };
-
-export function reduceSidebarProjectScopeMenuState(
-  state: SidebarProjectScopeMenuState,
-  action: SidebarProjectScopeMenuAction,
-): SidebarProjectScopeMenuState {
-  switch (action.type) {
-    case "query-changed":
-      return { ...state, query: action.query };
-    case "open-changed":
-      return { open: action.open, query: "" };
-    case "project-settings-opened":
-      return { open: false, query: "" };
-  }
 }
 
 export function resolveWorkingStartedAt(

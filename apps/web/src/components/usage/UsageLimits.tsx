@@ -6,9 +6,7 @@ import {
   ServerProvider,
   ServerProviderResetCredits,
   ServerProviderUsageWindow,
-  UsageProviderKind,
 } from "@t3tools/contracts";
-import { useAtomValue } from "@effect/atom-react";
 import { normalizeProviderAccentColor } from "@t3tools/client-runtime/state/provider-instance-display";
 import {
   formatResetsIn,
@@ -24,7 +22,6 @@ import { Fragment, useLayoutEffect, useState } from "react";
 
 import { usePrimarySettings } from "../../hooks/useSettings";
 import { observeResize } from "../../lib/observeResize";
-import { environmentPresentations } from "../../state/presentation";
 import { useEnvironmentScope, readEnvironmentScope } from "../../state/session";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -40,7 +37,6 @@ import {
 } from "../ui/alert-dialog";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { UsageLimitsPooled } from "./UsageLimitsPooled";
 import { PROVIDER_PRESENTATION } from "./usageProviders";
 
 const PACE: Record<LimitPace, { readonly label: string; readonly icon: typeof GaugeIcon }> = {
@@ -348,47 +344,4 @@ export function ResetCredits({
       />
     </div>
   );
-}
-
-/** Advance now only on explicit refresh to avoid page repaints from ticking. */
-export function UsageLimitsSection({
-  selectedEnvironmentIds,
-  hiddenProviders,
-  now,
-}: {
-  readonly selectedEnvironmentIds: ReadonlySet<EnvironmentId> | null;
-  readonly hiddenProviders: ReadonlySet<UsageProviderKind>;
-  readonly now: number;
-}) {
-  const presentations = useAtomValue(environmentPresentations.presentationsWithProvidersAtom);
-  const hiddenDrivers = new Set<ServerProvider["driver"]>(
-    [...hiddenProviders].map((provider) => PROVIDER_PRESENTATION[provider].driverKind),
-  );
-  const isVisible = (driver: ServerProvider["driver"]) => !hiddenDrivers.has(driver);
-  const selected = new Map(
-    [...presentations].flatMap(([id, presentation]) => {
-      if (selectedEnvironmentIds !== null && !selectedEnvironmentIds.has(id)) return [];
-      const config = presentation.serverConfig;
-      if (hiddenDrivers.size === 0 || config === null) return [[id, presentation] as const];
-      return [
-        [
-          id,
-          {
-            ...presentation,
-            serverConfig: {
-              ...config,
-              providers: config.providers.filter((provider) => isVisible(provider.driver)),
-              usageLimitSources: config.usageLimitSources?.flatMap((source) => {
-                const accounts = source.accounts.filter((account) => isVisible(account.driver));
-                return accounts.length === 0 && source.accounts.length > 0
-                  ? []
-                  : [{ ...source, accounts }];
-              }),
-            },
-          },
-        ] as const,
-      ];
-    }),
-  );
-  return <UsageLimitsPooled presentations={selected} now={now} />;
 }

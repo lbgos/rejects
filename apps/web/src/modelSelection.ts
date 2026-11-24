@@ -409,7 +409,7 @@ export function getTextGenerationModelOptionsByInstance(
   );
 }
 
-export function selectsPlanAgent(options: ModelSelection["options"]): boolean {
+function selectsPlanAgent(options: ModelSelection["options"]): boolean {
   return options?.some((option) => option.id === "agent" && option.value === "plan") ?? false;
 }
 

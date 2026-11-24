@@ -36,7 +36,7 @@ interface QueuedThreadShell {
  * Failed starts and stale shells from older servers can leave user messages unadopted.
  * Bound the pending window so those threads can eventually settle.
  */
-export const QUEUED_TURN_START_GRACE_MS = 2 * 60 * 1_000;
+const QUEUED_TURN_START_GRACE_MS = 2 * 60 * 1_000;
 const DAY_MS = 24 * 60 * 60 * 1_000;
 
 export function hasQueuedTurnStart(
@@ -269,13 +269,13 @@ function snoozePresetLabel(setting: SnoozePresetSetting, daysAhead: number): str
   return daysAhead === 7 ? `Next ${capitalize(setting.day)}` : capitalize(setting.day);
 }
 
-export function snoozePresetId(setting: SnoozePresetSetting): string {
+function snoozePresetId(setting: SnoozePresetSetting): string {
   return setting.kind === "after"
     ? `after:${setting.minutes}`
     : `at:${setting.day}:${setting.time}`;
 }
 
-export function resolveSnoozePreset(
+function resolveSnoozePreset(
   setting: SnoozePresetSetting,
   now: Date,
   formatTime: (date: Date) => string = snoozeTimeOfDayLabel,

@@ -10,7 +10,6 @@ import { getWorkspaceFocusRequestVersion } from "./lib/workspaceFocus";
 
 const INITIAL_STATE: CommandPaletteUiState = {
   open: false,
-  mode: "command",
   openIntent: null,
   session: 0,
 };

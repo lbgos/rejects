@@ -64,7 +64,7 @@ it("holds a service worker reload until the ChatGPT sign-in code is spent", asyn
   const delivery = codexAuthDeliveryUrl(
     {
       authorizationUrl: authorizationUrl(),
-      returnUrl: `${window.location.origin}/welcome#agents:remote-environment`,
+      returnUrl: `${window.location.origin}/settings/providers#agents:remote-environment`,
       environmentId: EnvironmentId.make("remote-environment"),
       instanceId: ProviderInstanceId.make("work-codex"),
       flowId: "flow-one",

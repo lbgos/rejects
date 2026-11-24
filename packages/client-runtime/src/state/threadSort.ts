@@ -31,7 +31,7 @@ export function resolveSettledThreadTimestamp(thread: SettledThreadTimestampInpu
   return resolveThreadActivityTimestamp(thread);
 }
 
-export function resolveThreadActivityTimestamp(
+function resolveThreadActivityTimestamp(
   thread: Pick<EnvironmentThreadShell, "latestUserMessageAt" | "latestRun" | "updatedAt">,
 ): string | null {
   let latest: string | null = null;

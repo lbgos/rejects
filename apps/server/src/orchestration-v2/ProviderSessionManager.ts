@@ -451,7 +451,7 @@ export const layerWithOptions = (
       const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
       const agentScope = yield* AgentScope;
       const installationGate = yield* ProviderInstallationGate.ProviderInstallationGate;
-      // Labs flag, read live: Codex per turn (its shared session outlives a toggle), Claude per query.
+      // Linked environments flag, read live: Codex per turn (its shared session outlives a toggle), Claude per query.
       // Unreadable settings keep it off.
       const promptSuggestionsEnabled = Option.isNone(serverSettings)
         ? Effect.succeed(false)

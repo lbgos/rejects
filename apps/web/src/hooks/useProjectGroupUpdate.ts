@@ -33,7 +33,7 @@ type ProjectGroupMember = Pick<
  * Writes one update to each checkout of a project, one machine at a time, and
  * reports the first failure as a toast. Every machine must be connected first.
  */
-export function useProjectGroupUpdate() {
+function useProjectGroupUpdate() {
   const serverConfigs = useServerConfigs();
   const updateProject = useOrchestrationCommand(projectEnvironment.update, {
     reportFailure: false,
@@ -126,7 +126,7 @@ export function useProjectPin() {
 }
 
 /** Reports the first member this connection cannot change, and returns that failure. */
-export function checkProjectAccess(
+function checkProjectAccess(
   members: ReadonlyArray<ProjectGroupMember>,
   failureTitle: string,
 ): AtomCommandResult<void, unknown> | null {
@@ -141,7 +141,7 @@ export function checkProjectAccess(
     : null;
 }
 
-export function reportProjectFailure(title: string, result: AtomCommandResult<unknown, unknown>) {
+function reportProjectFailure(title: string, result: AtomCommandResult<unknown, unknown>) {
   if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
   const error = squashAtomCommandFailure(result);
   toastManager.add(

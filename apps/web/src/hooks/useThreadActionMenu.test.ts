@@ -39,9 +39,6 @@ vi.mock("react", () => ({
   useCallback: (callback: unknown) => callback,
   useMemo: (factory: () => unknown) => factory(),
 }));
-vi.mock("@tanstack/react-router", () => ({
-  useRouter: () => ({ navigate: async () => recordEffect("project-settings") }),
-}));
 vi.mock("../state/session", () => ({
   readEnvironmentScope: (environmentId: string, scope: string) =>
     scope === AuthOrchestrationOperateScope && state.granted.has(environmentId),
@@ -59,9 +56,7 @@ vi.mock("../state/entities", () => ({
     runtime: null,
     latestRun: null,
   }),
-  useProjects: () => [{ id: "project", environmentId: "secondary" }],
 }));
-vi.mock("../state/environments", () => ({ usePrimaryEnvironmentId: () => "primary" }));
 vi.mock("../state/threads", () => ({ threadEnvironment: { updateMetadata: "metadata" } }));
 vi.mock("../state/use-atom-command", () => ({
   useAtomCommand: () => async () => {
@@ -79,14 +74,6 @@ vi.mock("../localApi", () => ({
       },
     },
   }),
-}));
-vi.mock("@t3tools/client-runtime/state/project-grouping", () => ({
-  deriveLogicalProjectKeyFromSettings: () => "project",
-  derivePhysicalProjectKey: () => "project",
-  selectProjectGroupingSettings: () => ({}),
-}));
-vi.mock("../sidebarProjectGrouping", () => ({
-  buildPhysicalToLogicalProjectKeyMap: () => new Map(),
 }));
 vi.mock("../uiStateStore", () => ({
   useUiStateStore: (select: (store: unknown) => unknown) =>
