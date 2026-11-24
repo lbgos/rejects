@@ -27,17 +27,20 @@ export function Row({
   onClick,
   tone = "muted",
   icon,
+  disabled = false,
 }: {
   title: string;
   value: string;
   onClick: () => void;
   tone?: "muted" | "error";
   icon?: ReactNode;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
-      className="flex min-h-11 w-full items-center gap-3 px-4 py-2.5 text-left text-sm hover:bg-accent max-md:px-5 max-md:text-bot-body max-md:hover:bg-transparent"
+      disabled={disabled}
+      className="flex min-h-11 w-full items-center gap-3 px-4 py-2.5 text-left text-sm not-disabled:hover:bg-accent disabled:text-muted-foreground max-md:px-5 max-md:text-bot-body max-md:not-disabled:hover:bg-transparent"
       onClick={onClick}
     >
       {icon}

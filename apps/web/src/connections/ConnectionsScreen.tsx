@@ -175,6 +175,9 @@ export function ConnectionsScreen({
     page?.type === "account" ? state?.accounts.find((a) => a.site === page.site) : undefined;
   const connector =
     page?.type === "connector" ? state?.connections.find((c) => c.kind === page.kind) : undefined;
+  // The home list: You itself, and any detail page whose subject is not there to show.
+  const home =
+    !account && !connector && !(page?.type === "telegram" && telegram) && page?.type !== "account";
   // A detail page is named after what it is about, whether or not it is connected yet.
   const title =
     page?.type === "account"
@@ -243,7 +246,16 @@ export function ConnectionsScreen({
           {isMobile && page === null ? (
             <h1 className="truncate px-5 pt-1 pb-2 text-bot-title font-bold">{title}</h1>
           ) : null}
-          {/* Notes need no vault, so they are there while the accounts load. */}
+          {/* Connect leads the page. Notes need no vault, so they are there while it loads. */}
+          {home && state ? (
+            <ConnectSection
+              state={state}
+              onOpenAccount={(site) => setPage({ type: "account", site })}
+              onOpenConnector={(kind) => setPage({ type: "connector", kind })}
+              onSignIn={(site) => void openSheet(site)}
+              onRetry={refresh}
+            />
+          ) : null}
           {page === null ? <YouNotes environmentId={environmentId} /> : null}
           {state === null ? (
             page === null ? null : (
@@ -272,29 +284,27 @@ export function ConnectionsScreen({
               onOpenAccount={(site) => setPage({ type: "account", site })}
             />
           ) : page?.type === "account" ? (
-            // A site nobody signed in to yet: its page offers the sign-in, or says why it cannot.
-            <Section>
-              {state.available ? (
+            // A site nobody signed in to yet: its page offers the sign-in. While the vault is down
+            // the notice says so above it, and the sign-in waits.
+            <>
+              {state.available ? null : (
+                <Section>
+                  <VaultDownNotice onRetry={refresh} />
+                </Section>
+              )}
+              <Section footer={t("A bot uses this sign-in only after you allow it here.")}>
                 <li>
                   <Row
                     title={t("Sign in")}
                     value={t("Not connected")}
+                    disabled={!state.available}
                     onClick={() => void openSheet(page.site)}
                   />
                 </li>
-              ) : (
-                <VaultDownNotice onRetry={refresh} />
-              )}
-            </Section>
+              </Section>
+            </>
           ) : (
             <>
-              <ConnectSection
-                state={state}
-                onOpenAccount={(site) => setPage({ type: "account", site })}
-                onOpenConnector={(kind) => setPage({ type: "connector", kind })}
-                onSignIn={(site) => void openSheet(site)}
-                onRetry={refresh}
-              />
               <Section title={t("Secrets")}>
                 {state.secrets.length === 0 ? (
                   <li className="px-4 py-2 text-sm text-muted-foreground max-md:px-5 max-md:text-bot-body">
@@ -630,13 +640,23 @@ function ConnectorDetail({
     );
   };
 
-  // Nothing on this page works without the vault, so it shows the one notice and the way back in.
+  // Nothing on this page works without the vault: the notice says so once, over the connector's
+  // way in, which waits until the vault answers.
   if (!state.available)
     return (
       <div data-connector-page className="flex flex-col pb-6 text-sm">
         <Section>
           <VaultDownNotice onRetry={onChanged} />
         </Section>
+        {view.kind === "gmail" ? (
+          <Section>
+            <li className={ACTION_ROW}>
+              <Button size="sm" variant="outline" disabled>
+                {view.account ? t("Reconnect") : t("Connect")}
+              </Button>
+            </li>
+          </Section>
+        ) : null}
       </div>
     );
   return (
