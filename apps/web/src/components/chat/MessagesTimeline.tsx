@@ -1283,6 +1283,17 @@ const ConversationTimeline = memo(function ConversationTimeline({
   const listHeader = (
     <>
       {parentThreadLink === null ? listHeaderLeadingContent : null}
+      {/* A cleared bot chat says so where it now starts, so the earlier messages read as cleared. */}
+      {botChrome && historyFrom !== undefined ? (
+        <div data-bot-history-cleared className="messages-timeline-row-frame">
+          <div className="chat-content-lane">
+            <TimelineSystemDivider
+              label={t("Chat cleared")}
+              detail={t("Earlier messages are not shown")}
+            />
+          </div>
+        </div>
+      ) : null}
       {historyControls ? <TimelineHistoryControl {...historyControls} /> : null}
       {parentThreadLink !== null ? listHeaderLeadingContent : null}
     </>
@@ -2034,11 +2045,13 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
           className="flex cursor-pointer select-none items-center gap-1 rounded-md px-1 text-sm leading-relaxed text-muted-foreground tabular-nums transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
         >
           <span>
-            {row.label}
-            {row.toolCount > 0
-              ? ` · ${row.toolCount} ${row.toolCount === 1 ? "tool" : "tools"}`
-              : ""}
-            {error ? ` · ${error}` : ""}
+            {[
+              row.label,
+              row.toolCount > 0 ? `${row.toolCount} ${row.toolCount === 1 ? "tool" : "tools"}` : "",
+              error,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
           </span>
           {row.expanded ? (
             <ChevronDownIcon className="size-3.5" />

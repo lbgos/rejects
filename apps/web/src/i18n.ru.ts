@@ -578,4 +578,11 @@ export const RU = {
   "One per line, up to 4": "По одному в строке, до 4",
   "{tokens} tokens": "{tokens} токенов",
   "Recent changes": "Последние изменения",
+  "Use the default": "Модель по умолчанию",
+  "Show fewer": "Показать меньше",
+  "Show all {count}": "Показать все {count}",
+  "A bot uses this sign-in only after you allow it here.":
+    "Бот пользуется этим входом только после вашего разрешения здесь.",
+  "Chat cleared": "Чат очищен",
+  "Earlier messages are not shown": "Предыдущие сообщения не показаны",
 } as const satisfies Record<UiText, string>;

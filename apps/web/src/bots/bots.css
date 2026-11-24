@@ -119,7 +119,7 @@ html[data-theme-id] [data-bots-mode="true"] [data-chat-header],
 :root[data-bots-app] [data-app-modal]:has(> [data-bots-top-bar]) {
   padding-top: 0;
 }
-/* Both large-title pages start 16px lower, so the title rests clear of the fade below. */
+/* Both large-title pages start 16px under the bar. */
 :root[data-bots-app] [data-settings-index-list] [data-slot="sidebar-content"],
 :root[data-bots-app] [data-bots-scroller] {
   padding-top: calc(var(--bot-chat-header-height) + 1rem);
@@ -128,11 +128,11 @@ html[data-theme-id] [data-bots-mode="true"] [data-chat-header],
   padding-bottom: var(--bots-tab-bar-space);
 }
 
-/* Scrollers under floating chrome. Under a top bar nothing shows in the 8px below the bar's edge,
-   then content fades in over 24px, so no bubble fill or glyph meets the edge. At the bottom,
-   content fades out over 24px as it reaches the composer or the tab bar, so no text reads through
-   or between them. `--bots-fade-end` is how much of the scroller's bottom the chrome covers. A
-   static mask; scrolling repaints nothing extra. */
+/* Scrollers under floating chrome. A top bar is solid and has its own edge once something is
+   under it, so content meets it whole and is cut there, never half shown. At the bottom, content
+   fades out over 24px as it reaches the composer or the tab bar, which have no edge across the
+   page, so no text reads through or between them. `--bots-fade-end` is how much of the scroller's
+   bottom the chrome covers. A static mask; scrolling repaints nothing extra. */
 :root[data-bots-app]
   :is(
     [data-bots-mode="true"] .messages-timeline-scroll,
@@ -142,15 +142,11 @@ html[data-theme-id] [data-bots-mode="true"] [data-chat-header],
   --bots-fade-end: 0px;
   -webkit-mask-image: linear-gradient(
     to bottom,
-    transparent calc(var(--bot-chat-header-height) + 8px),
-    #000 calc(var(--bot-chat-header-height) + 32px),
     #000 calc(100% - var(--bots-fade-end) - 24px),
     transparent calc(100% - var(--bots-fade-end))
   );
   mask-image: linear-gradient(
     to bottom,
-    transparent calc(var(--bot-chat-header-height) + 8px),
-    #000 calc(var(--bot-chat-header-height) + 32px),
     #000 calc(100% - var(--bots-fade-end) - 24px),
     transparent calc(100% - var(--bots-fade-end))
   );
@@ -850,7 +846,7 @@ html[data-bots-app] body {
   --bots-composer-shadow: 0 1px 2px rgb(0 0 0 / 30%), 0 3px 10px rgb(0 0 0 / 22%);
   --bots-popover-shadow: 0 8px 24px rgb(0 0 0 / 45%);
   --bots-dialog-shadow: 0 16px 40px rgb(0 0 0 / 63%);
-  --bots-bar-edge: color-mix(in srgb, var(--foreground) 10%, transparent);
+  --bots-bar-edge: color-mix(in srgb, var(--foreground) 16%, transparent);
   --bots-bar-shadow: 0 8px 20px -12px rgb(0 0 0 / 70%);
   --bots-hover: linear-gradient(
     180deg,
@@ -986,6 +982,15 @@ html[data-bots-app]:has(
   :root[data-bots-app] .sheet-list button:hover {
     background: var(--bots-hover);
   }
+}
+
+/* A settings section's title is the quiet line over its group at every width, as on You and in
+   the bot form. */
+:root[data-bots-app] [data-settings-page-scroll] section > [data-settings-scroll-target] h2 {
+  color: var(--muted-foreground);
+  font-size: var(--text-bot-footnote);
+  line-height: var(--text-bot-footnote--line-height);
+  font-weight: 400;
 }
 
 /* Groups: one grouped-list style for every bots screen. Settings groups, the Settings index, You
@@ -1329,18 +1334,17 @@ html[data-bots-app]:has(
   [data-slot="input"] {
   height: 1.5rem;
 }
-/* A text area is as tall as what is written in it, from two lines up; a one-sentence field from
-   one. */
+/* A text area is as tall as what is written in it, from one line up, so its note sits right
+   under the text. */
 :root[data-bots-app] [data-bot-form] [data-bot-form-group] [data-slot="textarea"] {
   field-sizing: content;
-  min-height: 2lh;
+  min-height: 1lh;
   resize: none;
 }
-:root[data-bots-app]
-  [data-bot-form]
-  [data-bot-form-group]
-  [data-slot="textarea"]:is([data-bot-one-line], :placeholder-shown) {
-  min-height: 1lh;
+/* Fields in a group are parted by a hairline from the text, as rows in a list are. */
+:root[data-bots-app] [data-bot-form] [data-bot-form-group] > * + * {
+  background: linear-gradient(var(--color-bot-hairline), var(--color-bot-hairline)) 1rem 0 / 100%
+    1px no-repeat;
 }
 @media (max-width: 767px) {
   :root[data-bots-app] :is([data-bot-form], [data-bots-setup]) {
@@ -1353,6 +1357,10 @@ html[data-bots-app]:has(
   :root[data-bots-app] [data-bot-form] [data-bot-field-label] {
     font-size: var(--text-bot-footnote);
     line-height: var(--text-bot-footnote--line-height);
+  }
+  /* The form is a page here: the job shows whole and the page scrolls, with no window inside it. */
+  :root[data-bots-app] [data-bot-form] #bot-job {
+    max-height: none;
   }
   :root[data-bots-app]
     :is([data-bot-form] [data-bot-form-group], [data-bots-setup] .sheet-list)
@@ -1427,6 +1435,12 @@ html[data-bots-app]:has(
   :root[data-bots-app] [data-slot="menu-popup"][data-bot-sheet],
   :root[data-bots-app] [data-context-menu="true"][data-level="0"] {
     border-radius: 0.875rem !important;
+    /* The popover's own fill: white on the dimmed light page, a lit grey on the dark one. */
+    background: linear-gradient(
+      180deg,
+      var(--bots-popover-top),
+      var(--bots-popover-bottom)
+    ) !important;
     box-shadow:
       inset 0 1px 0 var(--bots-lit-soft),
       inset 0 0 0 1px var(--bots-ring),
@@ -1533,6 +1547,79 @@ html[data-bots-app]:has(
 :root[data-bots-app] :is([data-slot="dialog-footer"], [data-slot="alert-dialog-footer"]) {
   border-color: var(--bots-ring);
   background: transparent;
+}
+
+/* A question on a phone is an action sheet: what is asked and the answer that acts in one group,
+   Cancel in its own group under it, each a full row, over the dimmed page. Any other alert keeps
+   its sheet with rounded top corners. */
+:root[data-bots-app] [data-slot="alert-dialog-backdrop"] {
+  background: var(--color-bot-scrim);
+}
+@media (max-width: 639px) {
+  :root[data-bots-app] [data-slot="alert-dialog-popup"]:not([data-confirm-dialog]) {
+    border-radius: 0.875rem 0.875rem 0 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  :root[data-bots-app] [data-slot="alert-dialog-popup"][data-confirm-dialog] {
+    --confirm-sheet-fill: var(--bots-popover-top);
+    border: 0;
+    background: none;
+    box-shadow: none;
+    padding: 0 0.5rem max(0.5rem, env(safe-area-inset-bottom));
+  }
+  :root[data-bots-app] [data-confirm-dialog] [data-slot="alert-dialog-header"] {
+    gap: 0.25rem;
+    border-radius: 0.875rem 0.875rem 0 0;
+    background: var(--confirm-sheet-fill);
+    padding: 1rem 1.25rem 0.875rem;
+    text-align: center;
+  }
+  :root[data-bots-app] [data-confirm-dialog] [data-slot="alert-dialog-title"] {
+    font-size: var(--text-bot-callout);
+    line-height: var(--text-bot-callout--line-height);
+    letter-spacing: var(--text-bot-callout--letter-spacing);
+  }
+  :root[data-bots-app] [data-confirm-dialog] [data-slot="alert-dialog-description"] {
+    font-size: var(--text-bot-footnote);
+    line-height: var(--text-bot-footnote--line-height);
+  }
+  :root[data-bots-app] [data-confirm-dialog] [data-slot="alert-dialog-footer"] {
+    gap: 0.5rem;
+    border: 0;
+    background: none;
+    padding: 0;
+  }
+  :root[data-bots-app] [data-confirm-dialog] [data-slot="alert-dialog-footer"] > * {
+    height: 3.5rem;
+    border: 0;
+    border-radius: 0.875rem;
+    background: var(--confirm-sheet-fill);
+    box-shadow: none;
+    color: var(--color-bot-action);
+    font-size: var(--text-bot-body);
+    font-weight: 400;
+    letter-spacing: var(--text-bot-body--letter-spacing);
+  }
+  :root[data-bots-app] [data-confirm-dialog] [data-slot="alert-dialog-footer"] > *::before {
+    content: none;
+  }
+  :root[data-bots-app] [data-confirm-dialog] [data-slot="alert-dialog-footer"] > :active {
+    background: var(--bots-selected), var(--confirm-sheet-fill);
+  }
+  /* The answer that acts closes the question's group; a hairline parts them. */
+  :root[data-bots-app] [data-confirm-dialog] [data-slot="alert-dialog-footer"] > :last-child {
+    border-radius: 0 0 0.875rem 0.875rem;
+    box-shadow: inset 0 1px 0 var(--color-bot-hairline);
+  }
+  :root[data-bots-app]
+    [data-confirm-dialog="destructive"]
+    [data-slot="alert-dialog-footer"]
+    > :last-child {
+    color: var(--destructive-foreground);
+  }
+  :root[data-bots-app] [data-confirm-dialog] [data-slot="alert-dialog-footer"] > :first-child {
+    font-weight: 600;
+  }
 }
 
 /* Floating controls over a phone page. The tab bar, search, header discs, the composer and its
@@ -1686,8 +1773,8 @@ html[data-bots-app]:has(
   }
 }
 
-/* You on desktop takes Settings' language: semibold section titles over rounded groups in a
-   centred column. */
+/* You on desktop takes Settings' language: rounded groups under quiet titles in a centred
+   column. */
 :root[data-bots-app] [data-connections] .sheet-list {
   border-block: 0;
 }
@@ -1701,9 +1788,6 @@ html[data-bots-app]:has(
   }
   :root[data-bots-app] [data-bots-setup] section > p {
     padding-inline: 2rem;
-  }
-  :root[data-bots-app] [data-connections] :is(section > h2, section > h3) {
-    font-weight: 600;
   }
   :root[data-bots-app] [data-you-column] {
     width: 100%;

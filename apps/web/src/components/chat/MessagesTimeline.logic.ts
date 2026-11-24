@@ -747,6 +747,8 @@ interface TurnFold {
   /** Every entry in the segment, including the cards a fold never hides. */
   entryIds: ReadonlySet<string>;
   label: string;
+  /** A bot chat's turn too short for its time to be worth a line: the row names its tools only. */
+  quiet?: boolean;
 }
 
 interface SupersededAttemptFold {
@@ -1046,6 +1048,9 @@ const isButtonsCall = (entry: TimelineEntry) => {
   return tool === "offer_replies" || tool === "propose_bots";
 };
 
+/** Under this a bot chat's turn shows no time: only the tools it ran, or no row at all. */
+const QUIET_TURN_MS = 5_000;
+
 /** A bot chat reads a turn's time in whole seconds. */
 const formatWholeSeconds = (durationMs: number) =>
   durationMs < 1_000 ? "<1s" : formatDuration(Math.round(durationMs / 1_000) * 1_000);
@@ -1257,6 +1262,12 @@ function deriveTurnFolds(input: {
       hiddenEntryIds: segmentHiddenIds(firstSegment),
       entryIds: new Set(firstSegment.map((entry) => entry.id)),
       label,
+      ...(input.collapseScheduledWakes &&
+      !isLatestInterruptedTurn &&
+      elapsedMs !== null &&
+      elapsedMs < QUIET_TURN_MS
+        ? { quiet: true }
+        : {}),
     });
     for (const [index, { startIndex, steer }] of group.steerSegments.entries()) {
       const entries = group.entries.slice(startIndex, group.steerSegments[index + 1]?.startIndex);
@@ -1990,7 +2001,16 @@ export function deriveMessagesTimelineRows(input: {
     }
 
     const turnFold = foldsByAnchorEntryId.get(timelineEntry.id);
-    if (turnFold) {
+    const turnFoldTools = turnFold ? toolCount(turnFold.hiddenEntryIds) : 0;
+    // A quiet turn that ran no tool has nothing behind a row; a failure it folded keeps one.
+    const turnFoldIsSilent =
+      turnFold?.quiet === true &&
+      turnFoldTools === 0 &&
+      ![...turnFold.hiddenEntryIds].some((entryId) => {
+        const entry = timelineEntryById.get(entryId);
+        return entry?.kind === "work" && workEntryDisplayIndicatesToolFailure(entry.entry);
+      });
+    if (turnFold && !turnFoldIsSilent) {
       const deferredWorkItemIds = [...turnFold.entryIds].flatMap((entryId) => {
         const entry = timelineEntryById.get(entryId);
         return entry?.kind === "work" &&
@@ -2005,8 +2025,8 @@ export function deriveMessagesTimelineRows(input: {
         ...(deferredWorkItemIds.length > 0 ? { deferredWorkItemIds } : {}),
         createdAt: turnFold.createdAt,
         runId: turnFold.runId,
-        label: turnFold.label,
-        toolCount: toolCount(turnFold.hiddenEntryIds),
+        label: turnFold.quiet && turnFoldTools > 0 ? "" : turnFold.label,
+        toolCount: turnFoldTools,
         expanded: input.expandedRunIds?.has(turnFold.runId) ?? false,
       });
     }

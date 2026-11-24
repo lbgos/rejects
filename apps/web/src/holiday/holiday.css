@@ -17,6 +17,7 @@
 :root.dark[data-holiday][data-bots-app]:not([data-theme-id]:not([data-theme-id=""])) {
   --primary: #ecc06c;
   --primary-foreground: #1c1404;
+  --color-bot-action: var(--primary);
 }
 
 /* The default theme's user bubbles are pine. bots.css sets the surface on each bots root, so each

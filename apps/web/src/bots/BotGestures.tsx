@@ -190,9 +190,10 @@ export function BotGestures({
             role="img"
             aria-label={t("Reaction {emoji}", { emoji: reaction })}
             className={cn(
-              "relative -mt-3 flex w-fit items-center rounded-full bg-bot-fill px-2 py-1 text-xl leading-none select-none ring-2 ring-background",
-              // Desktop bot prose has no bubble edge to hang on, so its reaction takes its own row.
-              from === "user" ? "ms-auto me-2" : "ms-2 md:mt-1 md:ms-0",
+              "relative flex w-fit items-center rounded-full bg-bot-fill px-2 py-1 text-xl leading-none select-none ring-2 ring-background",
+              // A reaction hangs on a bubble's edge. Bot prose has no bubble, so its reaction
+              // takes its own row under the text.
+              from === "user" ? "ms-auto me-2 -mt-3" : "mt-1.5",
             )}
           >
             {reaction}

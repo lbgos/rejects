@@ -578,4 +578,11 @@ export const UK = {
   "One per line, up to 4": "По одному в рядку, до 4",
   "{tokens} tokens": "{tokens} токенів",
   "Recent changes": "Останні зміни",
+  "Use the default": "Типова модель",
+  "Show fewer": "Показати менше",
+  "Show all {count}": "Показати всі {count}",
+  "A bot uses this sign-in only after you allow it here.":
+    "Бот користується цим входом лише після вашого дозволу тут.",
+  "Chat cleared": "Чат очищено",
+  "Earlier messages are not shown": "Попередні повідомлення не показано",
 } as const satisfies Record<string, string>;
