@@ -9,7 +9,7 @@ const ROW =
 
 export function QuickStart({ environmentId }: { environmentId: EnvironmentId }) {
   return (
-    <div data-quick-start className="mt-5 flex w-full flex-col text-left">
+    <div data-quick-start className="mt-5 flex w-full flex-col text-left max-md:mt-0">
       <h3 className="pb-1 text-bot-footnote text-muted-foreground">{t("Start from a template")}</h3>
       <ul className="divide-y divide-border/60">
         {BOT_TEMPLATES.map((template) => (

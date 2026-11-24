@@ -11,8 +11,10 @@ import {
   type OrchestrationV2RunStatus,
   type OrchestrationV2ThreadShell,
   type OrchestrationV2TurnItemStatus,
+  type ProviderInstanceId,
   type ScheduledTaskRunStatus,
   type ScheduledTaskSchedule,
+  type ServerProvider,
   ShowUiInput,
 } from "@t3tools/contracts";
 import { foldSearchQuery, rankSearchItems, scoreThreadSearch } from "@t3tools/shared/paletteSearch";
@@ -71,6 +73,12 @@ export function botActivityAt(
  */
 export const botNoticeKey = (bot: Pick<BotSummary, "notifiedAt" | "previewAt">) =>
   bot.previewAt ?? bot.notifiedAt ?? "";
+
+/** A bot's provider is in error, such as no model set up: its turns cannot run, which is not a failed turn. */
+export const botProviderDown = (
+  providers: ReadonlyArray<Pick<ServerProvider, "instanceId" | "status">> | null | undefined,
+  instanceId: ProviderInstanceId | undefined,
+) => providers?.find((provider) => provider.instanceId === instanceId)?.status === "error";
 
 /** The server's notice for a failed run (`BotNotifications.failed`); the list shows the state instead. */
 export const isFailureNotice = (text: string) => text.startsWith("Run failed");

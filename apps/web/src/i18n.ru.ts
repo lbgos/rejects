@@ -82,6 +82,10 @@ export const RU = {
   Reply: "Ответить",
   Copy: "Копировать",
   "Select text": "Выделить текст",
+  "Model not set up": "Модель не настроена",
+  "The last reply did not finish": "Последний ответ не завершён",
+  "Show thinking": "Показать размышления",
+  "Hide thinking": "Скрыть размышления",
   "Could not copy the message": "Не удалось скопировать сообщение",
   "Cancel reply": "Отменить ответ",
   Working: "Работает",
@@ -273,7 +277,7 @@ export const RU = {
   "Could not start the check": "Не удалось запустить проверку",
   "Check notes every night": "Проверять заметки каждую ночь",
   "Could not change the nightly check": "Не удалось изменить ночную проверку",
-  "was {notes}": "было {notes}",
+  "Was: {note}": "Было: {note}",
   Undone: "Отменено",
   "Could not undo the change": "Не удалось отменить изменение",
   Undo: "Отменить",
@@ -536,8 +540,8 @@ export const RU = {
   Advanced: "Дополнительно",
   "Not delivered": "Не доставлено",
   "Queued for this turn": "В очереди на этот ход",
-  "Offline. Reconnects when the network is back.":
-    "Нет сети. Соединение восстановится, когда она вернётся.",
+  "Offline. Your draft is kept; send it when the network is back.":
+    "Нет сети. Черновик сохранён; отправьте его, когда сеть вернётся.",
   Change: "Изменить",
   "Daily limit": "Дневной лимит",
   "Notifications are off": "Уведомления выключены",
@@ -568,7 +572,6 @@ export const RU = {
   "Changing files": "Меняет файлы",
   "Your edits are kept: press {action} to try again.":
     "Ваши правки сохранены здесь: нажмите «{action}», чтобы попробовать ещё раз.",
-  "Open bot…": "Открыть бота…",
   "Paused, resumes {resume}": "Приостановлено, продолжит {resume}",
   "Message {name}": "Сообщение для {name}",
   "Reply stopped": "Ответ остановлен",

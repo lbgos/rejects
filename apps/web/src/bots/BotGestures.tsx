@@ -32,12 +32,15 @@ export function BotGestures({
   messageId,
   text,
   at,
+  thinking,
   children,
 }: {
   from: "bot" | "user";
   messageId: MessageId;
   text: string;
   at: string;
+  /** A reply whose turn has no activity row opens its thinking from the menu. */
+  thinking?: { readonly shown: boolean; readonly onToggle: () => void };
   children: ReactNode;
 }) {
   const { threadRef } = use(TimelineRowCtx);
@@ -109,6 +112,7 @@ export function BotGestures({
   const pick = (picked: BotMenuPick) => {
     closeMenu();
     if (picked === "reply") reply();
+    else if (picked === "thinking") thinking?.onToggle();
     else if (picked === "select") selectText();
     else
       void writeTextToClipboard(text, "message").catch((error: unknown) =>
@@ -156,7 +160,8 @@ export function BotGestures({
           // `data-touch` covers a finger on a device whose primary pointer is fine (iPad with a trackpad).
           !selecting &&
             "[-webkit-touch-callout:none] pointer-coarse:select-none data-touch:select-none",
-          from === "bot" ? "w-full touch-pan-y max-md:w-auto max-md:max-w-[88%]" : "max-w-[80%]",
+          // A reply is unboxed prose: it has the lane's width at every size, as its tables and code do.
+          from === "bot" ? "w-full touch-pan-y" : "max-w-[80%]",
         )}
         {...(selecting
           ? {}
@@ -208,6 +213,7 @@ export function BotGestures({
           time={messageTimeLabel(Date.parse(at))}
           excerpt={text.trim().split("\n", 1)[0]?.slice(0, 80) ?? ""}
           reaction={reaction}
+          thinkingShown={thinking?.shown}
           onReact={
             from === "bot" && chrome
               ? (emoji) => {

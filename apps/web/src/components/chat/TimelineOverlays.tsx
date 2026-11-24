@@ -22,7 +22,7 @@ export function WorkspaceFileDropOverlay() {
 /**
  * Sits `bottom` pixels up, clear of the composer and its attached banners. The summary names
  * what waits at the end of the timeline, which is out of view while it shows. `compact` (bot
- * chats) is a round arrow: at the trailing edge on a phone, centred over the composer otherwise.
+ * chats) is a round arrow centred over the composer, inside the transcript's fade.
  */
 export function ScrollToEndButton(props: {
   readonly bottom: number;
@@ -33,7 +33,7 @@ export function ScrollToEndButton(props: {
   if (props.compact) {
     return (
       <div
-        className="chat-scroll-to-bottom pointer-events-none absolute z-30 flex justify-end px-3 py-1.5 md:justify-center"
+        className="chat-scroll-to-bottom pointer-events-none absolute z-30 flex justify-center py-1.5"
         style={{ bottom: props.bottom }}
       >
         <Button

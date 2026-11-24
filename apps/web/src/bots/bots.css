@@ -54,6 +54,8 @@
    it too. */
 :root[data-bots-app] {
   --bots-tab-bar-space: calc(3.875rem + max(env(safe-area-inset-bottom) - 0.5rem, 0.75rem) + 1rem);
+  /* What a tab screen leaves under its last row: the bar, and room to read the row above it. */
+  --bots-tab-bar-clearance: calc(var(--bots-tab-bar-space) + 1rem);
 }
 /* Search takes the screen and the keyboard, and setup takes the screen: the tab bar steps aside
    until either is done, unless it sits on a hidden tab screen (BotTabHost). Outside the bots app the phone's Settings index
@@ -125,14 +127,19 @@ html[data-theme-id] [data-bots-mode="true"] [data-chat-header],
   padding-top: calc(var(--bot-chat-header-height) + 1rem);
 }
 :root[data-bots-app] [data-settings-index-list] [data-slot="sidebar-content"] {
-  padding-bottom: var(--bots-tab-bar-space);
+  padding-bottom: var(--bots-tab-bar-clearance);
 }
 
-/* Scrollers under floating chrome. A top bar is solid and has its own edge once something is
-   under it, so content meets it whole and is cut there, never half shown. At the bottom, content
-   fades out over 24px as it reaches the composer or the tab bar, which have no edge across the
-   page, so no text reads through or between them. `--bots-fade-end` is how much of the scroller's
-   bottom the chrome covers. A static mask; scrolling repaints nothing extra. */
+/* Scroll edges: one rule for every scroller under chrome. A top bar is opaque and spans the page,
+   so content is cut at its edge, and the bar draws a hairline while anything is under it. The
+   composer and the tab bar float and span nothing, so content fades to the page over
+   `--bots-edge-fade` and is gone `--bots-edge-gap` before their top edge: no text reads under,
+   between or beside them. `--bots-fade-end` is how much of the scroller's bottom the
+   chrome covers. A static mask; scrolling repaints nothing extra. */
+:root[data-bots-app] {
+  --bots-edge-fade: 1.5rem;
+  --bots-edge-gap: 0.375rem;
+}
 :root[data-bots-app]
   :is(
     [data-bots-mode="true"] .messages-timeline-scroll,
@@ -140,22 +147,41 @@ html[data-theme-id] [data-bots-mode="true"] [data-chat-header],
     [data-settings-index-list] [data-slot="scroll-area-viewport"]
   ) {
   --bots-fade-end: 0px;
+}
+:root[data-bots-app]
+  :is(
+    [data-bots-mode="true"] .messages-timeline-scroll,
+    [data-bots-scroller],
+    [data-settings-index-list] [data-slot="scroll-area-viewport"]
+  ) {
   -webkit-mask-image: linear-gradient(
     to bottom,
-    #000 calc(100% - var(--bots-fade-end) - 24px),
-    transparent calc(100% - var(--bots-fade-end))
+    #000 calc(100% - var(--bots-fade-end) - var(--bots-edge-gap) - var(--bots-edge-fade)),
+    transparent calc(100% - var(--bots-fade-end) - var(--bots-edge-gap))
   );
   mask-image: linear-gradient(
     to bottom,
-    #000 calc(100% - var(--bots-fade-end) - 24px),
-    transparent calc(100% - var(--bots-fade-end))
+    #000 calc(100% - var(--bots-fade-end) - var(--bots-edge-gap) - var(--bots-edge-fade)),
+    transparent calc(100% - var(--bots-fade-end) - var(--bots-edge-gap))
   );
 }
-/* The transcript is gone by the composer's top edge. */
+/* A Settings page sits under a bar with an edge and over no chrome: it is cut, not faded. */
+:root[data-bots-app] [data-settings-page-scroll] {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+/* The composer's measured height starts at its lane's 12px of clear space. */
 :root[data-bots-app] [data-bots-mode="true"] .messages-timeline-scroll {
   --bots-fade-end: max(var(--bot-composer-height, 0px) - 12px, 0px);
 }
-/* A tab screen's list is gone by the tab bar's top edge. The bots list has no bar over its top. */
+/* The jump-to-latest disc stands on the page: with it up, the transcript ends above it. */
+:root[data-bots-app]
+  [data-bots-mode="true"]
+  :has(> .chat-scroll-to-bottom)
+  .messages-timeline-scroll {
+  --bots-edge-gap: 3.25rem;
+}
+/* A tab screen's list ends above the tab bar. */
 @media (max-width: 767px) {
   :root[data-bots-app]
     :is(
@@ -164,16 +190,18 @@ html[data-theme-id] [data-bots-mode="true"] [data-chat-header],
     ) {
     --bots-fade-end: calc(var(--bots-tab-bar-space) - 1rem);
   }
-  :root[data-bots-app] [data-bots-page]:not([data-bot-searching]) [data-bot-list] {
+  /* The bots list moves with a pull to refresh, so its fade is on the page, which stays put. */
+  :root[data-bots-app] [data-bots-page]:not([data-bot-searching]) {
+    --bots-fade-end: calc(var(--bots-tab-bar-space) - 1rem);
     -webkit-mask-image: linear-gradient(
       to bottom,
-      #000 calc(100% - var(--bots-tab-bar-space) - 0.5rem),
-      transparent calc(100% - var(--bots-tab-bar-space) + 1rem)
+      #000 calc(100% - var(--bots-fade-end) - var(--bots-edge-gap) - var(--bots-edge-fade)),
+      transparent calc(100% - var(--bots-fade-end) - var(--bots-edge-gap))
     );
     mask-image: linear-gradient(
       to bottom,
-      #000 calc(100% - var(--bots-tab-bar-space) - 0.5rem),
-      transparent calc(100% - var(--bots-tab-bar-space) + 1rem)
+      #000 calc(100% - var(--bots-fade-end) - var(--bots-edge-gap) - var(--bots-edge-fade)),
+      transparent calc(100% - var(--bots-fade-end) - var(--bots-edge-gap))
     );
   }
 }
@@ -315,19 +343,11 @@ html[data-bots-app] body {
   html[data-bots-app]:active-view-transition-type(bots-tab)::view-transition-new(root) {
     animation: bots-tab-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
   }
-  /* A phone tab switch (BotTabHost) is all but instant, as on iOS: the incoming screen comes up
-     over the outgoing one in 90ms, too short for two screens' text to read through each other.
-     The tab bar sits outside both. Arriving from a chat or a detail page (data-fade false) has
-     no fade at all. */
-  :root[data-bots-app] [data-bot-tab-host][data-fade="true"] [data-bot-tab-pane] {
-    transition:
-      opacity 0s linear 90ms,
-      visibility 0s linear 90ms !important;
-  }
-  :root[data-bots-app]
-    [data-bot-tab-host][data-fade="true"]
-    [data-bot-tab-pane][data-active="true"] {
-    transition: opacity 90ms linear !important;
+  /* A phone tab switch (BotTabHost) swaps the screen in one step, as on iOS: at every frame one
+     page is on screen, never two read through each other. The tab bar sits outside both and
+     carries the change on its selection. */
+  :root[data-bots-app] [data-bot-tab-host] [data-bot-tab-pane] {
+    transition: none !important;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -477,24 +497,47 @@ html[data-bots-app] body {
   padding-inline-start: 1.5rem;
 }
 
+/* A toast is one calm card: its close button sits inside its corner with no disc of its own, and
+   its wording is read, not copied by a control. Toasts stack apart, newest nearest the edge, so
+   each keeps a slot it can be read in. */
+:root[data-bots-app] [data-slot="toast"] > :has(> [data-slot="toast-close"]) {
+  top: 0.375rem;
+  right: 0.375rem;
+}
+:root[data-bots-app] [data-slot="toast"] [data-slot="toast-close"] {
+  border-color: transparent;
+  background: none;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+:root[data-bots-app] [data-slot="toast"] [data-slot="toast-title"] {
+  padding-inline-end: 1.75rem;
+}
+:root[data-bots-app] [data-slot="toast"] [data-slot="toast-copy"] {
+  display: none;
+}
+:root[data-bots-app]
+  [data-slot="toast"]:not(
+    [data-expanded],
+    [data-starting-style],
+    [data-ending-style],
+    [data-limited]
+  ) {
+  height: auto !important;
+  transform: translateX(var(--toast-swipe-movement-x)) translateY(var(--toast-calc-offset-y)) !important;
+}
+:root[data-bots-app] [data-slot="toast"]:not([data-limited]) [data-slot="toast-content"] {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
 /* On a phone a toast is a banner above the tab bar or the composer (the root route asks for the
-   bottom position), so it never covers a title. Its close button sits inside it, and the error's
-   own wording stays out of reach of a stray tap: copying it is a desktop control. */
+   bottom position), so it never covers a title. */
 @media (max-width: 767px) {
   :root[data-bots-app] [data-slot="toast-viewport"] {
     --toast-inset: 0.75rem;
     bottom: var(--bots-tab-bar-space);
     max-width: none;
-  }
-  :root[data-bots-app] [data-slot="toast"] > :has(> [data-slot="toast-close"]) {
-    top: 0.5rem;
-    right: 0.5rem;
-  }
-  :root[data-bots-app] [data-slot="toast"] [data-slot="toast-title"] {
-    padding-inline-end: 1.75rem;
-  }
-  :root[data-bots-app] [data-slot="toast"] [data-slot="toast-copy"] {
-    display: none;
   }
 }
 
@@ -684,7 +727,8 @@ html[data-bots-app] body {
   /* A long draft scrolls inside the field after six lines, so the transcript keeps the screen. */
   [data-bot-composer="true"] .composer-tiptap {
     min-height: 1lh;
-    max-height: calc(6lh + 0.5rem);
+    /* Whole lines: a draft scrolled to its end starts its window on a line, never through one. */
+    max-height: 6lh;
   }
   /* The placeholder overlays the field, so it takes the field's size and line to sit on its line. */
   [data-bot-composer="true"]
@@ -846,7 +890,7 @@ html[data-bots-app] body {
   --bots-composer-shadow: 0 1px 2px rgb(0 0 0 / 30%), 0 3px 10px rgb(0 0 0 / 22%);
   --bots-popover-shadow: 0 8px 24px rgb(0 0 0 / 45%);
   --bots-dialog-shadow: 0 16px 40px rgb(0 0 0 / 63%);
-  --bots-bar-edge: color-mix(in srgb, var(--foreground) 16%, transparent);
+  --bots-bar-edge: color-mix(in srgb, var(--foreground) 24%, transparent);
   --bots-bar-shadow: 0 8px 20px -12px rgb(0 0 0 / 70%);
   --bots-hover: linear-gradient(
     180deg,
@@ -906,6 +950,7 @@ html[data-bots-app] body {
   --bots-composer-shadow: 0 1px 2px rgb(0 0 0 / 6%), 0 3px 10px rgb(0 0 0 / 5%);
   --bots-popover-shadow: 0 8px 24px rgb(0 0 0 / 10%);
   --bots-dialog-shadow: 0 16px 40px rgb(0 0 0 / 14%);
+  --bots-bar-edge: color-mix(in srgb, var(--foreground) 16%, transparent);
   --bots-bar-shadow: 0 8px 20px -12px rgb(0 0 0 / 22%);
   --bots-bubble-lift: linear-gradient(180deg, rgb(255 255 255 / 45%), transparent);
 }
@@ -1193,6 +1238,95 @@ html[data-bots-app]:has(
   }
 }
 
+/* Rows that act or open a page. An action row is a group's whole-width button; a link row is its
+   title with a chevron where a control would be. On a phone both are 44pt rows in body type. */
+:root[data-bots-app] [data-slot="settings-group"] > [data-settings-action-row] {
+  border-radius: 0;
+}
+:root[data-bots-app] [data-slot="settings-group"] > [data-settings-action-row]:first-child {
+  border-start-start-radius: inherit;
+  border-start-end-radius: inherit;
+}
+:root[data-bots-app] [data-slot="settings-group"] > [data-settings-action-row]:last-child {
+  border-end-start-radius: inherit;
+  border-end-end-radius: inherit;
+}
+@media (hover: hover) {
+  :root[data-bots-app] [data-slot="settings-row"][data-settings-link-row]:hover {
+    background: var(--bots-hover);
+  }
+}
+@media (max-width: 767px) {
+  :root[data-bots-app]
+    [data-settings-page-scroll]
+    [data-slot="settings-row"][data-settings-link-row] {
+    min-height: 2.75rem;
+  }
+  :root[data-bots-app] [data-settings-page-scroll] [data-settings-link-row] h3 > a {
+    font-size: var(--text-bot-body);
+    line-height: var(--text-bot-body--line-height);
+    letter-spacing: var(--text-bot-body--letter-spacing);
+    font-weight: 400;
+  }
+  /* A row's help is footnote text under its title, full width. */
+  :root[data-bots-app] [data-settings-page-scroll] [data-settings-row-description] {
+    font-size: var(--text-bot-footnote);
+    line-height: var(--text-bot-footnote--line-height);
+  }
+  /* The page's own action in the bar is a plus in the action colour; its name is for readers. */
+  :root[data-bots-app] [data-settings-bar-action] [data-slot="button"] {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+    color: var(--color-bot-action);
+  }
+  :root[data-bots-app] [data-settings-bar-action] [data-slot="button"] svg {
+    width: 1.375rem;
+    height: 1.375rem;
+  }
+  :root[data-bots-app] [data-settings-bar-action] [data-settings-bar-action-label] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/* Adding to a list is an action row. */
+:root[data-bots-app] [data-provider-add] {
+  color: var(--color-bot-action);
+}
+@media (max-width: 767px) {
+  /* A phone row's button is its label in the action colour, with no box of its own. */
+  :root[data-bots-app]
+    :is([data-settings-page-scroll], [data-connections] .sheet-list)
+    [data-slot="button"]:is([data-variant="outline"], [data-variant="destructive-outline"]):not(
+      [data-slot="dialog-popup"] *,
+      [data-slot="input-group"] *
+    ) {
+    border-color: transparent;
+    background: none;
+    box-shadow: none;
+    color: var(--color-bot-action);
+    font-size: var(--text-bot-callout);
+  }
+  :root[data-bots-app]
+    [data-settings-page-scroll]
+    [data-slot="button"][data-variant="destructive-outline"]:not([data-slot="dialog-popup"] *) {
+    color: var(--destructive-foreground);
+  }
+  :root[data-bots-app]
+    :is([data-settings-page-scroll], [data-connections] .sheet-list)
+    [data-slot="button"]:is(
+      [data-variant="outline"],
+      [data-variant="destructive-outline"]
+    ):disabled {
+    color: var(--muted-foreground);
+    opacity: 1;
+  }
+}
+
 /* A value longer than its field, such as a path, ends in an ellipsis until the field is entered,
    where it scrolls and can be selected whole. */
 :root[data-bots-app] [data-settings-page-scroll] input:not(:focus) {
@@ -1254,6 +1388,21 @@ html[data-bots-app]:has(
   box-shadow:
     inset 0 1px 1px var(--bots-well-shade),
     inset 0 0 0 1px var(--bots-ring);
+}
+/* The Settings search is a filled field with no outline, like the groups under it. */
+:root[data-bots-app] [data-settings-index-list] [data-settings-search-row] > div {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  box-shadow: none;
+}
+/* On a phone a field inside a group is a filled well: the group is its only frame. */
+@media (max-width: 767px) {
+  :root[data-bots-app]
+    :is([data-slot="settings-group"], .sheet-list)
+    :is([data-slot="input-control"], [data-slot="textarea-control"], [data-slot="input-group"]):not(
+      [data-slot="input-group"] *
+    ) {
+    box-shadow: none;
+  }
 }
 :root[data-bots-app]
   :is(
@@ -1801,14 +1950,15 @@ html[data-bots-app]:has(
   }
 }
 
-/* The top bars lift off the page only once something scrolls under them. Their edge and shadow
-   live on a pseudo-element behind the bar's content, whose opacity follows the first 28px of the
-   scroller's offset through a named scroll timeline: it fades in and out with the finger and
-   paints nothing while the page is still. */
-:root[data-bots-app] :is([data-chat-header], [data-bots-top-bar]) {
+/* The top bars lift off the page only once something is under them. Their edge and shadow live
+   on a pseudo-element behind the bar's content and follow the bar's scrolled state (set by its
+   scroller), in one short fade: nothing is painted while the page is still, and the edge is the
+   same in a still frame as it is on screen. */
+:root[data-bots-app] :is([data-chat-header], [data-bots-top-bar], [data-settings-page-header]) {
   isolation: isolate;
 }
-:root[data-bots-app] :is([data-chat-header], [data-bots-top-bar])::after {
+:root[data-bots-app]
+  :is([data-chat-header], [data-bots-top-bar], [data-settings-page-header])::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -1819,9 +1969,24 @@ html[data-bots-app]:has(
     var(--bots-bar-shadow);
   opacity: 0;
 }
-@keyframes bots-bar-edge-in {
-  to {
-    opacity: 1;
+:root[data-bots-app]
+  :is(
+    [data-chat-header],
+    [data-bots-top-bar],
+    [data-settings-page-header]
+  )[data-scrolled="true"]::after {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-bots-app]
+    :is([data-chat-header], [data-bots-top-bar], [data-settings-page-header])::after {
+    transition: opacity 180ms ease-out !important;
+  }
+}
+/* A wide Settings page keeps the constant rule under its breadcrumb. */
+@media (min-width: 768px) {
+  :root[data-bots-app] [data-settings-page-header]::after {
+    content: none;
   }
 }
 @keyframes bots-bar-title-in {
@@ -1846,16 +2011,8 @@ html[data-bots-app]:has(
     ) {
     scroll-timeline: --bots-bar block;
   }
-  /* Bots mode stills every animation (above); the longhands opt this one back in. */
-  :root[data-bots-app] :is([data-chat-header], [data-bots-top-bar])::after {
-    animation-name: bots-bar-edge-in !important;
-    animation-duration: auto !important;
-    animation-timing-function: linear !important;
-    animation-fill-mode: both !important;
-    animation-timeline: --bots-bar !important;
-    animation-range: 0 28px !important;
-  }
-  /* The bar's inline title fades in as the large title passes under it. */
+  /* Bots mode stills every animation (above); the longhands opt this one back in. The bar's
+     inline title fades in as the large title passes under it. */
   :root[data-bots-app] [data-bots-bar-title] {
     animation-name: bots-bar-title-in !important;
     animation-duration: auto !important;
@@ -1870,13 +2027,9 @@ html[data-bots-app]:has(
   animation-name: none !important;
   opacity: 1;
 }
-/* Without scroll timelines the edge and title follow the bar's scrolled state, in one short fade. */
+/* Without scroll timelines the title follows the bar's scrolled state, in one short fade. */
 @supports not (animation-timeline: scroll()) {
-  :root[data-bots-app] :is([data-chat-header], [data-bots-top-bar])[data-scrolled="true"]::after {
-    opacity: 1;
-  }
   @media (prefers-reduced-motion: no-preference) {
-    :root[data-bots-app] :is([data-chat-header], [data-bots-top-bar])::after,
     :root[data-bots-app] [data-bots-bar-title] {
       transition: opacity 180ms ease-out !important;
     }
@@ -1918,6 +2071,23 @@ html[data-bots-app]:has(
     background:
       var(--bots-selected), linear-gradient(180deg, var(--bots-glass-top), var(--bots-glass-bottom));
   }
+  /* The bot form's action is as tall as its close disc. Until it can be pressed it is cut from the
+     same glass; once it can, it takes the primary fill. */
+  :root[data-bots-app] [data-bot-nav-bar] [data-slot="button"][type="submit"] {
+    height: 2.25rem;
+    min-height: 2.25rem;
+    padding-inline: 0.875rem;
+  }
+  :root[data-bots-app] [data-bot-nav-bar] [data-slot="button"][type="submit"]:disabled {
+    border: 1px solid transparent;
+    background: linear-gradient(180deg, var(--bots-glass-top), var(--bots-glass-bottom));
+    box-shadow:
+      inset 0 1px 0 var(--bots-lit),
+      inset 0 0 0 1px var(--bots-ring),
+      var(--bots-raised-shadow);
+    color: var(--muted-foreground);
+    opacity: 1;
+  }
   /* A pushed page names itself in the middle of its bar: a chat by its bot, as a panel does. */
   :root[data-bots-app] [data-bot-header] > :first-child {
     justify-content: center;
@@ -1943,16 +2113,35 @@ html[data-bots-app]:has(
      code lies past it: the cover gradient scrolls with the code and hides the shade at the end. */
   :root[data-bots-app] [data-bot-bubble] .chat-markdown-codeblock pre {
     overflow-x: auto;
-    overflow-wrap: normal;
-    white-space: pre;
     padding: 0.625rem 0.75rem;
     font-size: var(--text-bot-footnote);
     scrollbar-width: none;
-    background:
-      linear-gradient(to left, var(--bots-well-bottom), transparent) right / 1.5rem 100% no-repeat
-        local,
-      linear-gradient(to left, color-mix(in srgb, var(--foreground) 16%, transparent), transparent)
-        right / 1rem 100% no-repeat scroll;
+  }
+  :root[data-bots-app] [data-bot-bubble] .chat-markdown-codeblock:not([data-wrap-chosen]) pre {
+    overflow-wrap: normal;
+    white-space: pre;
+  }
+  /* A block wider than the lane says so: its lines fade out at the far edge, and its bar comes
+     back with Wrap and Copy. A block that fits has neither. */
+  :root[data-bots-app]
+    [data-bot-bubble]
+    .chat-markdown-codeblock:is([data-overflow], [data-wrap-chosen])
+    .chat-markdown-codeblock-header {
+    display: flex;
+    min-height: 2.25rem;
+  }
+  :root[data-bots-app] [data-bot-bubble] .chat-markdown-codeblock[data-overflow] pre {
+    padding-inline-end: 2.5rem;
+  }
+  :root[data-bots-app] [data-bot-bubble] .chat-markdown-codeblock[data-overflow]::after {
+    content: "";
+    position: absolute;
+    inset-block: 2.25rem 1px;
+    inset-inline-end: 1px;
+    width: 2.5rem;
+    border-end-end-radius: inherit;
+    background: linear-gradient(to left, var(--bots-well-bottom) 15%, transparent);
+    pointer-events: none;
   }
   :root[data-bots-app] [data-bot-bubble] .chat-markdown-codeblock pre::-webkit-scrollbar {
     display: none;
@@ -1965,6 +2154,14 @@ html[data-bots-app]:has(
       inset 0 1px 1px var(--bots-well-shade),
       inset 0 0 0 1px var(--bots-ring);
   }
+}
+
+/* In light your bubble is one flat fill a step darker than the page: a lit gradient on a pale
+   page reads as embossed, and it would be the only gradient on the screen. */
+:root:not(.dark)[data-bots-app] [data-bot-user-bubble] {
+  background-color: color-mix(in srgb, var(--foreground) 11%, var(--bots-page));
+  background-image: none;
+  box-shadow: none;
 }
 
 /* Primary actions carry white labels, and in named dark themes a failure or a destructive action

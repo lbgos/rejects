@@ -610,6 +610,8 @@ type MessagesTimelineRowContent =
       assistantCopyStreaming: boolean;
       assistantTurnDiffSummary?: TurnDiffSummary | undefined;
       revertTurnCount?: number | undefined;
+      /** A bot reply whose short turn has no row: its thinking opens from the message's menu. */
+      thinking?: { readonly runId: RunId; readonly shown: boolean };
       /** Another of your messages follows directly, so the two sit closer together. */
       groupedWithNext?: boolean;
       /** Another of your messages sits directly above, so the joined corners tighten. */
@@ -1700,6 +1702,8 @@ export function deriveMessagesTimelineRows(input: {
       })
     : new Map<MessageId, number>();
   const nextRows: MessagesTimelineRow[] = [];
+  /** Bot turns with thinking and no row of their own, and whether that thinking is open. */
+  const silentRuns = new Map<RunId, boolean>();
   const terminalAssistantMessageIds = deriveTerminalAssistantMessageIds(timelineEntries);
   const failedRunIds = failedTimelineRunIds(timelineEntries, input.latestRun ?? null);
   const itemizedRunIds = itemizedFailedRunIds(timelineEntries, failedRunIds);
@@ -2002,7 +2006,11 @@ export function deriveMessagesTimelineRows(input: {
 
     const turnFold = foldsByAnchorEntryId.get(timelineEntry.id);
     const turnFoldTools = turnFold ? toolCount(turnFold.hiddenEntryIds) : 0;
-    // A quiet turn that ran no tool has nothing behind a row; a failure it folded keeps one.
+    const turnFoldExpanded = turnFold
+      ? (input.expandedRunIds?.has(turnFold.runId) ?? false)
+      : false;
+    // A quiet turn that ran no tool gets no row; a failure it folded keeps one. What it hides,
+    // its thinking, opens from the reply's menu, and the row shows while it is open.
     const turnFoldIsSilent =
       turnFold?.quiet === true &&
       turnFoldTools === 0 &&
@@ -2010,7 +2018,19 @@ export function deriveMessagesTimelineRows(input: {
         const entry = timelineEntryById.get(entryId);
         return entry?.kind === "work" && workEntryDisplayIndicatesToolFailure(entry.entry);
       });
-    if (turnFold && !turnFoldIsSilent) {
+    const silentThinking =
+      turnFold !== undefined &&
+      turnFoldIsSilent &&
+      [...turnFold.hiddenEntryIds].some((entryId) => {
+        const entry = timelineEntryById.get(entryId);
+        return (
+          entry?.kind === "work" &&
+          entry.entry.itemType === "reasoning" &&
+          Boolean(entry.entry.detail?.trim())
+        );
+      });
+    if (turnFold && silentThinking) silentRuns.set(turnFold.runId, turnFoldExpanded);
+    if (turnFold && (!turnFoldIsSilent || (silentThinking && turnFoldExpanded))) {
       const deferredWorkItemIds = [...turnFold.entryIds].flatMap((entryId) => {
         const entry = timelineEntryById.get(entryId);
         return entry?.kind === "work" &&
@@ -2025,9 +2045,13 @@ export function deriveMessagesTimelineRows(input: {
         ...(deferredWorkItemIds.length > 0 ? { deferredWorkItemIds } : {}),
         createdAt: turnFold.createdAt,
         runId: turnFold.runId,
-        label: turnFold.quiet && turnFoldTools > 0 ? "" : turnFold.label,
+        label: turnFoldIsSilent
+          ? "Thinking"
+          : turnFold.quiet && turnFoldTools > 0
+            ? ""
+            : turnFold.label,
         toolCount: turnFoldTools,
-        expanded: input.expandedRunIds?.has(turnFold.runId) ?? false,
+        expanded: turnFoldExpanded,
       });
     }
 
@@ -2350,6 +2374,10 @@ export function deriveMessagesTimelineRows(input: {
       timelineEntry.message.role === "assistant" &&
       runIdIsActiveResponse(timelineEntry.message.runId);
 
+    const silentRunId =
+      timelineEntry.message.role === "assistant" ? timelineEntry.message.runId : null;
+    const silentRun = silentRunId == null ? undefined : silentRuns.get(silentRunId);
+
     const showAssistantMeta =
       timelineEntry.message.role === "assistant" &&
       terminalAssistantMessageIds.has(timelineEntry.message.id) &&
@@ -2378,6 +2406,9 @@ export function deriveMessagesTimelineRows(input: {
         timelineEntry.message.role === "user"
           ? revertTurnCountByUserMessageId.get(timelineEntry.message.id)
           : undefined,
+      ...(silentRun === undefined || silentRunId == null
+        ? {}
+        : { thinking: { runId: silentRunId, shown: silentRun } }),
     });
   }
 

@@ -1,6 +1,7 @@
 import type { BotSummary, EnvironmentId } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { markdownPreview } from "@t3tools/shared/markdownPreview";
+import { useAtomValue } from "@effect/atom-react";
 import { useNavigate } from "@tanstack/react-router";
 import * as DateTime from "effect/DateTime";
 import { BellOffIcon } from "lucide-react";
@@ -22,6 +23,7 @@ import { BOT_ACTION_ICONS } from "./icons";
 import { PushPrompt } from "../push/PushPrompt";
 import {
   botActivityAt,
+  botProviderDown,
   formatListTime,
   isFailureNotice,
   resolveBotState,
@@ -31,6 +33,7 @@ import {
 import { useThreadSearch } from "../state/queries";
 import { environmentCatalog } from "../connection/catalog";
 import { useEnvironment } from "../state/environments";
+import { serverEnvironment } from "../state/server";
 import { useAtomCommand } from "../state/use-atom-command";
 import {
   fullSwipeAt,
@@ -93,6 +96,7 @@ export function BotList({
   const failed = useBotsListFailed(environmentId);
   const shells = useThreadShells();
   const tasks = useScheduledTasks(environmentId);
+  const providers = useAtomValue(serverEnvironment.providersValueAtom(environmentId));
   const { run, showContextMenu } = useBotActions(environmentId);
   const navigate = useNavigate();
   const phone = useMediaQuery("max-md");
@@ -116,19 +120,28 @@ export function BotList({
         ? DateTime.toEpochMillis(authoredAt) >= Date.parse(bot.historyFrom ?? bot.createdAt)
         : false;
       const schedules = tasks.filter((t) => t.threadId === bot.threadId);
-      const state = resolveBotState(
+      const resolved = resolveBotState(
         shell ? resolveSidebarThreadStatus(shell) : "ready",
         bot,
         schedules,
       );
+      // A bot whose model is not set up has not failed: its row says what is missing, plainly.
+      const unset =
+        resolved === "failed" && botProviderDown(providers, bot.modelSelection.instanceId);
+      const state = unset ? "idle" : resolved;
       return {
         bot,
         schedules,
         state,
-        // The state word already says a run failed; the server's failure line is for the chat.
-        text: state === "failed" && isFailureNotice(text) ? "" : text,
+        // The state word says a run failed; the server's failure line is for the chat, so the
+        // row says what that means for the reader instead.
+        text: unset
+          ? t("Model not set up")
+          : state === "failed" && isFailureNotice(text)
+            ? t("The last reply did not finish")
+            : text,
         at,
-        empty: !text && !wroteSinceClear,
+        empty: !unset && !text && !wroteSinceClear,
       };
     }),
   );

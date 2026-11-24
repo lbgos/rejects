@@ -1,5 +1,5 @@
 import { BOT_REACTIONS, type BotReaction } from "@t3tools/contracts";
-import { CopyIcon, ReplyIcon, TextSelectIcon } from "lucide-react";
+import { BrainIcon, CopyIcon, ReplyIcon, TextSelectIcon } from "lucide-react";
 import {
   Menu,
   MenuGroup,
@@ -11,7 +11,7 @@ import {
 import { t } from "../i18n";
 import { menuCollisionPadding } from "../safeArea";
 
-export type BotMenuPick = "reply" | "copy" | "select";
+export type BotMenuPick = "reply" | "copy" | "select" | "thinking";
 
 export function BotMessageMenu({
   bubble,
@@ -20,6 +20,7 @@ export function BotMessageMenu({
   time,
   excerpt,
   reaction,
+  thinkingShown,
   onReact,
   onPick,
   onClose,
@@ -30,6 +31,8 @@ export function BotMessageMenu({
   readonly time: string;
   readonly excerpt: string;
   readonly reaction: string | undefined;
+  /** Set on a reply whose turn shows no activity row: whether its thinking is open. */
+  readonly thinkingShown: boolean | undefined;
   readonly onReact: ((emoji: BotReaction | null) => void) | undefined;
   readonly onPick: (pick: BotMenuPick) => void;
   readonly onClose: () => void;
@@ -92,6 +95,12 @@ export function BotMessageMenu({
               </MenuItem>
             </>
           ) : null}
+          {thinkingShown === undefined ? null : (
+            <MenuItem onClick={() => onPick("thinking")}>
+              <BrainIcon />
+              {thinkingShown ? t("Hide thinking") : t("Show thinking")}
+            </MenuItem>
+          )}
         </MenuGroup>
       </MenuPopup>
     </Menu>

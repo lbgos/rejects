@@ -32,6 +32,7 @@ import { BOT_ACTION_ICONS } from "./icons";
 import { BotThreadContext, BotChromeContext } from "./context";
 import {
   botNoticeKey,
+  botProviderDown,
   botScheduleLabel,
   formatResume,
   formatWakeIn,
@@ -141,7 +142,7 @@ export function BotThread({ target, children }: { target: ScopedThreadRef; child
         id: "bot-offline",
         variant: "default",
         icon: <WifiOffIcon />,
-        title: t("Offline. Reconnects when the network is back."),
+        title: t("Offline. Your draft is kept; send it when the network is back."),
       };
     if (!stopped) return null;
     return {
@@ -165,9 +166,7 @@ export function BotThread({ target, children }: { target: ScopedThreadRef; child
   };
   const modelSelection = bot?.modelSelection;
   const providers = useAtomValue(serverEnvironment.providersValueAtom(environmentId));
-  const providerDown =
-    providers?.find((provider) => provider.instanceId === modelSelection?.instanceId)?.status ===
-    "error";
+  const providerDown = botProviderDown(providers, modelSelection?.instanceId);
   const chrome = modelSelection
     ? {
         title: botName,
@@ -243,12 +242,18 @@ function BotHeaderSubtitle({ target }: { target: ScopedThreadRef }) {
   const bot = useBot(target.environmentId, target.threadId);
   const shell = useThreadShell(target);
   const schedules = useBotSchedules(target);
+  const providers = useAtomValue(serverEnvironment.providersValueAtom(target.environmentId));
   if (!bot) return null;
-  const state = resolveBotState(
+  const resolved = resolveBotState(
     shell ? resolveSidebarThreadStatus(shell) : "ready",
     bot,
     schedules,
   );
+  // The notice over the composer explains a model that is not set up; the header stays quiet.
+  const state =
+    resolved === "failed" && botProviderDown(providers, bot.modelSelection.instanceId)
+      ? "idle"
+      : resolved;
   // The header names the same state as the bot's row in the list; a running turn has no next wake.
   const next = state === "capped" || state === "running" ? null : nextWakeAt(schedules);
   const shown = state === "idle" ? null : state;
@@ -341,13 +346,24 @@ function BotEmptyState({ target }: { target: ScopedThreadRef }) {
     <div
       className={cn(
         "relative flex w-full flex-col items-center px-8 text-center",
+        quickStart && "max-md:px-5",
         // The quick start is a list to read, so it takes a wider column than a bot's own facts.
         quickStart ? "max-w-xl" : "max-w-md",
       )}
     >
       <HolidayWreath />
-      <BotAvatar bot={bot} className="mb-3.5 size-16 bg-bot-fill max-md:size-19" />
-      <div className="text-lg font-semibold max-md:text-bot-heading max-md:font-bold">
+      {/* On a phone the quick start fills the screen and the bar already names the bot, so the
+          list starts the page instead of being pushed under the bar by a second name. */}
+      <BotAvatar
+        bot={bot}
+        className={cn("mb-3.5 size-16 bg-bot-fill max-md:size-19", quickStart && "max-md:hidden")}
+      />
+      <div
+        className={cn(
+          "text-lg font-semibold max-md:text-bot-heading max-md:font-bold",
+          quickStart && "max-md:hidden",
+        )}
+      >
         {bot.name}
       </div>
       {facts.length > 0 ? (

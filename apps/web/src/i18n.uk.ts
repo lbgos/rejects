@@ -80,6 +80,10 @@ export const UK = {
   Reply: "Відповісти",
   Copy: "Копіювати",
   "Select text": "Виділити текст",
+  "Model not set up": "Модель не налаштовано",
+  "The last reply did not finish": "Останню відповідь не завершено",
+  "Show thinking": "Показати міркування",
+  "Hide thinking": "Сховати міркування",
   "Could not copy the message": "Не вдалося скопіювати повідомлення",
   "Cancel reply": "Скасувати відповідь",
   Working: "Працює",
@@ -271,7 +275,7 @@ export const UK = {
   "Could not start the check": "Не вдалося запустити перевірку",
   "Check notes every night": "Перевіряти нотатки щоночі",
   "Could not change the nightly check": "Не вдалося змінити нічну перевірку",
-  "was {notes}": "було {notes}",
+  "Was: {note}": "Було: {note}",
   Undone: "Скасовано",
   "Could not undo the change": "Не вдалося скасувати зміну",
   Undo: "Скасувати",
@@ -536,8 +540,8 @@ export const UK = {
   Advanced: "Додатково",
   "Not delivered": "Не доставлено",
   "Queued for this turn": "У черзі на цей хід",
-  "Offline. Reconnects when the network is back.":
-    "Немає мережі. З’єднання відновиться, коли вона повернеться.",
+  "Offline. Your draft is kept; send it when the network is back.":
+    "Немає мережі. Чернетку збережено; надішліть її, коли мережа повернеться.",
   Change: "Змінити",
   "Daily limit": "Денний ліміт",
   "Notifications are off": "Сповіщення вимкнено",
@@ -568,7 +572,6 @@ export const UK = {
   "Changing files": "Змінює файли",
   "Your edits are kept: press {action} to try again.":
     "Ваші зміни збережено тут: натисніть «{action}», щоб спробувати ще раз.",
-  "Open bot…": "Відкрити бота…",
   "Paused, resumes {resume}": "Призупинено, продовжить {resume}",
   "Message {name}": "Повідомлення для {name}",
   "Reply stopped": "Відповідь зупинено",

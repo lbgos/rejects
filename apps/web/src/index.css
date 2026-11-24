@@ -2778,6 +2778,11 @@ html.dark:not([data-theme-id]:not([data-theme-id=""])) [data-app-sidebar] {
     flex-wrap: nowrap;
     gap: 0.625rem;
   }
+  /* A form's actions follow its field and any error under it; only a page with nothing to fill
+     in sends its actions to the bottom edge. */
+  [data-standalone-page] > section > form:last-child > :last-child {
+    margin-top: 0;
+  }
   [data-standalone-page] [data-slot="button"] {
     width: 100%;
     min-height: 3.125rem;
