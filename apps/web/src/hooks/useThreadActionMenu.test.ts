@@ -143,6 +143,7 @@ const createMenu = (options: { readonly onFind?: (threadRef: typeof target) => v
     onStartRename: () => recordEffect("rename"),
     onFind: options.onFind,
     canShareWithGuest: false,
+    canStartThread: true,
   });
 
 beforeEach(() => {
@@ -153,7 +154,7 @@ beforeEach(() => {
 });
 
 describe("thread menu permissions", () => {
-  it.each(["rename", "regenerate-title", "delete", "pin", "settle", "archive"] as const)(
+  it.each(["rename", "regenerate-title", "delete", "pin", "settle"] as const)(
     "%s rechecks after the native menu closes",
     async (action) => {
       state.granted.add("secondary");

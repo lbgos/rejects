@@ -20,8 +20,7 @@ moves focus away.
 
 In a browser, plain `F6` may move to the browser's own toolbar. Use `mod+F6` and
 `mod+Shift+F6` instead (`mod` is Command on macOS and Ctrl elsewhere). **Focus Next
-Workspace Area** and **Focus Previous Workspace Area** are also in the command palette and
-can be remapped in Settings > Keybindings.
+Workspace Area** and **Focus Previous Workspace Area** are also in the command palette.
 
 ## Browse threads
 

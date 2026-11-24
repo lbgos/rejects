@@ -38,8 +38,6 @@ export const PROVIDER_PRESENTATION = {
   },
 } satisfies Record<UsageProviderKind, UsageProviderPresentation>;
 
-export const PROVIDER_ORDER = Object.keys(PROVIDER_PRESENTATION) as UsageProviderKind[];
-
 export function rankProvidersByMetric(
   providers: readonly UsageProviderKind[],
   totals: readonly {

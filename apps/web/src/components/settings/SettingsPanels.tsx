@@ -440,33 +440,6 @@ export function GeneralSettingsPanel() {
           }
         />
         <SettingsRow
-          {...setting("archive-confirmation")}
-          description={
-            <T>Require a second click on the inline archive action before a thread is archived.</T>
-          }
-          resetAction={
-            settings.confirmThreadArchive !== DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive ? (
-              <SettingResetButton
-                label="archive confirmation"
-                onClick={() =>
-                  updateSettings({
-                    confirmThreadArchive: DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={settings.confirmThreadArchive}
-              onCheckedChange={(checked) =>
-                updateSettings({ confirmThreadArchive: Boolean(checked) })
-              }
-              aria-label={gt("Confirm thread archiving")}
-            />
-          }
-        />
-        <SettingsRow
           {...setting("delete-confirmation")}
           description={<T>Ask before deleting a thread and its chat history.</T>}
           resetAction={
@@ -750,6 +723,7 @@ export function ChatSettingsPanel() {
         <ToolCallVisibilityRow />
         <ResponseStreamingRow />
         <PromptSuggestionsRow />
+        <AgentBrowserAccessRow />
       </SettingsSection>
 
       <SettingsSection id="screen-reader" title="Screen reader">
@@ -978,6 +952,29 @@ function PromptSuggestionsRow() {
             updateSettings({ promptSuggestionsEnabled: Boolean(checked) })
           }
           aria-label="Suggest next prompt"
+        />
+      }
+    />
+  );
+}
+
+function AgentBrowserAccessRow() {
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  return (
+    <SettingsRow
+      serverScoped
+      {...searchableSetting("agent-browser-access")}
+      settingKeys={["enableAgentBrowserAccess"]}
+      description="Allow agents and bots to use the shared browser. Applies when a session next starts."
+      control={
+        <ScopedSwitch
+          settingKeys={["enableAgentBrowserAccess"]}
+          checked={settings.enableAgentBrowserAccess}
+          onCheckedChange={(checked) =>
+            updateSettings({ enableAgentBrowserAccess: Boolean(checked) })
+          }
+          aria-label="Agent browser access"
         />
       }
     />

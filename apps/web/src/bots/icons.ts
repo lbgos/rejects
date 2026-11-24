@@ -10,6 +10,7 @@ import {
   PauseIcon,
   PencilIcon,
   PlayIcon,
+  Share2Icon,
   ShieldCheckIcon,
   SlidersHorizontalIcon,
   Trash2Icon,
@@ -31,6 +32,7 @@ export const BOT_ACTION_ICONS: Record<string, LucideIcon> = {
   trash: Trash2Icon,
   bell: BellIcon,
   "bell-off": BellOffIcon,
+  share: Share2Icon,
   "shield-check": ShieldCheckIcon,
   zap: ZapIcon,
 };

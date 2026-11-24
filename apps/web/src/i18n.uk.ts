@@ -100,6 +100,7 @@ export const UK = {
   "Resume schedule": "Відновити розклад",
   "Unmute notifications": "Увімкнути сповіщення",
   "Mute notifications": "Вимкнути сповіщення",
+  "Share with guest": "Поділитися з гостем",
   Unmute: "Увімк. звук",
   Mute: "Без звуку",
   "Mark read": "Позначити прочитаним",

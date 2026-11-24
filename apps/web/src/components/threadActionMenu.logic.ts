@@ -25,7 +25,6 @@ export type ThreadActionMenuId =
   | "copy-branch"
   | "copy-thread"
   | "copy-thread-id"
-  | "archive"
   | "delete";
 
 export interface ThreadActionMenuState {
@@ -42,7 +41,7 @@ export interface ThreadActionMenuState {
   readonly isSnoozed: boolean;
   readonly canSnoozeNow: boolean;
   readonly isRegeneratingTitle: boolean;
-  /** Archive rejects attached providers, so disable it while running. */
+  /** Turning into a project rejects attached providers, so disable it while running. */
   readonly isRunning: boolean;
   readonly supports: {
     readonly settlement: boolean;
@@ -54,6 +53,8 @@ export interface ThreadActionMenuState {
   readonly snoozePresets: ReadonlyArray<SnoozePreset>;
   /** Guest links need their own grant, so the caller checks it instead of `canOperate`. */
   readonly canShareWithGuest?: boolean;
+  /** False in bot projects, which start no coding threads. */
+  readonly canStartThread: boolean;
   /** A No project thread with its own folder, on a server that can promote it. */
   readonly canTurnIntoProject?: boolean;
 }
@@ -80,7 +81,7 @@ export function buildThreadActionMenuItems(
     ...(state.canFind
       ? [{ id: "find" as const, label: "Find in thread", icon: "text-search" }]
       : []),
-    ...(state.branch
+    ...(state.branch && state.canStartThread
       ? [
           {
             id: "new-thread-on-branch" as const,
@@ -199,17 +200,11 @@ export function buildThreadActionMenuItems(
       ],
     },
     {
-      id: "archive",
-      label: "Archive thread",
-      icon: "archive",
-      disabled: state.isRunning,
-      separatorBefore: true,
-    },
-    {
       id: "delete",
       label: "Delete",
       destructive: true,
       icon: "trash",
+      separatorBefore: true,
     },
   ];
   return state.canOperate

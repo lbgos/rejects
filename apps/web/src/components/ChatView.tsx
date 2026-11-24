@@ -1,5 +1,6 @@
 import { BotChromeContext } from "../bots/context";
 import { botPanelOn, useBotUi } from "../bots/ui";
+import { isBotProject, useBotProjectKeys } from "../bots/state";
 import { ChildThreadApprovals } from "./chat/ChildThreadApprovals";
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
@@ -1151,6 +1152,13 @@ export default function ChatView(props: ChatViewProps) {
     startNewThreadForProject(activeProjectRef, handleNewThread);
   };
   const handleNewThreadInActiveProjectStable = useStableCallback(handleNewThreadInActiveProject);
+  const botProjectKeys = useBotProjectKeys();
+  const inBotProject = activeProject
+    ? isBotProject(botProjectKeys, {
+        environmentId: activeProject.environmentId,
+        projectId: activeProject.id,
+      })
+    : false;
   const projectGroupingSettings = selectProjectGroupingSettings(settings);
   const activeEnvironmentBootstrapComplete = useEnvironmentShellHasSnapshot(
     activeThread?.environmentId ?? null,
@@ -3410,7 +3418,9 @@ export default function ChatView(props: ChatViewProps) {
                 parentThreadLink={headerParentThreadLink}
                 onOpenThread={onOpenRelatedThreadStable}
                 rightPanelOpen={inlineRightPanelOwnsTitleBar}
-                onNewThreadInProject={handleNewThreadInActiveProjectStable}
+                onNewThreadInProject={
+                  inBotProject ? undefined : handleNewThreadInActiveProjectStable
+                }
                 {...(threadFindEnabled ? { onFindInThread: openThreadFindStable } : {})}
               />
             )}

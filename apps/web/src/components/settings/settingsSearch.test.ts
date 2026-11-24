@@ -220,6 +220,7 @@ describe("movedSettingsPath", () => {
     );
     expect(movedSettingsPath("/settings/threads", "response-streaming")).toBe("/settings/chat");
     expect(movedSettingsPath("/settings/labs", "prompt-suggestions-beta")).toBe("/settings/chat");
+    expect(movedSettingsPath("/settings/browser", "agent-browser-access")).toBe("/settings/chat");
     expect(movedSettingsPath("/settings/storage", "")).toBe("/settings/maintenance");
   });
 

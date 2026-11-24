@@ -1,7 +1,6 @@
 import type { KeybindingCommand } from "@t3tools/contracts";
-import type { UsageChartMetric } from "./UsageProviderChart";
 
-export type UsageMetric = UsageChartMetric | "limits";
+export type UsageMetric = "tokens" | "cost" | "limits";
 export const METRIC_OPTIONS = [
   { value: "cost", label: "Cost", command: "usage.cost" },
   { value: "tokens", label: "Tokens", command: "usage.tokens" },

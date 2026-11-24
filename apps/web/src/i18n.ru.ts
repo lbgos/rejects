@@ -102,6 +102,7 @@ export const RU = {
   "Resume schedule": "Возобновить расписание",
   "Unmute notifications": "Включить уведомления",
   "Mute notifications": "Отключить уведомления",
+  "Share with guest": "Поделиться с гостем",
   Unmute: "Вкл. звук",
   Mute: "Без звука",
   "Mark read": "Отметить прочитанным",

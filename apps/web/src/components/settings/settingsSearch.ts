@@ -262,6 +262,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["tab autocomplete predict next message claude codex ghost text"],
   },
   {
+    id: "agent-browser-access",
+    title: "Agent browser access",
+    to: "/settings/chat",
+    scope: "environment-defaults",
+    searchTerms: ["allow disable enable open drive preview tools sessions bots"],
+  },
+  {
     id: "response-streaming",
     title: "Response streaming",
     to: "/settings/chat",
@@ -522,12 +529,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: msg("Unpin confirmation"),
     to: "/settings/general",
     searchTerms: ["ask before thread pinned section"],
-  },
-  {
-    id: "archive-confirmation",
-    title: msg("Archive confirmation"),
-    to: "/settings/general",
-    searchTerms: ["ask before thread second click inline action"],
   },
   {
     id: "delete-confirmation",
