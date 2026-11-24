@@ -192,7 +192,7 @@ export function AppearanceSettingsPanel() {
         <HolidayThemeRow />
         <SettingsRow
           {...searchableSetting("setting-appearance-contrast")}
-          description="Adjust the contrast of colors and borders across the interface."
+          description="Contrast of colors and borders across the app."
           resetAction={
             settings.appearanceContrast !== DEFAULT_UNIFIED_SETTINGS.appearanceContrast ? (
               <SettingResetButton
@@ -286,7 +286,7 @@ export function AppearanceSettingsPanel() {
 
         <SettingsRow
           {...searchableSetting("chat-width")}
-          description="Set how wide messages and the composer can grow on large screens."
+          description="How wide messages and the composer grow on large screens."
           resetAction={
             settings.chatWidth !== DEFAULT_UNIFIED_SETTINGS.chatWidth ? (
               <SettingResetButton
@@ -311,40 +311,6 @@ export function AppearanceSettingsPanel() {
                   <SelectItem value="comfortable">Comfortable (default)</SelectItem>
                   <SelectItem value="wide">Wide</SelectItem>
                   <SelectItem value="full">Full</SelectItem>
-                </SelectPopup>
-              </Select>
-            </div>
-          }
-        />
-        <ThreadDetailsItemsRow />
-        <SettingsRow
-          {...searchableSetting("effort-display")}
-          description="Show reasoning effort in the composer as its name, such as High, or as bars."
-          resetAction={
-            settings.effortDisplay !== DEFAULT_UNIFIED_SETTINGS.effortDisplay ? (
-              <SettingResetButton
-                label="effort display"
-                onClick={() =>
-                  updateSettings({ effortDisplay: DEFAULT_UNIFIED_SETTINGS.effortDisplay })
-                }
-              />
-            ) : null
-          }
-          control={
-            <div className="w-full sm:w-40">
-              <Select
-                value={settings.effortDisplay}
-                onValueChange={(value) => {
-                  if (value === "bars" || value === "label")
-                    updateSettings({ effortDisplay: value });
-                }}
-              >
-                <SelectTrigger size="sm" className="w-full min-w-0" aria-label="Effort display">
-                  <SelectValue>{EFFORT_DISPLAY_LABELS[settings.effortDisplay]}</SelectValue>
-                </SelectTrigger>
-                <SelectPopup align="end" alignItemWithTrigger={false}>
-                  <SelectItem value="label">Word (default)</SelectItem>
-                  <SelectItem value="bars">Bars</SelectItem>
                 </SelectPopup>
               </Select>
             </div>
@@ -377,6 +343,8 @@ export function AppearanceSettingsPanel() {
         />
         <AdvancedSettings
           targetIds={[
+            searchableSetting("thread-details-items").id,
+            searchableSetting("effort-display").id,
             searchableSetting("panel-animations").id,
             searchableSetting("environment-identification").id,
             // Environment identification's search result lands on this section.
@@ -479,7 +447,7 @@ export function AppearanceSettingsPanel() {
           />
           <SettingsRow
             {...searchableSetting("composer-context")}
-            description="Keep branch and worktree controls below the composer after a thread starts."
+            description="Keep branch and worktree controls below the composer after a task chat starts."
             resetAction={
               settings.persistComposerContextStrip !==
               DEFAULT_UNIFIED_SETTINGS.persistComposerContextStrip ? (
@@ -502,6 +470,40 @@ export function AppearanceSettingsPanel() {
                 }
                 aria-label="Keep composer context visible in active threads"
               />
+            }
+          />
+          <ThreadDetailsItemsRow />
+          <SettingsRow
+            {...searchableSetting("effort-display")}
+            description="Show reasoning effort in the composer as its name, such as High, or as bars."
+            resetAction={
+              settings.effortDisplay !== DEFAULT_UNIFIED_SETTINGS.effortDisplay ? (
+                <SettingResetButton
+                  label="effort display"
+                  onClick={() =>
+                    updateSettings({ effortDisplay: DEFAULT_UNIFIED_SETTINGS.effortDisplay })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <div className="w-full sm:w-40">
+                <Select
+                  value={settings.effortDisplay}
+                  onValueChange={(value) => {
+                    if (value === "bars" || value === "label")
+                      updateSettings({ effortDisplay: value });
+                  }}
+                >
+                  <SelectTrigger size="sm" className="w-full min-w-0" aria-label="Effort display">
+                    <SelectValue>{EFFORT_DISPLAY_LABELS[settings.effortDisplay]}</SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup align="end" alignItemWithTrigger={false}>
+                    <SelectItem value="label">Word (default)</SelectItem>
+                    <SelectItem value="bars">Bars</SelectItem>
+                  </SelectPopup>
+                </Select>
+              </div>
             }
           />
         </AdvancedSettings>

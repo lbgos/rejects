@@ -734,8 +734,11 @@ export function ThemeLibrary({
     <TooltipProvider>
       <div
         data-theme-list
-        className="grid w-full gap-2"
-        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 16rem), 1fr))" }}
+        // Two to a row on a phone, so the library is one screen and not three.
+        className="grid w-full gap-2 [--theme-card-min:16rem] max-md:[--theme-card-min:9.5rem]"
+        style={{
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, var(--theme-card-min)), 1fr))",
+        }}
       >
         {STANDARD_THEME_CARDS.map((standardTheme) => (
           <ThemeLibraryCard

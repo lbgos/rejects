@@ -40,6 +40,14 @@ const ONCE_FORMATTER = new Intl.DateTimeFormat(undefined, {
   timeStyle: "short",
 });
 
+/** The server zone to name beside a schedule's time: none when it is the viewer's own clock. */
+export function scheduleZoneToName(
+  serverTimeZone: string | undefined,
+  viewerTimeZone: string,
+): string | undefined {
+  return serverTimeZone === viewerTimeZone ? undefined : serverTimeZone;
+}
+
 export function scheduleLabel(
   schedule: ScheduledTaskSchedule,
   timeZone?: string,

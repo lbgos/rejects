@@ -25,38 +25,38 @@ export const AUTH_SCOPE_OPTIONS: ReadonlyArray<{
 }> = [
   {
     scope: AuthOrchestrationReadScope,
-    title: "View environment",
-    description: "Read threads, status, checkpoints, and configuration.",
+    title: "View chats",
+    description: "Read chats, status and configuration.",
   },
   {
     scope: AuthOrchestrationOperateScope,
-    title: "Operate tasks",
-    description: "Start, update, and stop tasks.",
+    title: "Send and stop",
+    description: "Send messages, and start and stop replies and tasks.",
   },
   {
     scope: AuthSettingsWriteScope,
-    title: "Change environment settings",
-    description: "Edit environment preferences and keybindings.",
+    title: "Change settings",
+    description: "Edit this server's settings.",
   },
   {
     scope: AuthProvidersManageScope,
     title: "Manage providers",
-    description: "Configure, install, sign in to, and update providers and usage sources.",
+    description: "Set up, sign in to and update providers and usage hubs.",
   },
   {
     scope: AuthEnvironmentMaintainScope,
-    title: "Maintain environment",
-    description: "Update the server and control environment processes.",
+    title: "Maintain the server",
+    description: "Update the server and control its processes.",
   },
   {
     scope: AuthPreviewOperateScope,
-    title: "Control previews",
-    description: "Open browser previews and host browser automation.",
+    title: "Control the browser",
+    description: "Open browser pages and drive browser automation.",
   },
   {
     scope: AuthDiagnosticsReadScope,
     title: "View diagnostics and usage",
-    description: "Read process diagnostics, resource history, and usage totals.",
+    description: "Read process diagnostics, resource history and usage totals.",
   },
   {
     scope: AuthTerminalReadScope,
@@ -76,22 +76,22 @@ export const AUTH_SCOPE_OPTIONS: ReadonlyArray<{
   {
     scope: AuthFilesystemReadScope,
     title: "Read files",
-    description: "Browse host files, search workspaces, and inspect local changes.",
+    description: "Browse files on the server and search workspaces.",
   },
   {
     scope: AuthFilesystemWriteScope,
     title: "Write files",
-    description: "Edit workspace files and save plans to disk.",
+    description: "Edit workspace files.",
   },
   {
     scope: AuthAccessReadScope,
     title: "View access",
-    description: "Inspect pairing links and authorized clients.",
+    description: "See pairing links and paired devices.",
   },
   {
     scope: AuthAccessWriteScope,
     title: "Manage access",
-    description: "Issue and revoke credentials for other clients.",
+    description: "Create and revoke access for other devices.",
   },
   {
     scope: AuthRelayReadScope,
@@ -113,9 +113,8 @@ export function sessionPermissionsUnavailableMessage(input: {
   /** The environment answered that this session is not signed in; retrying will not change that. */
   readonly rejected: boolean;
 }): string {
-  if (!input.connected) return "Connect to this environment to view this session’s permissions.";
-  if (input.rejected)
-    return "This environment did not accept your session. Reconnect to try again.";
+  if (!input.connected) return "Connect to this server to see this session’s permissions.";
+  if (input.rejected) return "This server did not accept your session. Reconnect to try again.";
   return input.failed
     ? "Could not verify your permissions. Retrying automatically."
     : "Checking permissions…";

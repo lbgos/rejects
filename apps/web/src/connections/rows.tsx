@@ -1,6 +1,7 @@
 import { ChevronRightIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import { SHEET_LIST } from "../bots/panelStyles";
+import { SECTION_TITLE, SHEET_LIST } from "../bots/panelStyles";
+import { Button } from "../components/ui/button";
 import { toastManager } from "../components/ui/toast";
 import { t, uiLocales } from "../i18n";
 import { cn } from "../lib/utils";
@@ -26,17 +27,20 @@ export function Row({
   onClick,
   tone = "muted",
   icon,
+  disabled = false,
 }: {
   title: string;
   value: string;
   onClick: () => void;
   tone?: "muted" | "error";
   icon?: ReactNode;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
-      className="flex min-h-11 w-full items-center gap-3 px-4 py-2.5 text-left text-sm hover:bg-accent max-md:px-5 max-md:text-bot-body max-md:hover:bg-transparent"
+      disabled={disabled}
+      className="flex min-h-11 w-full items-center gap-3 px-4 py-2.5 text-left text-sm not-disabled:hover:bg-accent disabled:text-muted-foreground max-md:px-5 max-md:text-bot-body max-md:not-disabled:hover:bg-transparent"
       onClick={onClick}
     >
       {icon}
@@ -65,18 +69,28 @@ export function Section({
 }) {
   return (
     <section className="pt-5">
-      {title ? (
-        <h2 className="px-4 pb-1 text-xs font-medium text-muted-foreground max-md:px-5 max-md:text-bot-heading max-md:font-bold max-md:text-foreground">
-          {title}
-        </h2>
-      ) : null}
+      {title ? <h2 className={cn("px-4 pb-1.5 max-md:px-9", SECTION_TITLE)}>{title}</h2> : null}
       <ul className={SHEET_LIST}>{children}</ul>
       {footer ? (
-        <p className="px-4 pt-1.5 text-xs break-words text-muted-foreground max-md:px-5 max-md:text-bot-footnote">
+        <p className="px-4 pt-1.5 text-xs break-words text-muted-foreground max-md:px-9 max-md:text-bot-footnote">
           {footer}
         </p>
       ) : null}
     </section>
+  );
+}
+
+/** The vault holds every sign-in; while it is down the notice says so once, with the way to check again. */
+export function VaultDownNotice({ onRetry }: { onRetry: () => void }) {
+  return (
+    <li className="flex items-center gap-3 px-4 py-2.5 text-sm max-md:px-5 max-md:text-bot-body">
+      <span className="min-w-0 flex-1">
+        {t("Sign-ins are unavailable: the account vault is not answering.")}
+      </span>
+      <Button size="sm" variant="outline" onClick={onRetry}>
+        {t("Try again")}
+      </Button>
+    </li>
   );
 }
 

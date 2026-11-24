@@ -1,6 +1,7 @@
 import { BOT_ICON_NAMES, type BotIconName, type BotRecord } from "@t3tools/contracts";
 import { ChevronDownIcon } from "lucide-react";
 import { useState } from "react";
+import { t } from "../i18n";
 import { cn } from "../lib/utils";
 import { BotAvatar } from "./BotAvatar";
 import { BOT_ICONS } from "./botIcons";
@@ -24,7 +25,7 @@ export function BotIconPicker({
         onClick={() => setOpen(!open)}
       >
         <BotAvatar bot={bot} className="size-10" />
-        <span className="text-sm">{bot.icon ?? ""}</span>
+        <span className="text-sm text-muted-foreground max-md:text-bot-callout">{t("Change")}</span>
         <ChevronDownIcon className={cn("size-4 text-muted-foreground", open && "rotate-180")} />
       </button>
       {open ? (

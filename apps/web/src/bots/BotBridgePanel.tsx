@@ -255,7 +255,7 @@ function Proposal({
         )}
         <Fact label={t("Mode")} value={t("approval required")} />
       </dl>
-      <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words rounded border p-2 font-mono text-xs max-md:rounded-3xl max-md:border-0 max-md:bg-bot-bubble max-md:px-3.75 max-md:py-2.5 max-md:text-bot-footnote">
+      <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words rounded border p-2 font-mono text-xs max-md:rounded-2xl max-md:border-0 max-md:bg-bot-bubble max-md:px-3.75 max-md:py-2.5 max-md:text-bot-footnote">
         {proposal.prompt}
       </pre>
       <div className="grid grid-cols-2 gap-2">

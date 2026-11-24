@@ -23,6 +23,7 @@ import {
 } from "@t3tools/contracts";
 import { filterFilesystemBrowseEntries } from "@t3tools/client-runtime/state/filesystem";
 import { type ReactNode } from "react";
+import { t } from "../i18n";
 import { formatRelativeTimeLabel } from "../timestampFormat";
 import { type Project, type SidebarThreadSummary, type Thread } from "../types";
 import { isSidebarHiddenThread } from "./Sidebar.logic";
@@ -421,6 +422,11 @@ function scorePaletteItem(
  * Equal match classes put commands before threads, so "new" runs "New thread".
  * Server message matches stay in a final group so late results cannot move earlier rows.
  */
+const BOTS_GROUP = "bots";
+/** The groups the `>` filter keeps: commands, as opposed to threads and projects. */
+const isCommandGroup = (group: CommandPaletteGroup) =>
+  group.value === "actions" || group.value === BOTS_GROUP;
+
 export function filterCommandPaletteGroups(input: {
   activeGroups: ReadonlyArray<CommandPaletteGroup>;
   query: string;
@@ -454,14 +460,14 @@ export function filterCommandPaletteGroups(input: {
 
   if (normalizedQuery.length === 0) {
     if (isActionsFilter) {
-      return input.activeGroups.filter((group) => group.value === "actions");
+      return input.activeGroups.filter(isCommandGroup);
     }
     return [...input.activeGroups];
   }
 
   let baseGroups = [...input.activeGroups];
   if (isActionsFilter) {
-    baseGroups = baseGroups.filter((group) => group.value === "actions");
+    baseGroups = baseGroups.filter(isCommandGroup);
   } else if (!input.isInSubmenu) {
     baseGroups = baseGroups.filter((group) => group.value !== "recent-threads");
   }
@@ -599,10 +605,15 @@ export function getCommandPaletteMode(input: {
 }
 
 export function buildRootGroups(input: {
+  /** Bot commands lead the list: the bots are the app's home. */
+  botItems?: ReadonlyArray<CommandPaletteActionItem | CommandPaletteSubmenuItem>;
   actionItems: ReadonlyArray<CommandPaletteActionItem | CommandPaletteSubmenuItem>;
   recentThreadItems: ReadonlyArray<CommandPaletteActionItem>;
 }): CommandPaletteGroup[] {
   const groups: CommandPaletteGroup[] = [];
+  if (input.botItems && input.botItems.length > 0) {
+    groups.push({ value: BOTS_GROUP, label: t("Bots"), items: input.botItems });
+  }
   if (input.actionItems.length > 0) {
     groups.push({ value: "actions", label: "Actions", items: input.actionItems });
   }

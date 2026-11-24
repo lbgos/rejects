@@ -1,3 +1,5 @@
+import { isBotProject, useBotProjectKeys } from "../../bots/state";
+import { cn } from "../../lib/utils";
 import { useAtomValue } from "@effect/atom-react";
 import { connectionStatusTitle } from "@t3tools/client-runtime/connection";
 import { AsyncResult } from "effect/reactivity";
@@ -41,6 +43,7 @@ import {
   MIN_SCHEDULED_TASK_INTERVAL_MS,
   ProviderInstanceId,
   resolveEnvironmentMachineKind,
+  SCHEDULED_TASK_MISSED_RUN,
   scheduledTaskThreadMode,
 } from "@t3tools/contracts";
 import {
@@ -105,6 +108,7 @@ import {
   matchesScheduledTaskScope,
   scheduleFromDraft,
   scheduleLabel,
+  scheduleZoneToName,
   scheduledTaskDefaultModel,
   WEEKDAY_LABELS,
   taskToDraft,
@@ -142,6 +146,7 @@ import {
 import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
+import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { Textarea } from "../ui/textarea";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -362,11 +367,11 @@ function deliveryOutcomeVariant(outcome: string) {
   return "outline";
 }
 
-function statusVariant(status: ScheduledTask["lastRunStatus"]) {
-  if (status === "failed") return "error";
-  if (status === "succeeded") return "success";
-  if (status === "running") return "info";
-  return "outline";
+/** A run's result is a word in its colour, as a bot's state is in the list; a success stays quiet. */
+function statusTone(status: ScheduledTask["lastRunStatus"]) {
+  if (status === "failed") return "text-error-foreground";
+  if (status === "running") return "text-info-foreground";
+  return undefined;
 }
 
 export function ScheduledTasksSettings(target: {
@@ -450,7 +455,7 @@ export function ScheduledTasksSettings(target: {
             }
           >
             <PlusIcon className="size-3" />
-            New task
+            <span data-settings-bar-action-label>New task</span>
           </Button>
         }
       >
@@ -688,11 +693,19 @@ function ScheduledTaskEnvironmentSection({
     >
       {!connected ? (
         <SettingsRow
-          title="Environment disconnected"
-          description={`Reconnect ${environment.label} to view its scheduled tasks.`}
+          title="Server disconnected"
+          description={`Reconnect ${environment.label} to see its scheduled tasks.`}
         />
       ) : tasksQuery.error ? (
-        <SettingsRow title="Could not load scheduled tasks" description={tasksQuery.error} />
+        <SettingsRow
+          title="Could not load scheduled tasks"
+          description={`${tasksQuery.error} Tasks keep running on the server.`}
+          control={
+            <Button size="sm" variant="outline" onClick={tasksQuery.refresh}>
+              Try again
+            </Button>
+          }
+        />
       ) : !tasks ? (
         <SettingsRow title="Loading scheduled tasks…" role="status" />
       ) : (
@@ -707,7 +720,7 @@ function ScheduledTaskEnvironmentSection({
           {tasks.length === 0 ? (
             <SettingsRow
               title="No scheduled tasks"
-              description="No tasks match this environment and project selection."
+              description="A bot's schedule, or a task made here, shows up in this list."
             />
           ) : (
             tasks.map((task) => (
@@ -779,15 +792,26 @@ function ScheduledTaskRow({
       );
     }
   };
+  // A run the server slept through is not a failure of the task; the status says which it was.
+  const missed = task.lastRunStatus === "failed" && task.lastRunError === SCHEDULED_TASK_MISSED_RUN;
+  const phone = useMediaQuery("max-md");
+  const threadLinked = task.threadId !== null && scheduledTaskThreadMode(task) !== "new_thread";
   return (
     <SettingsRow
       data-scheduled-task-row
       title={task.title}
-      description={<span className="line-clamp-2">{task.prompt}</span>}
+      // A phone's row is the task and its state; its prompt is in the task itself.
+      description={phone ? undefined : <span className="line-clamp-2">{task.prompt}</span>}
       status={
-        <div className="flex flex-wrap items-center gap-2">
+        // The schedule and its next run on one line; the last result and the bot under it.
+        <div className="flex flex-col gap-1">
           <span>
-            {scheduleLabel(task.schedule, timeZone, task.nextRunAt)} ·{" "}
+            {scheduleLabel(
+              task.schedule,
+              scheduleZoneToName(timeZone, new Intl.DateTimeFormat().resolvedOptions().timeZone),
+              task.nextRunAt,
+            )}{" "}
+            ·{" "}
             {task.blockedByPolicy !== undefined ? (
               task.blockedByPolicy
             ) : !task.enabled ? (
@@ -802,13 +826,26 @@ function ScheduledTaskRow({
               "Not scheduled"
             )}
           </span>
-          {task.lastRunStatus !== "never" ? (
-            <Badge variant={statusVariant(task.lastRunStatus)}>{task.lastRunStatus}</Badge>
+          {task.lastRunStatus !== "never" || threadLinked ? (
+            <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              {missed ? (
+                <>
+                  <span className="text-warning-foreground">missed</span>
+                  <span>The server was off at that time.</span>
+                </>
+              ) : task.lastRunStatus !== "never" ? (
+                <span className={statusTone(task.lastRunStatus)}>
+                  {task.lastRunStatus === "succeeded" ? "Last run succeeded" : task.lastRunStatus}
+                </span>
+              ) : null}
+              {!missed && task.lastRunError ? (
+                <span className="text-destructive">{task.lastRunError}</span>
+              ) : null}
+              {threadLinked && task.threadId !== null ? (
+                <ScheduledTaskThreadLink environmentId={environmentId} threadId={task.threadId} />
+              ) : null}
+            </span>
           ) : null}
-          {task.threadId !== null && scheduledTaskThreadMode(task) !== "new_thread" ? (
-            <ScheduledTaskThreadLink environmentId={environmentId} threadId={task.threadId} />
-          ) : null}
-          {task.lastRunError ? <span className="text-destructive">{task.lastRunError}</span> : null}
         </div>
       }
       control={
@@ -882,9 +919,9 @@ function ScheduledTaskThreadLink({
     <Link
       to="/$environmentId/$threadId"
       params={buildThreadRouteParams(ref)}
-      className="max-w-64 truncate underline underline-offset-2 hover:text-foreground"
+      className="max-w-64 truncate text-bot-action hover:underline"
     >
-      {title || "Open thread"}
+      {title || "Open chat"}
     </Link>
   );
 }
@@ -1145,9 +1182,9 @@ function WebhookDeliveryMode({ environmentId }: { readonly environmentId: Enviro
   return (
     <p className="text-xs text-muted-foreground">
       {cloudLink.data.holdWebhooksWhileOffline
-        ? "Held for up to 24 hours while this environment is offline. "
-        : "Forwarded live. Requests fail while this environment is offline. "}
-      <Link to="/settings/access" className="underline underline-offset-2">
+        ? "Held for up to 24 hours while this server is offline. "
+        : "Forwarded live. Requests fail while this server is offline. "}
+      <Link to="/settings/access" className="text-bot-action hover:underline">
         Change in Sharing & access
       </Link>
     </p>
@@ -1186,9 +1223,9 @@ function ScheduledTaskEditorDialog({
 }
 
 const THREAD_MODE_LABELS: Record<ScheduledTaskThreadMode, string> = {
-  new_thread: "New thread each run",
-  continue: "One thread, continuing the conversation",
-  fresh_session: "One thread, fresh session each run",
+  new_thread: "New chat each run",
+  continue: "One chat, continuing the conversation",
+  fresh_session: "One chat, fresh session each run",
 };
 
 function useScheduledTaskThread(environmentId: EnvironmentId, threadId: ThreadId | null) {
@@ -1225,9 +1262,9 @@ function ScheduledTaskDestination({
   const thread = useScheduledTaskThread(environmentId, threadId);
   const currentLabel =
     ref !== null
-      ? thread?.title.trim() || `Thread ${ref.threadId}`
+      ? thread?.title.trim() || "Untitled chat"
       : threadMode === "new_thread"
-        ? "New thread each run"
+        ? "New chat each run"
         : "Started by the first run";
   const shells = useVisibleThreadShells(open);
   // Mounts older settled threads matching the query, which shells may leave out.
@@ -1253,14 +1290,14 @@ function ScheduledTaskDestination({
   };
   const detail =
     threadMode === "new_thread"
-      ? "Each run starts a new thread with the workspace and model below."
+      ? "Each run starts a new chat with the model below."
       : ref === null
         ? threadMode === "continue"
-          ? "The first run starts a thread with the workspace and model below. Later runs continue that conversation."
-          : "The first run starts a thread with the workspace and model below. Later runs post there, each in a fresh session without earlier runs' context."
+          ? "The first run starts a chat with the model below. Later runs continue that conversation."
+          : "The first run starts a chat with the model below. Later runs post there, each in a fresh session without earlier runs' context."
         : threadMode === "continue"
-          ? "Each run continues this conversation, in its workspace and with its current model."
-          : "Each run starts a fresh session in this thread, without earlier runs' context.";
+          ? "Each run continues this conversation, with its current model."
+          : "Each run starts a fresh session in this chat, without earlier runs' context.";
   return (
     <Field label="Destination" htmlFor="scheduled-task-destination">
       {onThreadModeChange ? (
@@ -1306,7 +1343,7 @@ function ScheduledTaskDestination({
                 ? "scheduled-task-destination-thread"
                 : "scheduled-task-destination"
             }
-            aria-label={onThreadModeChange ? "Destination thread" : undefined}
+            aria-label={onThreadModeChange ? "Destination chat" : undefined}
             disabled={disabled}
             render={<Button variant="outline" size="sm" />}
             className="w-full justify-between"
@@ -1317,21 +1354,21 @@ function ScheduledTaskDestination({
           </ComboboxTrigger>
           <ComboboxPopup align="start" side="bottom" className="w-80">
             <ComboboxSearchInput
-              aria-label="Search threads"
-              placeholder="Search all threads..."
+              aria-label="Search chats"
+              placeholder="Search chats"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
-            <ComboboxEmpty>No threads found.</ComboboxEmpty>
+            <ComboboxEmpty>No chats found.</ComboboxEmpty>
             <ComboboxList className="max-h-72">
               {items.map((value, index) => (
                 <ComboboxItem key={value} index={index} value={value}>
                   <span className="block truncate">
                     {value === NEW_THREAD_DESTINATION
-                      ? "New thread each run"
+                      ? "New chat each run"
                       : value === threadId
                         ? currentLabel
-                        : threads.find((row) => row.id === value)?.title || "Untitled thread"}
+                        : threads.find((row) => row.id === value)?.title || "Untitled chat"}
                   </span>
                 </ComboboxItem>
               ))}
@@ -1342,7 +1379,7 @@ function ScheduledTaskDestination({
       <div className="space-y-1 text-sm">
         <p className="text-muted-foreground">{detail}</p>
         {threadMode !== "new_thread" ? (
-          <p className="text-muted-foreground">Deleting the thread also deletes this task.</p>
+          <p className="text-muted-foreground">Deleting the chat also deletes this task.</p>
         ) : null}
       </div>
     </Field>
@@ -1420,6 +1457,12 @@ function ScheduledTaskEditorForm({
     : task;
   const selectedProjectId = draft.projectId || projects[0]?.id || "";
   const selectedProject = projects.find((project) => project.id === selectedProjectId);
+  // A bot's project is its own folder, not a repository: its tasks run there, with no checkout to pick.
+  const botProject = isBotProject(useBotProjectKeys(), {
+    environmentId,
+    projectId: selectedProjectId,
+  });
+  const workspaceMode: WorkspaceMode = botProject ? "root" : draft.workspaceMode;
   const instanceEntries = providerInstanceEntriesFor(
     providers,
     settings,
@@ -1513,11 +1556,11 @@ function ScheduledTaskEditorForm({
     if (schedule.type === "once" && !offersOnce) {
       reportFailure(
         "Once is not available here",
-        "This environment runs an older rejects. Update it to schedule a one-time task, or pick another schedule.",
+        "This server runs an older rejects. Update it to schedule a one-time task, or pick another schedule.",
       );
       return;
     }
-    if (draft.workspaceMode === "existing_worktree" && !draft.existingWorktreePath.trim()) {
+    if (workspaceMode === "existing_worktree" && !draft.existingWorktreePath.trim()) {
       reportFailure("Checkout path is required", "Enter the path of the checkout to run in.");
       return;
     }
@@ -1528,9 +1571,9 @@ function ScheduledTaskEditorForm({
         ? draft.baseModelSelection
         : selection;
     const workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy =
-      draft.workspaceMode === "root"
+      workspaceMode === "root"
         ? { type: "root" }
-        : draft.workspaceMode === "existing_worktree"
+        : workspaceMode === "existing_worktree"
           ? { type: "existing_worktree", worktreePath: draft.existingWorktreePath.trim() }
           : {
               type: "worktree",
@@ -1584,7 +1627,7 @@ function ScheduledTaskEditorForm({
         {/* Fieldsets default to min-width: min-content, which lets one wide control widen the form past the dialog. */}
         <fieldset disabled={saving} className="min-w-0 space-y-5">
           {!connected ? (
-            <p className="text-sm text-destructive">Reconnect this environment before saving.</p>
+            <p className="text-sm text-destructive">Reconnect this server before saving.</p>
           ) : null}
           <Field label="Runs on" htmlFor="scheduled-task-environment">
             <Select
@@ -1612,7 +1655,7 @@ function ScheduledTaskEditorForm({
                       kind={resolveEnvironmentMachineKind(environment?.serverConfig ?? null)}
                       className="size-4"
                     />
-                    {environment?.label ?? "Unavailable environment"}
+                    {environment?.label ?? "Unavailable server"}
                   </span>
                 </SelectValue>
               </SelectTrigger>
@@ -1661,7 +1704,7 @@ function ScheduledTaskEditorForm({
           <Field label="Name" htmlFor="scheduled-task-title">
             <Input
               id="scheduled-task-title"
-              placeholder="e.g. Check for Sentry issues"
+              placeholder="e.g. Morning weather"
               value={draft.title}
               onChange={(event) =>
                 setDraft((current) => ({ ...current, title: event.target.value }))
@@ -1693,57 +1736,63 @@ function ScheduledTaskEditorForm({
             }
           />
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Project" htmlFor="scheduled-task-project">
-              <Select
-                value={selectedProjectId}
-                onValueChange={(projectId) =>
-                  setDraft((current) => changeDraftProject(current, projectId ?? ""))
-                }
-              >
-                <SelectTrigger size="sm" id="scheduled-task-project">
-                  <SelectValue placeholder="Select a project">{selectedProject?.title}</SelectValue>
-                </SelectTrigger>
-                <SelectPopup>
-                  {projects.map((project) => (
-                    <SelectItem key={project.id} value={project.id} label={project.title}>
-                      <span className="block truncate">{project.title}</span>
-                      {allProjects.some(
-                        (other) =>
-                          other.title === project.title &&
-                          (other.environmentId !== project.environmentId ||
-                            other.id !== project.id),
-                      ) ? (
-                        <span className="block max-w-72 truncate text-xs text-muted-foreground">
-                          {project.workspaceRoot}
-                        </span>
-                      ) : null}
-                    </SelectItem>
-                  ))}
-                </SelectPopup>
-              </Select>
-            </Field>
+          {botProject && projects.length <= 1 ? null : (
+            <div className={cn("grid gap-3", !botProject && "sm:grid-cols-2")}>
+              <Field label="Project" htmlFor="scheduled-task-project">
+                <Select
+                  value={selectedProjectId}
+                  onValueChange={(projectId) =>
+                    setDraft((current) => changeDraftProject(current, projectId ?? ""))
+                  }
+                >
+                  <SelectTrigger size="sm" id="scheduled-task-project">
+                    <SelectValue placeholder="Select a project">
+                      {selectedProject?.title}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup>
+                    {projects.map((project) => (
+                      <SelectItem key={project.id} value={project.id} label={project.title}>
+                        <span className="block truncate">{project.title}</span>
+                        {allProjects.some(
+                          (other) =>
+                            other.title === project.title &&
+                            (other.environmentId !== project.environmentId ||
+                              other.id !== project.id),
+                        ) ? (
+                          <span className="block max-w-72 truncate text-xs text-muted-foreground">
+                            {project.workspaceRoot}
+                          </span>
+                        ) : null}
+                      </SelectItem>
+                    ))}
+                  </SelectPopup>
+                </Select>
+              </Field>
 
-            <Field label="Workspace" htmlFor="scheduled-task-workspace">
-              <Select
-                value={draft.workspaceMode}
-                onValueChange={(value) =>
-                  setDraft((current) => ({ ...current, workspaceMode: value as WorkspaceMode }))
-                }
-              >
-                <SelectTrigger size="sm" id="scheduled-task-workspace">
-                  <SelectValue>{WORKSPACE_MODE_LABELS[draft.workspaceMode]}</SelectValue>
-                </SelectTrigger>
-                <SelectPopup>
-                  <SelectItem value="worktree">Create a new worktree</SelectItem>
-                  <SelectItem value="root">Use the project checkout</SelectItem>
-                  <SelectItem value="existing_worktree">Use a specific checkout</SelectItem>
-                </SelectPopup>
-              </Select>
-            </Field>
-          </div>
+              {botProject ? null : (
+                <Field label="Workspace" htmlFor="scheduled-task-workspace">
+                  <Select
+                    value={draft.workspaceMode}
+                    onValueChange={(value) =>
+                      setDraft((current) => ({ ...current, workspaceMode: value as WorkspaceMode }))
+                    }
+                  >
+                    <SelectTrigger size="sm" id="scheduled-task-workspace">
+                      <SelectValue>{WORKSPACE_MODE_LABELS[draft.workspaceMode]}</SelectValue>
+                    </SelectTrigger>
+                    <SelectPopup>
+                      <SelectItem value="worktree">Create a new worktree</SelectItem>
+                      <SelectItem value="root">Use the project checkout</SelectItem>
+                      <SelectItem value="existing_worktree">Use a specific checkout</SelectItem>
+                    </SelectPopup>
+                  </Select>
+                </Field>
+              )}
+            </div>
+          )}
 
-          {draft.workspaceMode === "worktree" ? (
+          {workspaceMode === "worktree" ? (
             <Field label="Base branch" htmlFor="scheduled-task-base-ref">
               <WorktreeBaseBranchPicker
                 key={`${environmentId}:${selectedProjectId}`}
@@ -1760,7 +1809,7 @@ function ScheduledTaskEditorForm({
               />
             </Field>
           ) : null}
-          {draft.workspaceMode === "existing_worktree" ? (
+          {workspaceMode === "existing_worktree" ? (
             <Field label="Checkout path" htmlFor="scheduled-task-checkout">
               <Input
                 id="scheduled-task-checkout"
@@ -1783,7 +1832,7 @@ function ScheduledTaskEditorForm({
             <Textarea
               id="scheduled-task-prompt"
               className="max-h-64 overflow-y-auto"
-              placeholder="What should the agent do each time this runs?"
+              placeholder="What should happen each time this runs?"
               value={draft.prompt}
               onChange={(event) =>
                 setDraft((current) => ({ ...current, prompt: event.target.value }))

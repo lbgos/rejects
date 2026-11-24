@@ -5311,4 +5311,64 @@ describe("bot reply buttons", () => {
       expect(rows.some((r) => r.kind === "turn-fold")).toBe(true);
     },
   );
+
+  it.each([
+    { tool: "mcp__t3-code__offer_replies", bot: true, fold: null },
+    { tool: "mcp__t3-code__update_memory", bot: true, fold: { label: "", toolCount: 1 } },
+    { tool: "mcp__t3-code__offer_replies", bot: false, fold: { label: "Worked for 1ms" } },
+  ])("a short bot turn shows a row only for the tools it ran ($tool, bot $bot)", (row) => {
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        message("ask", "user", "Remember it"),
+        call("tool", row.tool),
+        message("done", "assistant", "Noted."),
+      ],
+      isWorking: false,
+      turnDiffSummaries: [],
+      supportsConversationRollback: false,
+      collapseScheduledWakes: row.bot,
+    });
+    const fold = rows.find((r) => r.kind === "turn-fold");
+    if (row.fold === null) expect(fold).toBeUndefined();
+    else expect(fold).toMatchObject(row.fold);
+    expect(rows.some((r) => r.kind === "work")).toBe(false);
+  });
+
+  it.each([{ open: false }, { open: true }])(
+    "a short bot turn's thinking opens from its reply (open $open)",
+    ({ open }) => {
+      const thought: TimelineEntry = {
+        kind: "work",
+        id: "thought",
+        createdAt: at,
+        entry: {
+          id: "thought",
+          runId,
+          createdAt: at,
+          label: "Thought",
+          tone: "thinking",
+          itemType: "reasoning",
+          detail: "They want it short.",
+        },
+      };
+      const rows = deriveMessagesTimelineRows({
+        timelineEntries: [
+          message("ask", "user", "Keep it short"),
+          thought,
+          message("done", "assistant", "Will do."),
+        ],
+        isWorking: false,
+        turnDiffSummaries: [],
+        supportsConversationRollback: false,
+        collapseScheduledWakes: true,
+        expandedRunIds: new Set(open ? [runId] : []),
+      });
+      expect(rows.find((r) => r.kind === "message" && r.id === "done")).toMatchObject({
+        thinking: { runId, shown: open },
+      });
+      const fold = rows.find((r) => r.kind === "turn-fold");
+      if (open) expect(fold).toMatchObject({ label: "Thinking", expanded: true });
+      else expect(fold).toBeUndefined();
+    },
+  );
 });

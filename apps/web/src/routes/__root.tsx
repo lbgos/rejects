@@ -29,6 +29,8 @@ import { isChunkLoadError } from "../lib/chunkReloadGuard";
 import { UseInAnotherAppDialogHost } from "../components/mcp/UseInAnotherAppDialog";
 import { configureClientTracing } from "../observability/clientTracing";
 import { resolveInitialServerAuthGateState } from "../environments/primary";
+import { useBotTabHostActive } from "../bots/BotTabHost";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import { GUEST_PAGE_PATH } from "../guestPage";
 import { hasHostedPairingRequest, isHostedStaticApp } from "../hostedPairing";
 import { isLocalEnvironmentDisabled } from "../localEnvironment";
@@ -79,14 +81,23 @@ export const Route = createRootRoute({
 });
 
 function RootRouteNotFoundView() {
+  // On a phone it is a page like the other entry pages: a large title, and its action at the
+  // bottom above the home indicator.
+  const phone = useMediaQuery("max-md");
   return (
-    <main className="flex min-h-0 min-w-0 flex-1 items-center justify-center p-6">
-      <div className="flex max-w-sm flex-col items-center gap-4 text-center">
-        <h1 className="text-lg font-medium text-foreground">Page not found</h1>
-        <p className="text-sm text-muted-foreground">
+    <main className="flex min-h-0 min-w-0 flex-1 items-center justify-center p-6 max-md:items-stretch max-md:justify-start max-md:px-5 max-md:pt-20 max-md:pb-safe">
+      <div className="flex max-w-sm flex-col items-center gap-4 text-center max-md:max-w-none max-md:flex-1 max-md:items-stretch max-md:gap-2 max-md:text-left">
+        <h1 className="text-lg font-medium text-foreground max-md:text-bot-title max-md:font-bold">
+          Page not found
+        </h1>
+        <p className="text-sm text-muted-foreground max-md:text-bot-body">
           This link doesn't point to a page in {APP_DISPLAY_NAME}.
         </p>
-        <Button render={<Link to="/" replace />}>Go home</Button>
+        <div className="max-md:mt-auto max-md:mb-5 max-md:flex max-md:flex-col">
+          <Button size={phone ? "xl" : "default"} render={<Link to="/" replace />}>
+            Back to bots
+          </Button>
+        </div>
       </div>
     </main>
   );
@@ -95,8 +106,10 @@ function RootRouteNotFoundView() {
 function RootRouteView() {
   // Above every branch: app services raise toasts for the whole page, so the surface they write to
   // must not unmount when the root switches branches (for example /pair to the app shell).
+  // On a phone the bots app raises toasts from the bottom, clear of the title and the tab bar.
+  const phoneBots = useBotTabHostActive();
   return (
-    <ToastProvider>
+    <ToastProvider position={phoneBots ? "bottom-center" : "top-right"}>
       <AnchoredToastProvider>
         <RootRouteBranch />
       </AnchoredToastProvider>
@@ -111,7 +124,8 @@ function RootRouteBranch() {
 
   if (pathname === GUEST_PAGE_PATH) return <Outlet />;
 
-  if (pathname === "/pair") {
+  // Pairing and an agent's sign-in are pages of their own, with or without a session.
+  if (pathname === "/pair" || pathname === "/connect-agent") {
     return <Outlet />;
   }
 

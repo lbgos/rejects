@@ -9,10 +9,8 @@ const ROW =
 
 export function QuickStart({ environmentId }: { environmentId: EnvironmentId }) {
   return (
-    <div data-quick-start className="mt-5 flex w-full flex-col text-left">
-      <h3 className="pb-1 text-xs font-medium text-muted-foreground max-md:text-bot-footnote">
-        {t("Start from a template")}
-      </h3>
+    <div data-quick-start className="mt-5 flex w-full flex-col text-left max-md:mt-0">
+      <h3 className="pb-1 text-bot-footnote text-muted-foreground">{t("Start from a template")}</h3>
       <ul className="divide-y divide-border/60">
         {BOT_TEMPLATES.map((template) => (
           <li key={template.id}>
@@ -25,7 +23,7 @@ export function QuickStart({ environmentId }: { environmentId: EnvironmentId }) 
             >
               <span className="flex min-w-0 flex-1 flex-col">
                 <span className="truncate">{template.name}</span>
-                <span className="truncate text-xs text-muted-foreground max-md:text-bot-footnote">
+                <span className="text-bot-footnote text-muted-foreground">
                   {template.description}
                 </span>
               </span>
@@ -44,7 +42,7 @@ export function QuickStart({ environmentId }: { environmentId: EnvironmentId }) 
           </button>
         </li>
       </ul>
-      <ul className="mt-3 flex list-disc flex-col gap-1 ps-4 text-xs text-muted-foreground max-md:text-bot-footnote">
+      <ul className="mt-3 flex list-disc flex-col gap-1 ps-4 text-bot-footnote text-muted-foreground">
         <li>
           {t("Each bot has one job, its own chat and memory, and only the tools you give it.")}
         </li>

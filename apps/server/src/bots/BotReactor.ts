@@ -1,4 +1,5 @@
 import {
+  BOT_REDIRECT_MESSAGE_PREFIX,
   CommandId,
   MessageId,
   type OrchestrationV2DomainEvent,
@@ -290,8 +291,8 @@ export const layer = Layer.effectDiscard(
         // steer the provider turn that is receiving the decline.
         yield* threads.dispatch({
           type: "message.dispatch",
-          commandId: CommandId.make(`bots:redirect:${key}`),
-          messageId: MessageId.make(`bots:redirect:${key}`),
+          commandId: CommandId.make(`${BOT_REDIRECT_MESSAGE_PREFIX}${key}`),
+          messageId: MessageId.make(`${BOT_REDIRECT_MESSAGE_PREFIX}${key}`),
           threadId: event.threadId,
           text: `[Declined ${pending.kind} ${pending.id}] ${REQUEST_REDIRECT}`,
           attachments: [],

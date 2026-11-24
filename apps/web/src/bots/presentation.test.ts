@@ -11,6 +11,7 @@ import {
   botReactions,
   botStatusLine,
   botToolActivity,
+  botTurnHasText,
   botTurnOffers,
   botUiTips,
   messageLinks,
@@ -18,6 +19,9 @@ import {
   timeSeparatorLabels,
   formatTokens,
   formatWakeIn,
+  scheduleNamesItsNextRun,
+  groupRepeatedRuns,
+  runsRange,
   parseTokenCap,
   quoteReply,
   resolveBotState,
@@ -110,6 +114,59 @@ describe("formatWakeIn", () => {
       ),
     ).toEqual(["<1m", "12m", "12:00", "08:30"]);
     expect(formatWakeIn(at(50 * 3_600_000), now)).toMatch(/^\S+ 11:00$/);
+  });
+});
+
+describe("scheduleNamesItsNextRun", () => {
+  it("is true only for a rule that names a single moment", () => {
+    expect(scheduleNamesItsNextRun({ type: "fixed_time", timeOfDay: "09:00", weekdays: [6] })).toBe(
+      true,
+    );
+    expect(
+      scheduleNamesItsNextRun({
+        type: "fixed_time",
+        timeOfDay: "07:30",
+        weekdays: [1, 2, 3, 4, 5],
+      }),
+    ).toBe(false);
+    expect(scheduleNamesItsNextRun({ type: "fixed_time", timeOfDay: "16:00" })).toBe(false);
+    expect(scheduleNamesItsNextRun({ type: "interval", everyMs: 3_600_000 })).toBe(false);
+  });
+});
+
+describe("nightly check rows", () => {
+  it("folds nights that say the same and changed nothing", () => {
+    const night = (result: string, outcome: "changed" | "skipped" | "failed") => ({
+      result,
+      outcome,
+    });
+    const groups = groupRepeatedRuns([
+      night("2 merged", "changed"),
+      night("2 merged", "changed"),
+      night("No changes", "skipped"),
+      night("No changes", "skipped"),
+      night("Model did not answer", "failed"),
+      night("No changes", "skipped"),
+    ]);
+    expect(groups.map((group) => [group[0].result, group.length])).toEqual([
+      ["2 merged", 1],
+      ["2 merged", 1],
+      ["No changes", 2],
+      ["Model did not answer", 1],
+      ["No changes", 1],
+    ]);
+  });
+
+  it("gives a group's range oldest first, though the server lists runs newest first", () => {
+    const nights = [
+      "2026-11-14T03:30:00.000Z",
+      "2026-11-12T03:30:00.000Z",
+      "2026-11-09T03:30:00.000Z",
+    ];
+    expect(runsRange(nights.map((at) => ({ at })))).toEqual([
+      Date.parse("2026-11-09T03:30:00.000Z"),
+      Date.parse("2026-11-14T03:30:00.000Z"),
+    ]);
   });
 });
 
@@ -213,7 +270,17 @@ describe("visibleBotEntries", () => {
     },
   });
 
-  it("hides upkeep runs, compactions, context handoffs, the first-run prompt and what came before the chat was cleared", () => {
+  const plan = (id: string, runId: string, createdAt: string): TimelineEntry => ({
+    id,
+    kind: "work",
+    createdAt,
+    entry: {
+      runId: RunId.make(runId),
+      projectedItem: { item: { type: "todo_list", runId: RunId.make(runId) } },
+    } as never,
+  });
+
+  it("hides upkeep runs, compactions, context handoffs, the first-run prompt, earlier plan updates and what came before the chat was cleared", () => {
     const entries: TimelineEntry[] = [
       message("old", "run:1", "2026-11-05T10:00:00.000Z"),
       message("bots:flush:run:1", "run:2", "2026-11-05T11:00:00.000Z"),
@@ -235,18 +302,90 @@ describe("visibleBotEntries", () => {
       message("new", "run:3", "2026-11-05T13:00:00.000Z"),
       message("bots:kickoff:main", "run:5", "2026-11-05T14:00:00.000Z"),
       message("greeting", "run:5", "2026-11-05T14:00:01.000Z"),
+      plan("plan:first", "run:6", "2026-11-05T15:00:00.000Z"),
+      {
+        id: "plan-tool",
+        kind: "work",
+        createdAt: "2026-11-05T15:00:01.000Z",
+        entry: {
+          runId: RunId.make("run:6"),
+          structuredPayload: { type: "dynamic_tool", toolName: "TodoWrite" },
+        } as never,
+      },
+      plan("plan:latest", "run:6", "2026-11-05T15:00:02.000Z"),
     ];
     expect(visibleBotEntries(entries, undefined).map((e) => e.id)).toEqual([
       "old",
       "bots:wake-result:w",
       "new",
       "greeting",
+      "plan:latest",
     ]);
     expect(visibleBotEntries(entries, "2026-11-05T11:30:00.000Z").map((e) => e.id)).toEqual([
       "bots:wake-result:w",
       "new",
       "greeting",
+      "plan:latest",
     ]);
+  });
+
+  it("shows a stopped turn as its stop line, without the thinking it never finished", () => {
+    const asked: TimelineEntry = {
+      id: "asked",
+      kind: "message",
+      createdAt: "2026-11-05T16:00:00.000Z",
+      message: {
+        id: MessageId.make("asked"),
+        role: "user",
+        text: "asked",
+        runId: RunId.make("run:7"),
+        streaming: false,
+        createdAt: "2026-11-05T16:00:00.000Z",
+        updatedAt: "2026-11-05T16:00:00.000Z",
+      },
+    };
+    const thought = (id: string, createdAt: string): TimelineEntry => ({
+      id,
+      kind: "work",
+      createdAt,
+      entry: { runId: RunId.make("run:7"), itemType: "reasoning", tone: "thinking" } as never,
+    });
+    const stopped: TimelineEntry = {
+      id: "stopped",
+      kind: "event",
+      createdAt: "2026-11-05T16:00:05.000Z",
+      projectedItem: {
+        item: { type: "run_interrupt_result", runId: RunId.make("run:7") },
+      } as never,
+    };
+    const first = thought("thought", "2026-11-05T16:00:01.000Z");
+    expect(visibleBotEntries([asked, first, stopped], undefined).map((e) => e.id)).toEqual([
+      "asked",
+      "stopped",
+    ]);
+    expect(visibleBotEntries([asked, first], undefined).map((e) => e.id)).toEqual([
+      "asked",
+      "thought",
+    ]);
+  });
+
+  it("leaves a chat empty when its own first turn failed for want of a model", () => {
+    const failed: TimelineEntry = {
+      id: "failed",
+      kind: "work",
+      createdAt: "2026-11-05T14:00:02.000Z",
+      entry: {
+        runId: RunId.make("run:5"),
+        projectedItem: { item: { type: "error", status: "failed" } },
+      } as never,
+    };
+    const kickoff = message("bots:kickoff:main", "run:5", "2026-11-05T14:00:00.000Z");
+    const ids = (entries: TimelineEntry[], providerDown: boolean) =>
+      visibleBotEntries(entries, undefined, providerDown).map((e) => e.id);
+    expect(ids([kickoff, failed], true)).toEqual([]);
+    expect(ids([kickoff, failed], false)).toEqual(["failed"]);
+    const asked = message("asked", "run:6", "2026-11-05T15:00:00.000Z");
+    expect(ids([asked, failed], true)).toEqual(["asked", "failed"]);
   });
 });
 
@@ -466,16 +605,17 @@ describe("botToolActivity", () => {
   it.each([
     [
       entry("mcp__t3-code__web_search", { query: "proxmox  9.2\nkernel" }),
-      "web_search proxmox 9.2 kernel",
+      "Searching the web: proxmox 9.2 kernel",
     ],
-    [entry("t3-code.web_search", { query: "pve" }), "web_search pve"],
+    [entry("t3-code.web_search", { query: "pve" }), "Searching the web: pve"],
     [
       entry("web_browse", { url: "https://pve.proxmox.com/wiki/Roadmap" }),
-      "web_browse pve.proxmox.com/wiki/Roadmap",
+      "Reading a page: pve.proxmox.com/wiki/Roadmap",
     ],
-    [entry("notify_user", {}), "notify_user"],
+    [entry("notify_user", { text: "Done" }), "Sending a notification"],
+    [entry("some_new_tool", { id: "x" }), "Working"],
     [entry(null, undefined, "Running vp"), "Running vp"],
-  ])("%#: names the tool and its first text argument", (work, label) => {
+  ])("%#: says what the tool is doing in plain words", (work, label) => {
     expect(botToolActivity(work)).toBe(label);
   });
 });
@@ -544,6 +684,13 @@ describe("botAwaitsAnswer", () => {
       botAwaitsAnswer([said("user"), reasoning, said("assistant", true), placeholder, working]),
     ).toBe(false);
     expect(botAwaitsAnswer([said("user"), said("assistant"), tool, working])).toBe(true);
+  });
+  it("keeps the dots for a turn with nothing to read yet, per turn", () => {
+    expect(botTurnHasText([said("user"), reasoning, tool, working])).toBe(false);
+    expect(botTurnHasText([said("user"), said("assistant"), tool, working])).toBe(true);
+    expect(botTurnHasText([said("user"), said("assistant"), said("user"), tool, working])).toBe(
+      false,
+    );
   });
   it("stays gone after a text-only ending while the run settles", () => {
     expect(

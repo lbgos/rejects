@@ -21,6 +21,7 @@ import { cn } from "../lib/utils";
 import { botRequest } from "../bots/http";
 import { BotIconPicker } from "./BotIconPicker";
 import { MailAccountsList, useMailAccounts } from "../connections/MailCards";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useEnvironmentSettings } from "../hooks/useSettings";
 import { pickModelSelection } from "@t3tools/shared/model";
 import { getCustomModelOptionsByInstance } from "../modelSelection";
@@ -46,9 +47,10 @@ import {
   DialogPopup,
   DialogTitle,
 } from "../components/ui/dialog";
-import { XIcon } from "lucide-react";
+import { ChevronDownIcon, XIcon } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Checkbox } from "../components/ui/checkbox";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../components/ui/collapsible";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import {
@@ -59,6 +61,7 @@ import {
   SelectValue,
 } from "../components/ui/select";
 import { Textarea } from "../components/ui/textarea";
+import { SECTION_TITLE } from "./panelStyles";
 import { formatTokens, parseTokenCap, usageSourceLabel } from "./presentation";
 import { refreshBots, useBot } from "./state";
 import { BOT_TEMPLATES, type BotTemplateId } from "./templates";
@@ -88,6 +91,7 @@ export function resolveDefaultBotModel(
   return firstAvailable ?? DEFAULT_BOT_MODEL;
 }
 
+/** A labelled control. Its note always sits under it, so every field in the form reads the same way. */
 function Field({
   label,
   hint,
@@ -100,21 +104,64 @@ function Field({
   children: ReactNode;
 }) {
   return (
-    <div className="space-y-1.5">
-      <Label data-bot-field-label className="flex items-baseline justify-between" htmlFor={htmlFor}>
-        <span>{label}</span>
-        {hint ? (
-          <span className="font-normal text-2xs text-muted-foreground/80 max-md:hidden">
-            {hint}
-          </span>
-        ) : null}
+    <div data-bot-field className="space-y-1 px-4 py-2.5">
+      <Label data-bot-field-label htmlFor={htmlFor}>
+        {label}
       </Label>
       {children}
-      {/* On a phone the note sits under its field. */}
-      {hint ? <p className="text-bot-footnote text-muted-foreground md:hidden">{hint}</p> : null}
+      {hint ? (
+        <p className="text-xs text-muted-foreground max-md:text-bot-footnote">{hint}</p>
+      ) : null}
     </div>
   );
 }
+
+/**
+ * A run of related fields: one rounded group under its quiet title, as the lists on You and
+ * Settings are, at every width.
+ */
+function FieldGroup({ title, children }: { title?: string; children: ReactNode }) {
+  return (
+    <section className="space-y-1.5">
+      {title ? <h3 className={cn(SECTION_TITLE, "px-4")}>{title}</h3> : null}
+      <div data-bot-form-group className="overflow-hidden bg-(--bots-list-surface)">
+        {children}
+      </div>
+    </section>
+  );
+}
+
+/** Fields most edits never touch stay folded under their title. */
+function Disclosure({
+  title,
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <Collapsible defaultOpen={defaultOpen}>
+      <CollapsibleTrigger className="group flex min-h-10 w-full items-center justify-between gap-2 px-4 text-left text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset max-md:min-h-11 max-md:text-bot-body">
+        {title}
+        <ChevronDownIcon
+          aria-hidden
+          className="size-4 shrink-0 text-muted-foreground group-data-panel-open:rotate-180"
+        />
+      </CollapsibleTrigger>
+      <CollapsiblePanel animate={false}>
+        <div className="divide-y divide-bot-hairline border-t border-bot-hairline">{children}</div>
+      </CollapsiblePanel>
+    </Collapsible>
+  );
+}
+
+/** Says how to fix a refused local network line, not only that it is wrong. */
+const localNetworkProblem = (line: string) =>
+  /^\d{1,3}(\.\d{1,3}){3}(\/\d{1,2})?$/.test(line)
+    ? t("Add a port, e.g. {example}", { example: `${line}:8080` })
+    : t("{line} is not a private address with a port, e.g. 192.168.1.10:22", { line }); // leak-scan: allow
 
 function OwnSkillsList({
   skills,
@@ -149,7 +196,7 @@ const USAGE_ROWS_SHOWN = 7;
 
 function UsageList({ usage }: { usage: BotSummary["usage"] }) {
   return (
-    <ul className="space-y-0.5 text-xs text-muted-foreground tabular-nums max-md:text-bot-footnote">
+    <ul className="space-y-1 px-4 py-2.5 text-xs text-muted-foreground tabular-nums max-md:text-bot-footnote">
       {usage.slice(0, USAGE_ROWS_SHOWN).map((entry, index) => {
         const top = entry.sources[0];
         return (
@@ -218,6 +265,7 @@ export function BotDialog({
   const bot = useBot(environmentId, request.threadId);
   const mail = useMailAccounts(environmentId, request.threadId);
   const navigate = useNavigate();
+  const phone = useMediaQuery("max-md");
   const settings = useEnvironmentSettings(environmentId);
   const allProviders =
     useAtomValue(serverEnvironment.providersValueAtom(environmentId)) ?? EMPTY_SERVER_PROVIDERS;
@@ -253,7 +301,7 @@ export function BotDialog({
   );
   const [networkText, setNetworkText] = useState((bot?.localNetwork ?? []).join("\n"));
   const [ownSkills, setOwnSkills] = useState(bot?.ownSkills ?? []);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<{ text: string; retry: boolean } | null>(null);
   const [saving, setSaving] = useState(false);
   const network = parseLocalNetwork(networkText);
   const modelOptionsByInstance = getCustomModelOptionsByInstance(
@@ -305,7 +353,7 @@ export function BotDialog({
   const submit = async () => {
     if (!canSave || saving) return;
     setSaving(true);
-    setError("");
+    setError(null);
     try {
       const picked = BOT_TEMPLATES.find((entry) => entry.id === template);
       const input: BotInput = {
@@ -342,14 +390,17 @@ export function BotDialog({
       await refreshBots(environmentId);
       if (bot) return onClose();
       if (!(await waitForThreadShell({ environmentId, threadId: saved.threadId })))
-        throw new Error(t("Bot created. Open it from Bots when the connection catches up."));
+        return setError({
+          text: t("Bot created. Open it from Bots when the connection catches up."),
+          retry: false,
+        });
       await navigate({
         to: "/$environmentId/$threadId",
         params: { environmentId, threadId: saved.threadId },
       });
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("Could not save bot."));
+      setError({ text: e instanceof Error ? e.message : t("Could not save bot."), retry: true });
     } finally {
       setSaving(false);
     }
@@ -362,7 +413,13 @@ export function BotDialog({
         if (!open && !saving) onClose();
       }}
     >
-      <DialogPopup data-bot-surface data-bot-page showCloseButton={false} className="max-w-lg">
+      <DialogPopup
+        data-bot-surface
+        data-bot-page
+        data-bot-form
+        showCloseButton={false}
+        className="max-w-xl"
+      >
         {/* Close, the title, and the confirming action. */}
         <div
           data-bot-nav-bar
@@ -371,6 +428,7 @@ export function BotDialog({
           <DialogClose
             disabled={saving}
             aria-label={t("Cancel")}
+            data-bot-nav-close
             className="justify-self-start"
             render={<Button variant="ghost" size="icon" />}
           >
@@ -387,7 +445,19 @@ export function BotDialog({
             {saving ? t("Saving…") : request.threadId ? t("Save") : t("Create")}
           </Button>
         </div>
-        <DialogPanel>
+        {/* A failed save says so beside the action that failed, whatever the form is scrolled to. */}
+        {error ? (
+          <p className="shrink-0 px-6 pb-2 text-sm text-destructive-foreground" role="alert">
+            {error.text}
+            {error.retry
+              ? ` ${t("Your edits are kept: press {action} to try again.", {
+                  action: request.threadId ? t("Save") : t("Create"),
+                })}`
+              : null}
+          </p>
+        ) : null}
+        {/* On a phone the form is a page: it ends at the screen's edge, with no fade over it. */}
+        <DialogPanel scrollFade={!phone}>
           <form
             id="bot-form"
             className="space-y-5"
@@ -397,258 +467,280 @@ export function BotDialog({
             }}
           >
             <fieldset disabled={saving} className="min-w-0 space-y-5">
-              {request.threadId === null ? (
-                <Field label={t("Template")} htmlFor="bot-template">
+              <FieldGroup>
+                {request.threadId === null ? (
+                  <Field label={t("Template")} htmlFor="bot-template">
+                    <Select
+                      value={template}
+                      onValueChange={(value) => {
+                        const id = BOT_TEMPLATES.find((entry) => entry.id === value)?.id ?? "blank";
+                        applyTemplate(id);
+                      }}
+                    >
+                      <SelectTrigger size="sm" id="bot-template">
+                        <SelectValue>
+                          {(value: string) =>
+                            BOT_TEMPLATES.find((entry) => entry.id === value)?.name ?? t("Blank")
+                          }
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectPopup data-bot-surface>
+                        <SelectItem value="blank">{t("Blank")}</SelectItem>
+                        {BOT_TEMPLATES.map((entry) => (
+                          <SelectItem key={entry.id} value={entry.id}>
+                            {entry.name}
+                          </SelectItem>
+                        ))}
+                      </SelectPopup>
+                    </Select>
+                  </Field>
+                ) : null}
+                {/* No "name" in the id and autofill off: iOS offers the user's contact card there. */}
+                <Field label={t("Name")} htmlFor="bot-title">
+                  <Input
+                    id="bot-title"
+                    name="bot-title"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    data-1p-ignore
+                    data-lpignore="true"
+                    autoFocus={focus !== "cap"}
+                    onFocus={(e) => focus === "name" && e.currentTarget.select()}
+                    maxLength={60}
+                    placeholder={t("Such as Kitchen")}
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                  />
+                </Field>
+                <Field label={t("Icon")}>
+                  <BotIconPicker
+                    bot={{ name, kind: bot?.kind, ...(icon === undefined ? {} : { icon }) }}
+                    onChange={setIcon}
+                  />
+                </Field>
+                <Field label={t("Description")} htmlFor="bot-description">
+                  {/* One sentence, shown whole: it wraps in the field and holds no line break. */}
+                  <Textarea
+                    id="bot-description"
+                    data-bot-one-line
+                    rows={1}
+                    maxLength={200}
+                    placeholder={t("One line: what this bot does")}
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value.replace(/\s*\n\s*/g, " "))}
+                  />
+                </Field>
+              </FieldGroup>
+              <FieldGroup title={t("Job")}>
+                <Field label={t("What it does")} htmlFor="bot-job">
+                  <Textarea
+                    id="bot-job"
+                    // A page shows the whole job and scrolls as one; the dialog keeps it in a window.
+                    className="md:max-h-64 md:overflow-y-auto"
+                    maxLength={16000}
+                    placeholder={t(
+                      "What should this bot do on each wake, and when should it notify you?",
+                    )}
+                    value={persona}
+                    onChange={(e) => setPersona(e.target.value)}
+                  />
+                </Field>
+                <Field
+                  label={t("Starters")}
+                  htmlFor="bot-starters"
+                  hint={t("Shown in an empty chat.")}
+                >
+                  <Textarea
+                    id="bot-starters"
+                    placeholder={t("One per line, up to 4")}
+                    className="max-h-32 overflow-y-auto"
+                    value={startersText}
+                    onChange={(e) => setStartersText(e.target.value)}
+                  />
+                </Field>
+              </FieldGroup>
+              <FieldGroup title={t("Model and limits")}>
+                <Field
+                  label={t("Preset")}
+                  htmlFor="bot-model-template"
+                  hint={
+                    templateMissing ? (
+                      <span className="text-destructive">{t("Not configured on this server")}</span>
+                    ) : (
+                      MODEL_TEMPLATE_TEXT[modelTemplate]().hint
+                    )
+                  }
+                >
                   <Select
-                    value={template}
+                    value={modelTemplate}
                     onValueChange={(value) => {
-                      const id = BOT_TEMPLATES.find((entry) => entry.id === value)?.id ?? "blank";
-                      applyTemplate(id);
+                      const next =
+                        BOT_MODEL_TEMPLATES.find((entry) => entry === value) ?? ("custom" as const);
+                      setModelTemplate(next);
+                      // A template sets its models again; Custom keeps the ones shown.
+                      if (next === "custom") {
+                        setModel(model);
+                        return;
+                      }
+                      setModel(undefined);
+                      setWorker(undefined);
                     }}
                   >
-                    <SelectTrigger size="sm" id="bot-template">
+                    <SelectTrigger size="sm" id="bot-model-template">
                       <SelectValue>
                         {(value: string) =>
-                          BOT_TEMPLATES.find((entry) => entry.id === value)?.name ?? t("Blank")
+                          MODEL_TEMPLATE_TEXT[
+                            BOT_MODEL_TEMPLATES.find((entry) => entry === value) ?? "custom"
+                          ]().name
                         }
                       </SelectValue>
                     </SelectTrigger>
                     <SelectPopup data-bot-surface>
-                      <SelectItem value="blank">{t("Blank")}</SelectItem>
-                      {BOT_TEMPLATES.map((entry) => (
-                        <SelectItem key={entry.id} value={entry.id}>
-                          {entry.name}
+                      {[...BOT_MODEL_TEMPLATES, "custom" as const].map((entry) => (
+                        <SelectItem key={entry} value={entry}>
+                          {MODEL_TEMPLATE_TEXT[entry]().name}
                         </SelectItem>
                       ))}
                     </SelectPopup>
                   </Select>
                 </Field>
-              ) : null}
-              {/* No "name" in the id and autofill off: iOS offers the user's contact card there. */}
-              <Field label={t("Name")} htmlFor="bot-title">
-                <Input
-                  id="bot-title"
-                  name="bot-title"
-                  autoComplete="off"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  data-1p-ignore
-                  data-lpignore="true"
-                  autoFocus={focus !== "cap"}
-                  maxLength={60}
-                  value={name}
-                  onFocus={(e) => focus === "name" && e.currentTarget.select()}
-                  onChange={(e) => setName(e.target.value)}
-                />
-              </Field>
-              <Field label={t("Icon")}>
-                <BotIconPicker
-                  bot={{ name, kind: bot?.kind, ...(icon === undefined ? {} : { icon }) }}
-                  onChange={setIcon}
-                />
-              </Field>
-              <Field label={t("Description")} htmlFor="bot-description">
-                <Input
-                  id="bot-description"
-                  maxLength={200}
-                  placeholder={t("One line: what this bot does")}
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                />
-              </Field>
-              <Field label={t("Job")} htmlFor="bot-job">
-                <Textarea
-                  id="bot-job"
-                  className="max-h-64 overflow-y-auto"
-                  maxLength={16000}
-                  placeholder={t(
-                    "What should this bot do on each wake, and when should it notify you?",
-                  )}
-                  value={persona}
-                  onChange={(e) => setPersona(e.target.value)}
-                />
-              </Field>
-              <Field label={t("Starters")} htmlFor="bot-starters" hint={t("one per line, up to 4")}>
-                <Textarea
-                  id="bot-starters"
-                  className="max-h-32 overflow-y-auto"
-                  value={startersText}
-                  onChange={(e) => setStartersText(e.target.value)}
-                />
-              </Field>
-              <label className="flex w-fit cursor-pointer items-center gap-2 text-sm">
-                <Checkbox
-                  checked={musicSkill}
-                  onCheckedChange={(checked) => setMusicSkill(checked === true)}
-                />
-                {t("Music downloads")}
-              </label>
-              <Field
-                label={t("Models")}
-                htmlFor="bot-model-template"
-                hint={
-                  templateMissing ? (
-                    <span className="text-destructive">{t("Not configured on this server")}</span>
-                  ) : (
-                    MODEL_TEMPLATE_TEXT[modelTemplate]().hint
-                  )
-                }
-              >
-                <Select
-                  value={modelTemplate}
-                  onValueChange={(value) => {
-                    const next =
-                      BOT_MODEL_TEMPLATES.find((entry) => entry === value) ?? ("custom" as const);
-                    setModelTemplate(next);
-                    // A template sets its models again; Custom keeps the ones shown.
-                    if (next === "custom") {
-                      setModel(model);
-                      return;
-                    }
-                    setModel(undefined);
-                    setWorker(undefined);
-                  }}
-                >
-                  <SelectTrigger size="sm" id="bot-model-template">
-                    <SelectValue>
-                      {(value: string) =>
-                        MODEL_TEMPLATE_TEXT[
-                          BOT_MODEL_TEMPLATES.find((entry) => entry === value) ?? "custom"
-                        ]().name
-                      }
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectPopup data-bot-surface>
-                    {[...BOT_MODEL_TEMPLATES, "custom" as const].map((entry) => (
-                      <SelectItem key={entry} value={entry}>
-                        {MODEL_TEMPLATE_TEXT[entry]().name}
-                      </SelectItem>
-                    ))}
-                  </SelectPopup>
-                </Select>
-              </Field>
-              <Field label={t("Model")}>
-                <div data-bot-model-field className="min-w-0">
-                  <ProviderModelPicker
-                    environmentId={environmentId}
-                    disabled={saving}
-                    activeInstanceId={model.instanceId}
-                    model={model.model}
-                    lockedProvider={null}
-                    instanceEntries={instanceEntries}
-                    modelOptionsByInstance={modelOptionsByInstance}
-                    isComposerOwned={false}
-                    activeProviderIconClassName={RESTING_PROVIDER_ICON_CLASSNAME}
-                    triggerClassName={cn(SETTINGS_PICKER_TRIGGER_CLASSNAME, "max-w-full")}
-                    onInstanceModelChange={(instanceId, next) => {
-                      setModel(pickModelSelection(model, instanceId, next));
-                      // Lead keeps its worker setup; any other hand pick leaves the template.
-                      if (modelTemplate !== "lead") setModelTemplate("custom");
-                    }}
-                  />
-                </div>
-              </Field>
-              {modelTemplate === "lead" && worker ? (
-                <Field label={t("Worker model")}>
+                <Field label={t("Model")}>
                   <div data-bot-model-field className="min-w-0">
                     <ProviderModelPicker
                       environmentId={environmentId}
                       disabled={saving}
-                      activeInstanceId={worker.instanceId}
-                      model={worker.model}
+                      activeInstanceId={model.instanceId}
+                      model={model.model}
                       lockedProvider={null}
                       instanceEntries={instanceEntries}
                       modelOptionsByInstance={modelOptionsByInstance}
                       isComposerOwned={false}
                       activeProviderIconClassName={RESTING_PROVIDER_ICON_CLASSNAME}
                       triggerClassName={cn(SETTINGS_PICKER_TRIGGER_CLASSNAME, "max-w-full")}
-                      onInstanceModelChange={(instanceId, next) =>
-                        setWorker(pickModelSelection(worker, instanceId, next))
-                      }
+                      onInstanceModelChange={(instanceId, next) => {
+                        setModel(pickModelSelection(model, instanceId, next));
+                        // Lead keeps its worker setup; any other hand pick leaves the template.
+                        if (modelTemplate !== "lead") setModelTemplate("custom");
+                      }}
                     />
                   </div>
                 </Field>
-              ) : null}
-              <Field
-                label={t("Daily token cap")}
-                htmlFor="bot-cap"
-                hint={
-                  dailyTokenCap === null ? (
-                    <span className="text-destructive">{t("e.g. 500k, 2M")}</span>
-                  ) : (
-                    t("{tokens}/day; cache reads at 1/10", {
-                      tokens: dailyTokenCap.toLocaleString(uiLocales),
-                    })
-                  )
-                }
-              >
-                <Input
-                  id="bot-cap"
-                  autoFocus={focus === "cap"}
-                  inputMode="text"
-                  autoComplete="off"
-                  className="max-w-40"
-                  value={capText}
-                  aria-invalid={dailyTokenCap === null}
-                  onFocus={(e) => e.currentTarget.select()}
-                  onChange={(e) => setCapText(e.target.value)}
-                />
-              </Field>
-              {bot ? <UsageList usage={bot.usage} /> : null}
-              {ownSkills.length > 0 ? (
-                <Field label={t("Skills it wrote")}>
-                  <OwnSkillsList
-                    skills={ownSkills}
-                    onRemove={(name) =>
-                      setOwnSkills((current) => current.filter((skill) => skill.name !== name))
-                    }
-                  />
-                </Field>
-              ) : null}
-              {/* Accounts are connected from the bot's chat; here they are only listed and removed. */}
-              {bot && mail.accounts.length > 0 ? (
-                <Field label={t("Mail accounts")}>
-                  <MailAccountsList
-                    environmentId={environmentId}
-                    accounts={mail.accounts}
-                    onChange={mail.refresh}
-                  />
-                </Field>
-              ) : null}
-              {/* Owner only: the route needs the settings scope, and no bot tool can set it. */}
-              {bot ? (
+                {modelTemplate === "lead" && worker ? (
+                  <Field label={t("Worker model")}>
+                    <div data-bot-model-field className="min-w-0">
+                      <ProviderModelPicker
+                        environmentId={environmentId}
+                        disabled={saving}
+                        activeInstanceId={worker.instanceId}
+                        model={worker.model}
+                        lockedProvider={null}
+                        instanceEntries={instanceEntries}
+                        modelOptionsByInstance={modelOptionsByInstance}
+                        isComposerOwned={false}
+                        activeProviderIconClassName={RESTING_PROVIDER_ICON_CLASSNAME}
+                        triggerClassName={cn(SETTINGS_PICKER_TRIGGER_CLASSNAME, "max-w-full")}
+                        onInstanceModelChange={(instanceId, next) =>
+                          setWorker(pickModelSelection(worker, instanceId, next))
+                        }
+                      />
+                    </div>
+                  </Field>
+                ) : null}
                 <Field
-                  label={t("Local network access")}
-                  htmlFor="bot-network"
+                  label={t("Daily limit")}
+                  htmlFor="bot-cap"
                   hint={
-                    "invalid" in network ? (
-                      <span className="text-destructive">
-                        {network.invalid
-                          ? t("Not an address: {line}", { line: network.invalid })
-                          : t("Up to {count} entries", { count: LOCAL_NETWORK_MAX_ENTRIES })}
-                      </span>
-                    ) : (
-                      t("IPv4 or CIDR with a TCP port, one per line")
-                    )
+                    <span className={dailyTokenCap === null ? "text-destructive" : undefined}>
+                      {t("Tokens a day, such as 500k or 2M")}
+                    </span>
                   }
                 >
-                  <Textarea
-                    id="bot-network"
-                    className="max-h-32 overflow-y-auto"
-                    spellCheck={false}
-                    placeholder="192.168.1.10:22"
-                    aria-invalid={"invalid" in network}
-                    value={networkText}
-                    onChange={(e) => setNetworkText(e.target.value)}
+                  <Input
+                    id="bot-cap"
+                    autoFocus={focus === "cap"}
+                    inputMode="text"
+                    autoComplete="off"
+                    value={capText}
+                    aria-invalid={dailyTokenCap === null}
+                    onFocus={(e) => e.currentTarget.select()}
+                    onChange={(e) => setCapText(e.target.value)}
                   />
                 </Field>
+              </FieldGroup>
+              {bot && bot.usage.length > 0 ? (
+                <FieldGroup>
+                  <Disclosure title={t("Usage, last 7 days")}>
+                    <UsageList usage={bot.usage} />
+                  </Disclosure>
+                </FieldGroup>
               ) : null}
+              <FieldGroup>
+                {/* Open when the bot already uses something in it. */}
+                <Disclosure
+                  title={t("Advanced")}
+                  defaultOpen={
+                    (bot?.skills?.includes("music") ?? false) ||
+                    (bot?.localNetwork?.length ?? 0) > 0 ||
+                    (bot?.ownSkills?.length ?? 0) > 0
+                  }
+                >
+                  <label className="flex min-h-10 w-full cursor-pointer items-center gap-2 px-4 text-sm max-md:min-h-11 max-md:text-bot-body">
+                    <Checkbox
+                      checked={musicSkill}
+                      onCheckedChange={(checked) => setMusicSkill(checked === true)}
+                    />
+                    {t("Music downloads")}
+                  </label>
+                  {ownSkills.length > 0 ? (
+                    <Field label={t("Skills it wrote")}>
+                      <OwnSkillsList
+                        skills={ownSkills}
+                        onRemove={(name) =>
+                          setOwnSkills((current) => current.filter((skill) => skill.name !== name))
+                        }
+                      />
+                    </Field>
+                  ) : null}
+                  {/* Accounts are connected from the bot's chat; here they are only listed and removed. */}
+                  {bot && mail.accounts.length > 0 ? (
+                    <Field label={t("Mail accounts")}>
+                      <MailAccountsList
+                        environmentId={environmentId}
+                        accounts={mail.accounts}
+                        onChange={mail.refresh}
+                      />
+                    </Field>
+                  ) : null}
+                  {/* Owner only: the route needs the settings scope, and no bot tool can set it. */}
+                  {bot ? (
+                    <Field
+                      label={t("Local network access")}
+                      htmlFor="bot-network"
+                      hint={
+                        <span className={"invalid" in network ? "text-destructive" : undefined}>
+                          {"invalid" in network
+                            ? network.invalid
+                              ? localNetworkProblem(network.invalid)
+                              : t("Up to {count} entries", { count: LOCAL_NETWORK_MAX_ENTRIES })
+                            : t("IPv4 or CIDR with a TCP port, one per line")}
+                        </span>
+                      }
+                    >
+                      <Textarea
+                        id="bot-network"
+                        className="max-h-32 overflow-y-auto"
+                        spellCheck={false}
+                        placeholder="192.168.1.10:22" // leak-scan: allow
+                        aria-invalid={"invalid" in network}
+                        value={networkText}
+                        onChange={(e) => setNetworkText(e.target.value)}
+                      />
+                    </Field>
+                  ) : null}
+                </Disclosure>
+              </FieldGroup>
             </fieldset>
-            {error ? (
-              <p className="text-sm text-destructive" role="alert">
-                {error}
-              </p>
-            ) : null}
           </form>
         </DialogPanel>
       </DialogPopup>

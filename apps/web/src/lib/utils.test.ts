@@ -8,4 +8,11 @@ describe("cn", () => {
       "dark:before:bg-transparent dark:before:bg-composer-seam-below",
     );
   });
+
+  it("keeps a bots type size next to a text color, and lets a later size replace it", () => {
+    expect(cn("text-bot-footnote text-muted-foreground")).toBe(
+      "text-bot-footnote text-muted-foreground",
+    );
+    expect(cn("text-sm text-bot-action", "text-bot-body")).toBe("text-bot-action text-bot-body");
+  });
 });

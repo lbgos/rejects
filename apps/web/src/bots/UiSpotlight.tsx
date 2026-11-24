@@ -16,6 +16,8 @@ const RING_PADDING = 6;
 const TIP_GAP = 12;
 const TIP_WIDTH = 288;
 const EDGE = 16;
+const ARROW_SIZE = 12;
+const ARROW_INSET = 16;
 
 /** The first element marked with `target` that is on screen; closed sidebars and hidden layouts have none. */
 const findTarget = (target: UiTarget) => {
@@ -146,23 +148,39 @@ export function UiSpotlight() {
 
   const width = Math.min(TIP_WIDTH, window.innerWidth - EDGE * 2);
   const below = rect !== null && rect.bottom + TIP_GAP + 140 < window.innerHeight;
+  const left =
+    rect === null
+      ? 0
+      : Math.min(
+          Math.max(EDGE, rect.left + rect.width / 2 - width / 2),
+          window.innerWidth - EDGE - width,
+        );
   const tipStyle =
     rect === null
       ? undefined
       : {
           width,
-          left: Math.min(
-            Math.max(EDGE, rect.left + rect.width / 2 - width / 2),
-            window.innerWidth - EDGE - width,
-          ),
+          left,
           ...(below
             ? { top: rect.bottom + RING_PADDING + TIP_GAP }
             : { bottom: window.innerHeight - rect.top + RING_PADDING + TIP_GAP }),
         };
+  // The tip's pointer sits under (or over) the middle of the place, kept clear of its corners.
+  const pointerLeft =
+    rect === null
+      ? 0
+      : Math.min(
+          Math.max(ARROW_INSET, rect.left + rect.width / 2 - left - ARROW_SIZE / 2),
+          width - ARROW_INSET - ARROW_SIZE,
+        );
 
   return createPortal(
     <div data-ui-spotlight className="pointer-events-none fixed inset-0 z-[70]">
-      {rect === null ? null : (
+      {rect === null ? (
+        // The place is on another screen: the page dims, so the tip reads as a note about it and
+        // not as part of the chat under it.
+        <div aria-hidden className="fixed inset-0 bg-bot-sheet-scrim" />
+      ) : (
         <div
           aria-hidden
           className="fixed rounded-xl border-2 border-foreground"
@@ -185,6 +203,18 @@ export function UiSpotlight() {
             : "pointer-events-auto fixed rounded-xl border border-border bg-popover p-3 text-popover-foreground shadow-lg"
         }
       >
+        {rect === null ? null : (
+          <span
+            aria-hidden
+            data-ui-spotlight-pointer
+            style={{ left: pointerLeft, width: ARROW_SIZE, height: ARROW_SIZE }}
+            className={
+              below
+                ? "absolute -top-1.75 rotate-45 border-t border-l border-border bg-popover"
+                : "absolute -bottom-1.75 rotate-45 border-r border-b border-border bg-popover"
+            }
+          />
+        )}
         <p className="text-sm font-semibold text-foreground max-md:text-bot-body">{bot.name}</p>
         <p className="text-sm text-foreground max-md:text-bot-body">{tip.text}</p>
         <div className="mt-2 flex justify-end gap-1">

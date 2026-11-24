@@ -4,6 +4,7 @@ import { useLocation } from "@tanstack/react-router";
 import { CheckIcon, ChevronDownIcon, FolderIcon, LayersIcon } from "lucide-react";
 import { Fragment, useState, type ReactNode } from "react";
 
+import { useBotsMode } from "../../bots/mode";
 import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
 import { useEnvironments, type EnvironmentPresentation } from "../../state/environments";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
@@ -68,7 +69,12 @@ export function SettingsScopeSentence() {
   const scope = useOptionalSettingsScope();
   const pathname = useLocation({ select: (location) => location.pathname });
   const { environments } = useEnvironments();
+  const botsApp = useBotsMode().active;
   if (scope === null || SETTINGS_DEVICE_ONLY_PATHS.has(pathname)) return null;
+  // One environment and at most one project leave nothing to choose between. The bots app has no
+  // projects of its own, so there the sentence shows only once a narrower target is picked.
+  const narrowed = scope.search.project !== undefined || scope.search.checkout !== undefined;
+  if (environments.length <= 1 && !narrowed && (botsApp || scope.groups.length <= 1)) return null;
   const props: SettingsScopeMenuProps = {
     value: scope.search,
     singleEnvironment: scope.singleEnvironment,

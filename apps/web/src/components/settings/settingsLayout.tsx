@@ -3,7 +3,7 @@ import { AuthSettingsWriteScope } from "@t3tools/contracts";
 import { usePrimaryEnvironmentId, usePrimaryEnvironment } from "../../state/environments";
 import { useEnvironmentScope, useEnvironmentsWithScope } from "../../state/session";
 import { useServerConfigs } from "../../state/entities";
-import { InfoIcon, Undo2Icon } from "lucide-react";
+import { ChevronRightIcon, InfoIcon, Undo2Icon } from "lucide-react";
 import {
   DEFAULT_SERVER_SETTINGS,
   isManagedSettingPath,
@@ -11,7 +11,16 @@ import {
 } from "@t3tools/contracts";
 import * as Equal from "effect/Equal";
 import { useLocation, useNavigate } from "@tanstack/react-router";
-import { createContext, type ComponentPropsWithoutRef, type ReactNode, useContext } from "react";
+import {
+  cloneElement,
+  createContext,
+  type ComponentPropsWithoutRef,
+  type ReactElement,
+  type ReactNode,
+  use,
+  useContext,
+} from "react";
+import { createPortal } from "react-dom";
 
 import {
   PRIMARY_SETTINGS_UNAVAILABLE_MESSAGE,
@@ -188,20 +197,25 @@ export function SettingsSearchTarget({
 export const SETTINGS_PICKER_TRIGGER_CLASSNAME =
   "min-w-0 max-w-none shrink-0 border-input bg-background font-normal text-foreground shadow-xs/5 hover:bg-accent/50 dark:bg-input/32 [&_svg[data-composer-control-chevron]]:stroke-[1.75] [&_svg[data-composer-control-chevron]]:opacity-70";
 
-export function PolicyTooltip({ children }: { readonly children: string }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        delay={200}
-        render={
-          <Button size="icon-micro" variant="ghost-muted" aria-label="Background policy details">
-            <InfoIcon className="size-3.5" />
-          </Button>
-        }
-      />
-      <TooltipPopup side="top">{children}</TooltipPopup>
-    </Tooltip>
-  );
+/**
+ * A phone's pushed settings page: its bar names the page and holds the page's one action, so a
+ * section with the page's own title gives up its title row.
+ */
+export const SettingsPhoneBarContext = createContext<{
+  readonly titles: ReadonlyArray<string>;
+  readonly actionSlot: HTMLElement | null;
+  /** Remounts the page after its settings were restored to their defaults. */
+  readonly onRestored: () => void;
+  /**
+   * A page that opens one of its own items full-screen names it here: the bar takes the item's
+   * title and its Back returns to the page. Null hands the bar back.
+   */
+  readonly setDetail: (detail: SettingsPhoneBarDetail | null) => void;
+} | null>(null);
+
+export interface SettingsPhoneBarDetail {
+  readonly title: string;
+  readonly onBack: () => void;
 }
 
 export function SettingsSection({
@@ -224,16 +238,23 @@ export function SettingsSection({
   children: ReactNode;
 }) {
   const targetRef = useSettingsSearchTarget<HTMLElement>(sectionProps.id);
+  const bar = use(SettingsPhoneBarContext);
+  const titleInBar = bar !== null && !hideTitle && !titleAction && bar.titles.includes(title);
 
   return (
     <section
       {...sectionProps}
       ref={targetRef}
       tabIndex={sectionProps.id ? -1 : sectionProps.tabIndex}
-      className={cn(!hideTitle && "space-y-2.5", className)}
+      className={cn(!hideTitle && !titleInBar && "space-y-2.5", className)}
     >
-      {hideTitle ? (
-        <h2 className="sr-only">{title}</h2>
+      {hideTitle || titleInBar ? (
+        <>
+          <h2 className="sr-only">{title}</h2>
+          {titleInBar && headerAction && bar.actionSlot
+            ? createPortal(headerAction, bar.actionSlot)
+            : null}
+        </>
       ) : (
         <div
           data-settings-scroll-target
@@ -249,7 +270,10 @@ export function SettingsSection({
           <div className="flex min-h-7 min-w-7 items-center justify-end">{headerAction}</div>
         </div>
       )}
-      <SettingsGroup data-settings-scroll-target={hideTitle ? "" : undefined} variant={variant}>
+      <SettingsGroup
+        data-settings-scroll-target={hideTitle || titleInBar ? "" : undefined}
+        variant={variant}
+      >
         {children}
       </SettingsGroup>
     </section>
@@ -520,7 +544,7 @@ export function SettingsRow({
                 {renderedInheritance}
               </span>
             ) : null}
-            <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
+            <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center empty:hidden">
               {renderedReset}
             </span>
           </div>
@@ -558,6 +582,59 @@ export function SettingsRow({
   );
 }
 
+/**
+ * A row that opens a page or a site: the whole row is the link and a chevron sits where a control
+ * would, at every width.
+ */
+export function SettingsLinkRow({
+  link,
+  title,
+  ...rowProps
+}: Omit<ComponentPropsWithoutRef<typeof SettingsRow>, "title" | "control" | "className"> & {
+  readonly title: string;
+  /** The link the row is, such as a router `Link` or an external anchor; the row gives it its title. */
+  readonly link: ReactElement<{ className?: string; children?: ReactNode }>;
+}) {
+  return (
+    <SettingsRow
+      {...rowProps}
+      data-settings-link-row=""
+      className="relative"
+      title={cloneElement(link, {
+        className:
+          "rounded-sm outline-none after:absolute after:inset-0 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+        children: title,
+      })}
+      control={<ChevronRightIcon aria-hidden className="size-4 text-muted-foreground" />}
+    />
+  );
+}
+
+/**
+ * A row that acts when pressed: a group's whole-width button in the action colour, or in the
+ * destructive colour for a reset or removal. It is the settings twin of a bot panel's action row.
+ */
+export function SettingsActionRow({
+  tone = "action",
+  className,
+  ...buttonProps
+}: Omit<ComponentPropsWithoutRef<"button">, "type"> & {
+  readonly tone?: "action" | "destructive";
+}) {
+  return (
+    <button
+      type="button"
+      data-settings-action-row
+      {...buttonProps}
+      className={cn(
+        "flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-xl px-3 text-left text-sm outline-none not-disabled:hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset disabled:cursor-default disabled:text-muted-foreground sm:px-4 max-md:px-4 max-md:text-bot-body",
+        tone === "destructive" ? "text-destructive-foreground" : "text-bot-action",
+        className,
+      )}
+    />
+  );
+}
+
 export function SettingResetButton({
   label,
   tooltip = "Reset to default",
@@ -590,6 +667,13 @@ export function SettingResetButton({
       <TooltipPopup side="top">{tooltip}</TooltipPopup>
     </Tooltip>
   );
+}
+
+function markSettingsBarScrolled(scroller: HTMLElement | null) {
+  scroller
+    ?.closest("[data-settings-pane]")
+    ?.querySelector("[data-settings-page-header]")
+    ?.setAttribute("data-scrolled", String(scroller.scrollTop > 0));
 }
 
 export function SettingsPageContainer({
@@ -626,6 +710,9 @@ export function SettingsPageContainer({
       onTargetHandled={clearTargetHash}
     >
       <div
+        // A phone page's bar shows its edge while anything is under it (bots.css).
+        ref={markSettingsBarScrolled}
+        onScroll={(event) => markSettingsBarScrolled(event.currentTarget)}
         className="topbar-scroll-fade scrollbar-gutter-both flex-1 overflow-y-auto"
         data-settings-page-scroll
       >

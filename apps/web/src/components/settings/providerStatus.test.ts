@@ -2,9 +2,12 @@ import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@t3
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  getProviderAccount,
   getProviderSummary,
   getProviderVersionAdvisoryPresentation,
   getProviderStatusKey,
+  isProviderAwaitingInstall,
+  resolveProviderSwitchPress,
 } from "./providerStatus";
 
 const provider: ServerProvider = {
@@ -48,6 +51,49 @@ describe("getProviderSummary", () => {
       detail: "Run codex login.",
     });
   });
+
+  it("names a custom endpoint by its host, not by the CLI's own account", () => {
+    const custom: ServerProvider = {
+      ...provider,
+      auth: {
+        status: "authenticated",
+        email: "someone@example.com",
+        type: "customEndpoint",
+        label: "Custom API endpoint",
+        endpoint: "https://models.example.com",
+      },
+    };
+    expect(getProviderSummary(custom).headline).toBe("Connected · models.example.com");
+    expect(getProviderAccount(custom)).toEqual({ email: null, label: "models.example.com" });
+    expect(getProviderAccount(provider)).toEqual({ email: null, label: "ChatGPT" });
+  });
+
+  it("reports a provider nobody installed as not in use, whatever its probe failed with", () => {
+    const missing: ServerProvider = {
+      ...provider,
+      installed: false,
+      status: "error",
+      auth: { status: "unknown" },
+      message: "Could not start Codex CLI.",
+    };
+    expect(getProviderSummary(missing).headline).toBe("Not installed");
+    expect(getProviderStatusKey(missing)).toBe("neutral");
+    expect(isProviderAwaitingInstall(missing)).toBe(true);
+    expect(isProviderAwaitingInstall({ ...missing, enabled: false })).toBe(false);
+    expect(isProviderAwaitingInstall(provider)).toBe(false);
+  });
+
+  it.each([
+    { installed: false, enabled: true, press: "disable" },
+    { installed: true, enabled: true, press: "disable" },
+    { installed: true, enabled: false, press: "enable" },
+    { installed: false, enabled: false, press: "setup" },
+  ])(
+    "a provider's switch press is $press when installed $installed and enabled $enabled",
+    ({ installed, enabled, press }) => {
+      expect(resolveProviderSwitchPress({ installed }, enabled)).toBe(press);
+    },
+  );
 });
 
 describe("Antigravity with unchecked sign-in", () => {
@@ -95,8 +141,8 @@ describe("Antigravity with unchecked sign-in", () => {
       {
         name: "missing CLI",
         change: { installed: false },
-        headline: "Not found",
-        status: "warning",
+        headline: "Not installed",
+        status: "neutral",
       },
       {
         name: "API key authentication",

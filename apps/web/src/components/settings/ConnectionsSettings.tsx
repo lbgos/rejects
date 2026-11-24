@@ -520,12 +520,12 @@ function ConnectionsSettingsContent({
     const result = await revokeClient({ environmentId: accessEnvironmentId, input: { sessionId } });
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
       const error = squashAtomCommandFailure(result);
-      const message = error instanceof Error ? error.message : "Failed to revoke client access.";
+      const message = error instanceof Error ? error.message : "Could not revoke access.";
       setDesktopAccessManagementMutationError(message);
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Could not revoke client access",
+          title: "Could not revoke access",
           description: message,
         }),
       );
@@ -545,17 +545,18 @@ function ConnectionsSettingsContent({
     if (result._tag === "Success") {
       toastManager.add({
         type: "success",
-        title: result.value === 1 ? "Revoked 1 other client" : `Revoked ${result.value} clients`,
-        description: "Other paired clients will need a new pairing link before reconnecting.",
+        title: result.value === 1 ? "Revoked 1 other device" : `Revoked ${result.value} devices`,
+        description: "They need a new pairing link to connect again.",
       });
     } else if (!isAtomCommandInterrupted(result)) {
       const error = squashAtomCommandFailure(result);
-      const message = error instanceof Error ? error.message : "Failed to revoke other clients.";
+      const message =
+        error instanceof Error ? error.message : "Could not revoke the other devices.";
       setDesktopAccessManagementMutationError(message);
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Could not revoke other clients",
+          title: "Could not revoke the other devices",
           description: message,
         }),
       );
@@ -610,7 +611,7 @@ function ConnectionsSettingsContent({
         (session) => !session.current && session.subject === CLOUD_CONNECT_SESSION_SUBJECT,
       );
     if (revokesConnectDevices) {
-      requestConnectRevoke("Revoke all other clients?", handleRevokeOtherDesktopClients);
+      requestConnectRevoke("Revoke all other devices?", handleRevokeOtherDesktopClients);
     } else {
       void handleRevokeOtherDesktopClients();
     }
@@ -915,7 +916,7 @@ function ConnectionsSettingsContent({
         tailscaleHttpsEndpoint
           ? tailscaleHttpsEndpoint.status === "available"
             ? tailscaleHttpsEndpoint.httpBaseUrl
-            : "Use Tailscale Serve to expose this backend through a MagicDNS HTTPS URL."
+            : "Use Tailscale Serve to reach this server at a MagicDNS HTTPS address."
           : missingTailscaleEndpointDescription(desktopServerExposureState)
       }
       control={
@@ -1013,7 +1014,7 @@ function ConnectionsSettingsContent({
           : isLocalBackendNetworkAccessible
             ? "Remote access is already configured. Change network exposure where the server starts."
             : currentAuthPolicy === "loopback-browser"
-              ? "Only this machine can connect. Restart with a non-loopback host for remote pairing."
+              ? "Only this machine can connect. To pair other devices, start the server on a network address."
               : "Network exposure information is unavailable."
       }
       control={
@@ -1049,9 +1050,7 @@ function ConnectionsSettingsContent({
         <>
           <SettingsSection
             {...searchableSetting("connections-environment")}
-            title={
-              accessEnvironment?.label ?? (desktopBridge ? "This machine" : "Primary environment")
-            }
+            title={accessEnvironment?.label ?? (desktopBridge ? "This machine" : "This server")}
             icon={
               <EnvironmentMachineIcon
                 aria-hidden
@@ -1160,7 +1159,7 @@ function ConnectionsSettingsContent({
               />
             ) : null}
             {accessEnvironment ? (
-              <details className="group px-3 sm:px-4">
+              <details className="group px-3 max-md:px-4 sm:px-4">
                 <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-md text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
                   Permissions
                   <ChevronRightIcon
@@ -1218,7 +1217,7 @@ function ConnectionsSettingsContent({
                   renderAuthorizedClients()
                 ) : (
                   <p className="px-4 py-3 text-xs text-muted-foreground">
-                    This connection can create access links but cannot view authorized clients.
+                    This device can create pairing links but cannot see paired devices.
                   </p>
                 )}
               </ScrollArea>
@@ -1510,8 +1509,8 @@ function ConnectionsSettingsContent({
       ) : (
         <SettingsSection {...searchableSetting("connections-environment")}>
           <SettingsRow
-            title="No environment selected"
-            description="Connect an environment to view its settings and access."
+            title="No server selected"
+            description="Connect to a server to see its settings and access."
           />
         </SettingsSection>
       )}
@@ -1539,7 +1538,7 @@ function ConnectionsSettingsContent({
           {accessServerConfig.environment.capabilities.peerLinks === true ? (
             <SharingSwitchRow
               {...searchableSetting("linked-environments-beta")}
-              description="Let agents and bots here work on your other machines, and theirs here. Turn it on for each machine, then link them. While off, nothing new starts over a link; running tasks finish."
+              description="Let bots here work on your other machines, and theirs here. Turn it on for each machine, then link them. While off, nothing new starts over a link; running tasks finish."
               checked={accessServerConfig.settings.linkedEnvironmentsEnabled}
               onChange={(enabled) => updateAccessSettings({ linkedEnvironmentsEnabled: enabled })}
               canWrite={canWriteSettings}

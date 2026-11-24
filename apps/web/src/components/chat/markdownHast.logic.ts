@@ -40,3 +40,28 @@ export function hastHasText(node: unknown): boolean {
   }
   return "children" in node && Array.isArray(node.children) && node.children.some(hastHasText);
 }
+
+const SHORT_CELL_LENGTH = 12;
+
+/** A table cell whose whole text is a short value, such as an amount, a day or a time. */
+export function isShortCell(node: unknown): boolean {
+  const text = hastPlainTextDeep(node).trim();
+  return text.length > 0 && text.length <= SHORT_CELL_LENGTH;
+}
+
+/** A list item with no content: no element and no text beyond whitespace. */
+export function isEmptyListItem(node: unknown): boolean {
+  if (!node || typeof node !== "object" || !("children" in node) || !Array.isArray(node.children)) {
+    return false;
+  }
+  return node.children.every(
+    (child: unknown) =>
+      !!child &&
+      typeof child === "object" &&
+      "type" in child &&
+      child.type === "text" &&
+      "value" in child &&
+      typeof child.value === "string" &&
+      child.value.trim() === "",
+  );
+}

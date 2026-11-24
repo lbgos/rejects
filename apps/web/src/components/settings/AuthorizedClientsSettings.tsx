@@ -1,5 +1,5 @@
 import { AUTH_SCOPE_OPTIONS as PAIRING_SCOPE_OPTIONS } from "@t3tools/shared/authScopeOptions";
-import { PlugIcon, PlusIcon, QrCodeIcon } from "lucide-react";
+import { EllipsisIcon, PlugIcon, PlusIcon, QrCodeIcon } from "lucide-react";
 import { type ReactNode, memo, useId, useState } from "react";
 import {
   AuthAccessWriteScope,
@@ -48,6 +48,8 @@ import { QRCodeSvg } from "../ui/qr-code";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { Button } from "../ui/button";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
+import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { Textarea } from "../ui/textarea";
 import {
   isLoopbackHostname,
@@ -80,7 +82,7 @@ function AccessScopeSummary({
   readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
   readonly label: string;
 }) {
-  const scopeCountLabel = `${scopes.length} ${scopes.length === 1 ? "scope" : "scopes"}`;
+  const scopeCountLabel = `${scopes.length} ${scopes.length === 1 ? "permission" : "permissions"}`;
 
   return (
     <Popover>
@@ -92,7 +94,7 @@ function AccessScopeSummary({
           <button
             type="button"
             aria-label={`${label}: show ${scopeCountLabel}`}
-            className="cursor-help underline decoration-border underline-offset-2 outline-hidden hover:text-foreground focus-visible:text-foreground"
+            className="cursor-help outline-hidden hover:text-foreground focus-visible:text-foreground"
           />
         }
       >
@@ -104,12 +106,12 @@ function AccessScopeSummary({
         tooltipStyle
         className="w-max max-w-80 whitespace-normal"
       >
-        <p className="mb-1 font-medium">Granted scopes</p>
+        <p className="mb-1 font-medium">Permissions</p>
         <div className="flex flex-col gap-0.5">
           {scopes.map((scope) => (
-            <code key={scope} className="font-mono text-foreground/85">
-              {scope}
-            </code>
+            <span key={scope} className="text-foreground/85">
+              {PAIRING_SCOPE_OPTIONS.find((option) => option.scope === scope)?.title ?? scope}
+            </span>
           ))}
         </div>
       </PopoverPopup>
@@ -281,15 +283,16 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
               <TooltipPopup side="top">{expiresAbsolute}</TooltipPopup>
             </Tooltip>
             <span aria-hidden> · </span>
-            <AccessScopeSummary scopes={pairingLink.scopes} label="Pairing link scopes" />
+            <AccessScopeSummary scopes={pairingLink.scopes} label="Pairing link" />
           </p>
           {!credential ? (
             <p className="text-2xs text-muted-foreground/70">
-              Create a new link to share from this client.
+              Create a new link to share from this device.
             </p>
           ) : shareablePairingUrl === null ? (
             <p className="text-2xs text-muted-foreground/70">
-              Copy the token and pair from another client using this backend&apos;s reachable host.
+              Copy the token and pair from another device, using an address it can reach this server
+              at.
             </p>
           ) : null}
         </div>
@@ -338,7 +341,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
                     ? isRevealValueHostedAppPairingUrl
                       ? "Clipboard copy is unavailable here. Open or manually copy this hosted app link on the device you want to connect."
                       : "Clipboard copy is unavailable here. Open or manually copy this full pairing URL on the device you want to connect."
-                    : "Clipboard copy is unavailable here. Manually copy this code into another client."}
+                    : "Copying is unavailable here. Type this code on the other device."}
                 </DialogDescription>
               </DialogHeader>
               <DialogPanel>
@@ -536,7 +539,7 @@ const ConnectedClientListRow = memo(function ConnectedClientListRow({
                 <span aria-hidden> · </span>
               </>
             ) : null}
-            <AccessScopeSummary scopes={clientSession.scopes} label="Client scopes" />
+            <AccessScopeSummary scopes={clientSession.scopes} label="Device" />
           </p>
         </div>
         <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto sm:justify-end">
@@ -578,6 +581,7 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
     reportFailure: false,
   });
   const [dialogOpen, setDialogOpen] = useState(false);
+  const phone = useMediaQuery("max-md");
   const [pairingLabel, setPairingLabel] = useState("");
   const [pairingScopes, setPairingScopes] = useState<ReadonlyArray<AuthGrantScope>>([
     ...AuthStandardClientScopes,
@@ -625,18 +629,44 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
 
   return (
     <div className="flex flex-wrap items-center justify-end gap-2">
-      <Button size="xs" variant="outline" onClick={() => openUseInAnotherApp(environmentId)}>
-        <PlugIcon className="size-3" />
-        Use in another app (MCP)
-      </Button>
-      <Button
-        size="xs"
-        variant="destructive-outline"
-        disabled={isRevokingOtherClients || !canRevokeOtherClients(clientSessions)}
-        onClick={() => void onRevokeOtherClients()}
-      >
-        {isRevokingOtherClients ? "Revoking…" : "Revoke others"}
-      </Button>
+      {phone ? (
+        // A phone's header has room for the one action people come for; the rest are in its menu.
+        <Menu>
+          <MenuTrigger
+            render={<Button size="icon-xs" variant="outline" aria-label="More actions" />}
+          >
+            <EllipsisIcon />
+          </MenuTrigger>
+          <MenuPopup align="end">
+            <MenuItem onClick={() => openUseInAnotherApp(environmentId)}>
+              <PlugIcon />
+              Use in another app (MCP)
+            </MenuItem>
+            <MenuItem
+              variant="destructive"
+              disabled={isRevokingOtherClients || !canRevokeOtherClients(clientSessions)}
+              onClick={() => void onRevokeOtherClients()}
+            >
+              {isRevokingOtherClients ? "Revoking…" : "Revoke others"}
+            </MenuItem>
+          </MenuPopup>
+        </Menu>
+      ) : (
+        <>
+          <Button size="xs" variant="outline" onClick={() => openUseInAnotherApp(environmentId)}>
+            <PlugIcon className="size-3" />
+            Use in another app (MCP)
+          </Button>
+          <Button
+            size="xs"
+            variant="destructive-outline"
+            disabled={isRevokingOtherClients || !canRevokeOtherClients(clientSessions)}
+            onClick={() => void onRevokeOtherClients()}
+          >
+            {isRevokingOtherClients ? "Revoking…" : "Revoke others"}
+          </Button>
+        </>
+      )}
       {pairingDenial !== undefined ? (
         <ManagedControl reason={pairingDenial}>
           <Button size="xs" variant="default" disabled>
@@ -671,14 +701,13 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
           <DialogHeader>
             <DialogTitle>Create pairing link</DialogTitle>
             <DialogDescription>
-              Generate a one-time link that another device can use to pair with this backend as an
-              authorized client.
+              A one-time link that pairs another device with this server.
             </DialogDescription>
           </DialogHeader>
           <DialogPanel>
             <label className="block">
               <span className="mb-1.5 block text-xs font-medium text-foreground">
-                Client label (optional)
+                Device name (optional)
               </span>
               <Input
                 value={pairingLabel}
@@ -692,9 +721,7 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <h3 className="text-xs font-medium text-foreground">Permissions</h3>
-                  <p className="text-xs text-muted-foreground">
-                    Limit what the paired client can do.
-                  </p>
+                  <p className="text-xs text-muted-foreground">What the paired device may do.</p>
                 </div>
                 <div className="flex gap-1">
                   <Button
@@ -757,7 +784,7 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
                 <p className="text-xs text-destructive">Select at least one permission.</p>
               ) : selectedScopes.includes(AuthAccessWriteScope) ? (
                 <p className="text-xs text-warning">
-                  This client can create or revoke access for other devices.
+                  This device can create or revoke access for other devices.
                 </p>
               ) : null}
             </section>
@@ -846,7 +873,7 @@ export const PairingClientsList = memo(function PairingClientsList({
 
       {pairingLinks.length === 0 && clientSessions.length === 0 && !isLoading ? (
         <div data-settings-item-row className={ITEM_ROW_CLASSNAME}>
-          <p className="text-xs text-muted-foreground/60">No pairing links or client sessions.</p>
+          <p className="text-xs text-muted-foreground/60">No pairing links or paired devices.</p>
         </div>
       ) : null}
     </>

@@ -11,7 +11,7 @@ import { type ReactNode, useState } from "react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { plural, t, uiLanguage } from "../i18n";
-import { Row, Section } from "./rows";
+import { Row, Section, VaultDownNotice } from "./rows";
 import { SiteIcon } from "./SiteIcon";
 
 const GMAIL_SITE = "mail.google.com";
@@ -59,11 +59,13 @@ export function ConnectSection({
   onOpenAccount,
   onOpenConnector,
   onSignIn,
+  onRetry,
 }: {
   state: ConnectionsState;
   onOpenAccount: (site: string) => void;
   onOpenConnector: (kind: ConnectionView["kind"]) => void;
   onSignIn: (site: string) => void;
+  onRetry: () => void;
 }) {
   const accountItem = (account: AccountView): Item => ({
     key: account.site,
@@ -82,9 +84,10 @@ export function ConnectSection({
         key: view.kind,
         icon: <SiteIcon site={view.kind === "gmail" ? GMAIL_SITE : "slack.com"} />,
         title: CONNECTION_LABEL[view.kind],
+        // While the vault is down the notice above the list speaks for every row.
         value: state.available
           ? `${connectorStatus(view)}${view.watch && view.status === "connected" ? ` · ${t("watching")}` : ""}`
-          : t("Unavailable"),
+          : "",
         error: state.available && view.status === "error",
         onClick: () => onOpenConnector(view.kind),
       },
@@ -109,8 +112,16 @@ export function ConnectSection({
         account.site !== GMAIL_SITE && !COMMON_SITES.some((entry) => entry.site === account.site),
     )
     .map(accountItem);
+  // Nothing in the list can be opened without the vault, so the notice stands in for it.
+  if (!state.available) {
+    return (
+      <Section title={t("Connect")}>
+        <VaultDownNotice onRetry={onRetry} />
+      </Section>
+    );
+  }
   return (
-    <Section title={t("Connect")} footer={state.available ? null : t("Vault not answering.")}>
+    <Section title={t("Connect")}>
       {[...connectorItems, ...siteItems, ...otherItems].map((item) => (
         <li key={item.key}>
           <Row

@@ -65,51 +65,22 @@ export function BotLinkPreviews({
   const links = messageLinks(text);
   if (links.length === 0) return null;
   return (
-    <div className="flex flex-col gap-2 pt-1 max-md:max-w-[88%] md:max-w-md">
-      {links.map((url, index) => (
-        <LinkCard key={url} environmentId={environmentId} url={url} large={index === 0} />
+    <div className="flex flex-col gap-2 pt-1 max-md:px-1 md:max-w-md">
+      {links.map((url) => (
+        <LinkCard key={url} environmentId={environmentId} url={url} />
       ))}
     </div>
   );
 }
 
 const CARD =
-  "rounded-lg border text-start hover:bg-accent max-md:rounded-3xl max-md:border-0 max-md:bg-bot-bubble max-md:hover:bg-bot-fill";
+  "rounded-lg border text-start hover:bg-accent max-md:rounded-2xl max-md:border-0 max-md:bg-bot-bubble max-md:hover:bg-bot-fill";
 
-function LinkCard({
-  environmentId,
-  url,
-  large,
-}: {
-  environmentId: EnvironmentId;
-  url: string;
-  large: boolean;
-}) {
+function LinkCard({ environmentId, url }: { environmentId: EnvironmentId; url: string }) {
   const { state, retry } = useLinkPreview(environmentId, url);
   const parsed = URL.parse(url);
   const host = parsed?.hostname.replace(/^www\./, "") ?? url;
   const preview = state.status === "ready" ? state.preview : null;
-  if (preview?.image && large) {
-    return (
-      <a
-        href={url}
-        target="_blank"
-        rel="noreferrer"
-        data-bot-link-card
-        className={cn("block overflow-hidden", CARD)}
-      >
-        <img src={preview.image} alt="" className="h-32 w-full object-cover" />
-        <span className="flex flex-col gap-0.5 px-3 py-2.5 max-md:px-3.75 max-md:py-3">
-          <span className="line-clamp-2 text-sm font-medium max-md:text-bot-body max-md:font-semibold">
-            {preview.title}
-          </span>
-          <span className="truncate text-xs text-muted-foreground max-md:text-bot-footnote">
-            {host}
-          </span>
-        </span>
-      </a>
-    );
-  }
   return (
     <div className={cn("flex items-center gap-1 pe-1", CARD)}>
       <a
@@ -117,21 +88,30 @@ function LinkCard({
         target="_blank"
         rel="noreferrer"
         data-bot-link-card
-        className="flex min-w-0 flex-1 items-center gap-3 p-2.5 max-md:px-3.5 max-md:py-3"
+        className="flex min-h-13 min-w-0 flex-1 items-center gap-3 p-2.5 max-md:min-h-16 max-md:px-3 max-md:py-2.5"
       >
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted max-md:size-10 max-md:bg-bot-fill">
-          <GlobeIcon aria-hidden className="size-4 max-md:size-5" />
-        </span>
+        {/* The page's picture takes the icon's place, so a card keeps its shape when its preview
+            arrives and the transcript under it never moves. */}
+        {preview?.image ? (
+          <img
+            src={preview.image}
+            alt=""
+            className="size-8 shrink-0 rounded-md object-cover max-md:size-10 max-md:rounded-lg"
+          />
+        ) : (
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted max-md:size-10 max-md:bg-bot-fill">
+            <GlobeIcon aria-hidden className="size-4 max-md:size-5" />
+          </span>
+        )}
         <span className="flex min-w-0 flex-col">
-          <span className="truncate text-sm font-medium max-md:text-bot-body max-md:font-semibold">
-            {preview?.title ??
-              (state.status === "failed"
-                ? host
-                : `${host}${parsed && parsed.pathname !== "/" ? parsed.pathname : ""}`)}
+          <span className="truncate text-sm font-medium max-md:text-bot-callout max-md:font-semibold">
+            {preview?.title ?? host}
           </span>
-          <span className="truncate text-xs text-muted-foreground max-md:text-bot-footnote">
-            {state.status === "failed" ? t("No preview") : host}
-          </span>
+          {preview?.title || state.status === "failed" ? (
+            <span className="truncate text-xs text-muted-foreground max-md:text-bot-footnote">
+              {state.status === "failed" ? t("No preview") : host}
+            </span>
+          ) : null}
         </span>
       </a>
       {state.status === "failed" ? (

@@ -255,10 +255,13 @@ function AggregateCard({
   label,
   accentClass,
   aggregate,
+  stale,
 }: {
   label: string;
   accentClass: string;
   aggregate: ResourceTelemetryAggregate;
+  /** The monitor is down: the last sample is not shown as live numbers. */
+  stale: boolean;
 }) {
   return (
     <div className="relative overflow-hidden border-t border-border/60 px-4 py-4 first:border-t-0 md:border-t-0 md:border-l md:first:border-l-0 sm:px-5">
@@ -272,10 +275,16 @@ function AggregateCard({
         </div>
       </div>
       <div className="mt-3.5 grid grid-cols-2 gap-x-4 gap-y-2.5">
-        <MetricPair label="CPU" value={`${aggregate.currentCpuPercent.toFixed(1)}%`} />
-        <MetricPair label="Memory" value={formatBytes(aggregate.currentRssBytes)} />
-        <MetricPair label="Read" value={formatRate(aggregate.ioReadBytesPerSecond)} />
-        <MetricPair label="Write" value={formatRate(aggregate.ioWriteBytesPerSecond)} />
+        <MetricPair
+          label="CPU"
+          value={stale ? "–" : `${aggregate.currentCpuPercent.toFixed(1)}%`}
+        />
+        <MetricPair label="Memory" value={stale ? "–" : formatBytes(aggregate.currentRssBytes)} />
+        <MetricPair label="Read" value={stale ? "–" : formatRate(aggregate.ioReadBytesPerSecond)} />
+        <MetricPair
+          label="Write"
+          value={stale ? "–" : formatRate(aggregate.ioWriteBytesPerSecond)}
+        />
       </div>
     </div>
   );
@@ -1053,6 +1062,9 @@ function ResourceTelemetryDiagnosticsBody({
       Retry monitor
     </Button>
   ) : null;
+  // A monitor that is down has no readings: its last sample is not shown as live numbers.
+  const live = collectorNeedsRetry ? null : allT3;
+  const pending = collectorNeedsRetry ? "–" : "...";
   const writeTone =
     allT3 && allT3.ioWriteBytesPerSecond >= 10 * 1_024 * 1_024
       ? "danger"
@@ -1065,12 +1077,12 @@ function ResourceTelemetryDiagnosticsBody({
       <>
         <PhoneMetricSection
           title="Resource monitor"
-          headerAction={refreshAction}
+          headerAction={retryAction ?? refreshAction}
           footer={
             telemetry.error ? (
               <span className="text-destructive">{telemetry.error}</span>
             ) : (
-              `Live native counters for the server, providers, terminals, desktop processes, and the monitor itself.${
+              `Live counters for the server, providers, terminals, desktop processes and the monitor itself.${
                 snapshot && snapshot.sampleIntervalMs > 0
                   ? ` Sampling every ${formatSampleInterval(snapshot.sampleIntervalMs)}.`
                   : ""
@@ -1082,31 +1094,31 @@ function ResourceTelemetryDiagnosticsBody({
             <PhoneMetricRow label="Monitor" value={sourceStatusLabel(snapshot.health.native)} />
           ) : null}
           <PhoneMetricRow
-            label="Updated"
+            label={collectorNeedsRetry ? "Last reading" : "Updated"}
             value={<PhoneRelativeTime value={snapshot?.readAt ?? null} />}
           />
           <PhoneMetricRow
             label="CPU"
-            value={allT3 ? `${allT3.currentCpuPercent.toFixed(1)}%` : "..."}
+            value={live ? `${live.currentCpuPercent.toFixed(1)}%` : pending}
           />
           <PhoneMetricRow
             label="Memory"
-            value={allT3 ? formatBytes(allT3.currentRssBytes) : "..."}
+            value={live ? formatBytes(live.currentRssBytes) : pending}
           />
-          <PhoneMetricRow label="Processes" value={allT3 ? String(allT3.processCount) : "..."} />
+          <PhoneMetricRow label="Processes" value={live ? String(live.processCount) : pending} />
           <PhoneMetricRow
             label="Reads"
-            value={allT3 ? formatRate(allT3.ioReadBytesPerSecond) : "..."}
+            value={live ? formatRate(live.ioReadBytesPerSecond) : pending}
           />
           <PhoneMetricRow
             label="Writes"
-            value={allT3 ? formatRate(allT3.ioWriteBytesPerSecond) : "..."}
+            value={live ? formatRate(live.ioWriteBytesPerSecond) : pending}
             tone={writeTone}
           />
           <PhoneMetricRow
             label="CPU speed limit"
             value={
-              snapshot ? (speedLimit === null ? "Unknown" : `${speedLimit.toFixed(0)}%`) : "..."
+              snapshot ? (speedLimit === null ? "Unknown" : `${speedLimit.toFixed(0)}%`) : pending
             }
             tone={speedLimit !== null && speedLimit < 80 ? "warning" : "default"}
           />
@@ -1116,7 +1128,7 @@ function ResourceTelemetryDiagnosticsBody({
           <PhoneMetricSection title="Process groups" footer="CPU and resident memory per group.">
             {(
               [
-                ["Backend + agents", snapshot.groups.backend],
+                ["Server and bots", snapshot.groups.backend],
                 ["Desktop", snapshot.groups.electron],
                 ["Monitor overhead", snapshot.groups.monitor],
               ] as const
@@ -1124,7 +1136,11 @@ function ResourceTelemetryDiagnosticsBody({
               <PhoneMetricRow
                 key={label}
                 label={label}
-                value={`${aggregate.currentCpuPercent.toFixed(1)}% · ${formatBytes(aggregate.currentRssBytes)}`}
+                value={
+                  collectorNeedsRetry
+                    ? "–"
+                    : `${aggregate.currentCpuPercent.toFixed(1)}% · ${formatBytes(aggregate.currentRssBytes)}`
+                }
               />
             ))}
           </PhoneMetricSection>
@@ -1132,7 +1148,6 @@ function ResourceTelemetryDiagnosticsBody({
 
         <PhoneMetricSection
           title="Host & collection"
-          headerAction={retryAction}
           footer={
             hasHostPowerSignal
               ? undefined
@@ -1219,6 +1234,7 @@ function ResourceTelemetryDiagnosticsBody({
               <SourceStatusBadge label="Native" status={snapshot.health.native.status} />
             ) : null}
             <LastSampleLabel sampledAt={snapshot?.readAt ?? null} />
+            {retryAction}
             <Tooltip>
               <TooltipTrigger render={refreshAction} />
               <TooltipPopup side="top">Refresh telemetry snapshot</TooltipPopup>
@@ -1228,61 +1244,54 @@ function ResourceTelemetryDiagnosticsBody({
       >
         <div className="overflow-hidden rounded-[inherit]">
           <div className="flex flex-col gap-3 border-b border-border/60 bg-linear-to-r from-muted/45 via-muted/20 to-transparent px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-            <div>
-              <div className="text-3xs font-semibold uppercase tracking-widest text-muted-foreground/70">
-                T3 system footprint
-              </div>
-              <p className="mt-1 max-w-xl text-xs leading-relaxed text-muted-foreground">
-                Live native counters for the server, providers, terminals, desktop processes, and
-                the monitor itself.
-              </p>
-            </div>
+            <p className="max-w-xl text-xs leading-relaxed text-muted-foreground">
+              Live counters for the server, providers, terminals, desktop processes and the monitor
+              itself.
+            </p>
             <div className="flex items-center gap-2 text-3xs text-muted-foreground/65">
               <span className="size-1.5 rounded-full bg-success" />
-              Sampling every {snapshot ? formatSampleInterval(snapshot.sampleIntervalMs) : "..."}
+              Sampling every {snapshot ? formatSampleInterval(snapshot.sampleIntervalMs) : pending}
             </div>
           </div>
           <div className="grid grid-cols-2 divide-x divide-y divide-border/55 md:grid-cols-3">
             <IconStat
               icon={<CpuIcon className="size-3.5" />}
               label="Current CPU"
-              value={allT3 ? `${allT3.currentCpuPercent.toFixed(1)}%` : "..."}
-              detail={allT3 ? `${formatCpuTime(allT3.cpuTimeMs)} observed CPU time` : undefined}
+              value={live ? `${live.currentCpuPercent.toFixed(1)}%` : pending}
+              detail={live ? `${formatCpuTime(live.cpuTimeMs)} observed CPU time` : undefined}
             />
             <IconStat
               icon={<MemoryStickIcon className="size-3.5" />}
               label="Resident memory"
-              value={allT3 ? formatBytes(allT3.currentRssBytes) : "..."}
-              detail={
-                allT3 ? `${formatBytes(allT3.peakRssBytes)} combined process peaks` : undefined
-              }
+              value={live ? formatBytes(live.currentRssBytes) : pending}
+              detail={live ? `${formatBytes(live.peakRssBytes)} combined process peaks` : undefined}
             />
             <IconStat
               icon={<ActivityIcon className="size-3.5" />}
               label="Process count"
-              value={allT3 ? String(allT3.processCount) : "..."}
+              value={live ? String(live.processCount) : pending}
               detail={
-                allT3 ? `${allT3.processStarts} starts · ${allT3.processExits} exits` : undefined
+                live ? `${live.processStarts} starts · ${live.processExits} exits` : undefined
               }
             />
             <IconStat
               icon={<HardDriveIcon className="size-3.5" />}
               label="Read throughput"
-              value={allT3 ? formatRate(allT3.ioReadBytesPerSecond) : "..."}
-              detail={allT3 ? `${formatBytes(allT3.ioReadBytes)} observed` : undefined}
+              value={live ? formatRate(live.ioReadBytesPerSecond) : pending}
+              detail={live ? `${formatBytes(live.ioReadBytes)} observed` : undefined}
             />
             <IconStat
               icon={<DatabaseIcon className="size-3.5" />}
               label="Write throughput"
-              value={allT3 ? formatRate(allT3.ioWriteBytesPerSecond) : "..."}
-              detail={allT3 ? `${formatBytes(allT3.ioWriteBytes)} observed` : undefined}
+              value={live ? formatRate(live.ioWriteBytesPerSecond) : pending}
+              detail={live ? `${formatBytes(live.ioWriteBytes)} observed` : undefined}
               tone={writeTone}
             />
             <IconStat
               icon={<GaugeIcon className="size-3.5" />}
               label="CPU speed limit"
               value={
-                snapshot ? (speedLimit === null ? "Unknown" : `${speedLimit.toFixed(0)}%`) : "..."
+                snapshot ? (speedLimit === null ? "Unknown" : `${speedLimit.toFixed(0)}%`) : pending
               }
               detail={snapshot ? `${snapshot.power.thermalState} thermal state` : undefined}
               tone={speedLimit !== null && speedLimit < 80 ? "warning" : "default"}
@@ -1297,19 +1306,22 @@ function ResourceTelemetryDiagnosticsBody({
           {snapshot ? (
             <div className="grid border-t border-border/60 bg-muted/10 md:grid-cols-3">
               <AggregateCard
-                label="Backend + agents"
+                label="Server and bots"
                 accentClass="bg-success/80"
                 aggregate={snapshot.groups.backend}
+                stale={collectorNeedsRetry}
               />
               <AggregateCard
                 label="Desktop"
                 accentClass="bg-info/80"
                 aggregate={snapshot.groups.electron}
+                stale={collectorNeedsRetry}
               />
               <AggregateCard
                 label="Monitor overhead"
                 accentClass="bg-warning/80"
                 aggregate={snapshot.groups.monitor}
+                stale={collectorNeedsRetry}
               />
             </div>
           ) : null}
@@ -1319,7 +1331,6 @@ function ResourceTelemetryDiagnosticsBody({
       <SettingsSection
         title="Host & collection"
         icon={<GaugeIcon className="size-4 text-muted-foreground" />}
-        headerAction={retryAction}
       >
         <div className="grid overflow-hidden rounded-[inherit] md:grid-cols-2 md:divide-x md:divide-border/60">
           <div className="px-4 py-4 sm:px-5">

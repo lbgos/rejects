@@ -46,7 +46,10 @@ export function UsageProviderSettings({
         }
       >
         {entries.length === 0 ? (
-          <SettingsRow title="No hubs configured." />
+          <SettingsRow
+            title="No hubs yet"
+            description="A hub reports how much of each plan's limit is left."
+          />
         ) : (
           entries.map(([id, source]) => {
             const label = source.label?.trim() || source.url;

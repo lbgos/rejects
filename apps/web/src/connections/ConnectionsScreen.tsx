@@ -50,7 +50,7 @@ import {
 import { usePreparedConnection } from "../state/session";
 import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../state/server";
 import { secretUse } from "./BotSecretCards";
-import { clock, FIELD_ROW, failed, Row, Section } from "./rows";
+import { clock, FIELD_ROW, failed, Row, Section, VaultDownNotice } from "./rows";
 import { SignInSheet } from "./SignInSheet";
 import {
   accountStatus,
@@ -175,13 +175,18 @@ export function ConnectionsScreen({
     page?.type === "account" ? state?.accounts.find((a) => a.site === page.site) : undefined;
   const connector =
     page?.type === "connector" ? state?.connections.find((c) => c.kind === page.kind) : undefined;
+  // The home list: You itself, and any detail page whose subject is not there to show.
+  const home =
+    !account && !connector && !(page?.type === "telegram" && telegram) && page?.type !== "account";
+  // A detail page is named after what it is about, whether or not it is connected yet.
   const title =
-    (account && siteName(account.site, uiLanguage)) ??
-    (connector
-      ? CONNECTION_LABEL[connector.kind]
-      : page?.type === "telegram" && telegram
-        ? "Telegram"
-        : t("You"));
+    page?.type === "account"
+      ? siteName(page.site, uiLanguage)
+      : page?.type === "connector"
+        ? CONNECTION_LABEL[page.kind]
+        : page?.type === "telegram"
+          ? "Telegram"
+          : t("You");
 
   return (
     <div
@@ -198,12 +203,14 @@ export function ConnectionsScreen({
           room for it. The bar floats over the page from the top edge (bots.css). */}
       <div
         data-bots-top-bar={isMobile || undefined}
-        data-scrolled={isMobile ? titleScrolled : undefined}
+        // A pushed page keeps its title in the bar; the tab root shows it there once scrolled.
+        data-scrolled={isMobile ? titleScrolled || page !== null : undefined}
       >
         {isMobile ? (
           <span
             aria-hidden
             data-bots-bar-title
+            data-pinned={page !== null || undefined}
             className="pointer-events-none absolute inset-x-24 bottom-0 flex h-(--workspace-topbar-height) items-center justify-center truncate text-bot-body font-semibold opacity-0 in-data-[scrolled=true]:opacity-100"
           >
             {title}
@@ -229,18 +236,31 @@ export function ConnectionsScreen({
         className={cn(
           "min-h-0 flex-1 overflow-y-auto",
           isMobile && "pt-(--bot-chat-header-height)",
-          isMobile && page === null ? "pb-(--bots-tab-bar-space)" : "pb-safe",
+          isMobile && page === null ? "pb-(--bots-tab-bar-clearance)" : "pb-safe",
         )}
         onScroll={
           isMobile ? (event) => setTitleScrolled(event.currentTarget.scrollTop > 40) : undefined
         }
       >
         <div data-you-column>
-          {isMobile ? (
+          {isMobile && page === null ? (
             <h1 className="truncate px-5 pt-1 pb-2 text-bot-title font-bold">{title}</h1>
           ) : null}
+          {/* Connect leads the page. Notes need no vault, so they are there while it loads. */}
+          {home && state ? (
+            <ConnectSection
+              state={state}
+              onOpenAccount={(site) => setPage({ type: "account", site })}
+              onOpenConnector={(kind) => setPage({ type: "connector", kind })}
+              onSignIn={(site) => void openSheet(site)}
+              onRetry={refresh}
+            />
+          ) : null}
+          {page === null ? <YouNotes environmentId={environmentId} /> : null}
           {state === null ? (
-            <p className="px-4 py-3 text-sm text-muted-foreground max-md:px-5">{t("Loading…")}</p>
+            page === null ? null : (
+              <p className="px-4 py-3 text-sm text-muted-foreground max-md:px-5">{t("Loading…")}</p>
+            )
           ) : account ? (
             <AccountDetail
               environmentId={environmentId}
@@ -263,15 +283,22 @@ export function ConnectionsScreen({
               onChanged={refresh}
               onOpenAccount={(site) => setPage({ type: "account", site })}
             />
+          ) : page?.type === "account" ? (
+            // A site nobody signed in to yet: its page offers the sign-in. While the vault is down
+            // the notice sits in the same group, right over the sign-in it blocks.
+            <Section footer={t("A bot uses this sign-in only after you allow it here.")}>
+              {state.available ? null : <VaultDownNotice onRetry={refresh} />}
+              <li>
+                <Row
+                  title={t("Sign in")}
+                  value={state.available ? t("Not connected") : t("Unavailable")}
+                  disabled={!state.available}
+                  onClick={() => void openSheet(page.site)}
+                />
+              </li>
+            </Section>
           ) : (
             <>
-              <ConnectSection
-                state={state}
-                onOpenAccount={(site) => setPage({ type: "account", site })}
-                onOpenConnector={(kind) => setPage({ type: "connector", kind })}
-                onSignIn={(site) => void openSheet(site)}
-              />
-              <YouNotes environmentId={environmentId} />
               <Section title={t("Secrets")}>
                 {state.secrets.length === 0 ? (
                   <li className="px-4 py-2 text-sm text-muted-foreground max-md:px-5 max-md:text-bot-body">
@@ -607,6 +634,23 @@ function ConnectorDetail({
     );
   };
 
+  // Nothing on this page works without the vault: the notice says so once, in the group whose
+  // way in it blocks, which waits until the vault answers.
+  if (!state.available)
+    return (
+      <div data-connector-page className="flex flex-col pb-6 text-sm">
+        <Section>
+          <VaultDownNotice onRetry={onChanged} />
+          {view.kind === "gmail" ? (
+            <li className={ACTION_ROW}>
+              <Button size="sm" variant="outline" disabled>
+                {view.account ? t("Reconnect") : t("Connect")}
+              </Button>
+            </li>
+          ) : null}
+        </Section>
+      </div>
+    );
   return (
     <div data-connector-page className="flex flex-col pb-6 text-sm">
       <Section>

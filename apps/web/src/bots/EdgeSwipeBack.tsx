@@ -48,6 +48,8 @@ export function EdgeSwipeBack({ onBack }: { onBack?: () => void }) {
         }
       }
       if (moved.current) placeGesture(moved.current, "", false);
+      const back = document.querySelector<HTMLElement>("[data-sidebar-control]");
+      if (back) placeGesture(back, "", false);
       under.current?.remove();
     },
     [],
@@ -58,10 +60,14 @@ export function EdgeSwipeBack({ onBack }: { onBack?: () => void }) {
     if (offset > 0 && !dragging.current) {
       dragging.current = true;
       moved.current = page;
-      under.current = mountBackPage(page);
+      under.current = mountBackPage(page, onBack ? undefined : "bots");
       swipeLog(`edge drag: copy ${under.current ? "mounted" : "missing"}`);
     }
-    placeGesture(page, offset ? `translateX(${offset}px)` : "", settle);
+    const transform = offset ? `translateX(${offset}px)` : "";
+    placeGesture(page, transform, settle);
+    // The back button lives in the shell, outside the page; it travels with the page it belongs to.
+    const back = document.querySelector<HTMLElement>("[data-sidebar-control]");
+    if (back) placeGesture(back, transform, settle);
     under.current?.place(offset, settle);
   };
   const settleHome = () => {

@@ -1,6 +1,7 @@
-import { BotBridgePanel } from "./BotBridgePanel";
+import { BotBridgePanel, useBridgeState } from "./BotBridgePanel";
 import { BotScreenPanel } from "./BotScreenPanel";
 import {
+  BOTS_ENDPOINTS,
   type BotSummary,
   chargedTokens,
   type EnvironmentId,
@@ -17,7 +18,8 @@ import {
   PlusIcon,
   XIcon,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import * as Option from "effect/Option";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "../components/ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../components/ui/collapsible";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../components/ui/menu";
@@ -30,16 +32,22 @@ import { Textarea } from "../components/ui/textarea";
 import { cn } from "../lib/utils";
 import { useThreadProjection } from "../state/entities";
 import { serverEnvironment } from "../state/server";
+import { usePreparedConnection } from "../state/session";
 import { useAtomCommand } from "../state/use-atom-command";
+import { botRequest } from "./http";
+import { readLocalApi } from "../localApi";
+import { useLongPress } from "./useLongPress";
 import { resolveThreadRouteRef } from "../threadRoutes";
 import { saveNote, setNote } from "./actions";
 import { NightlyCheck } from "./NightlyCheck";
 import {
+  ACTION_ROW,
   EMPTY_NOTE,
   FACT_ROW,
   ROW_META,
   ROW_TEXT,
   SECTION_HEADER,
+  SECTION_TITLE,
   SHEET_LIST,
 } from "./panelStyles";
 import { BotDialog } from "./BotDialog";
@@ -48,8 +56,11 @@ import {
   botScheduleLabel,
   formatTokens,
   formatWakeIn,
+  groupRepeatedRuns,
+  runsRange,
   messageTimeLabel,
   noteMeta,
+  scheduleNamesItsNextRun,
   statusWord,
 } from "./presentation";
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
@@ -92,6 +103,64 @@ const PANEL_TITLE: Record<BotPanel, UiText> = {
 };
 const PANELS = Object.keys(PANEL_TITLE) as BotPanel[];
 
+/** Screen and Bridge are tabs only on a server that has a bot computer or a linked environment. */
+function useBotPanels(target: ScopedThreadRef, open: BotPanel): ReadonlyArray<BotPanel> {
+  const { environmentId, threadId } = target;
+  const bridge = useBridgeState(environmentId, "");
+  const [screen, setScreen] = useState(false);
+  const connected = Option.isSome(usePreparedConnection(environmentId));
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- asks the server once whether it runs a bot computer
+  useEffect(() => {
+    if (!connected) return;
+    const controller = new AbortController();
+    botRequest(environmentId, BOTS_ENDPOINTS.screen, { threadId }, controller.signal).then(
+      (next) => setScreen(next.available),
+      () => undefined,
+    );
+    return () => controller.abort();
+  }, [environmentId, threadId, connected]);
+  const available: Record<BotPanel, boolean> = {
+    schedule: true,
+    activity: true,
+    memory: true,
+    screen,
+    bridge:
+      (bridge?.environments.length ?? 0) > 0 ||
+      (bridge?.requests.some((request) => request.botThreadId === threadId) ?? false),
+  };
+  return PANELS.filter((id) => available[id] || id === open);
+}
+
+function BotPanelTabs({
+  target,
+  open,
+  size,
+}: {
+  target: ScopedThreadRef;
+  open: BotPanel;
+  size?: "default";
+}) {
+  const panels = useBotPanels(target, open);
+  return (
+    <ToggleGroup
+      aria-label={t("Bot panel")}
+      className="min-w-0 flex-1 *:flex-1"
+      size={size}
+      value={[open]}
+      onValueChange={(values) => {
+        const next = panels.find((id) => id === values[0]);
+        if (next) openBotPanel(target, next);
+      }}
+    >
+      {panels.map((id) => (
+        <Toggle key={id} value={id}>
+          {t(PANEL_TITLE[id])}
+        </Toggle>
+      ))}
+    </ToggleGroup>
+  );
+}
+
 function BotSheet({ target, panel }: { target: ScopedThreadRef; panel: BotPanel }) {
   const phone = useMediaQuery("max-md");
   const bot = useBot(target.environmentId, target.threadId);
@@ -105,14 +174,24 @@ function BotSheet({ target, panel }: { target: ScopedThreadRef; panel: BotPanel 
         side="bottom"
         aria-label={bot ? `${bot.name}: ${t(PANEL_TITLE[panel])}` : t("Bot panel")}
       >
-        <div className="mt-1 flex h-11 shrink-0 items-center px-3">
-          <Button variant="ghost" size="icon" aria-label={t("Back")} onClick={closeBotPanel}>
+        {/* A pushed page, as in Settings: the back button and the page's name centred. */}
+        <div data-bot-panel-header className="relative mt-1 flex h-11 shrink-0 items-center">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="z-10 ms-3"
+            aria-label={t("Back")}
+            onClick={closeBotPanel}
+          >
             <ChevronLeftIcon />
           </Button>
+          <h2 className="pointer-events-none absolute inset-x-18 truncate text-center text-bot-body font-semibold">
+            {bot?.name}
+          </h2>
         </div>
-        <h2 className="shrink-0 px-5 pt-1 pb-2 text-bot-title font-bold">
-          {t(PANEL_TITLE[panel])}
-        </h2>
+        <div data-bot-panel-tabs className="flex shrink-0 px-4 pt-1 pb-2">
+          <BotPanelTabs target={target} open={panel} size="default" />
+        </div>
         <div className="min-h-0 flex-1 overflow-y-auto pb-safe">
           <BotPanelContent target={target} panel={panel} />
         </div>
@@ -135,28 +214,11 @@ export function BotSidePanel({ target }: { target: ScopedThreadRef }) {
         open === "screen" ? "w-2xl" : "w-md",
       )}
     >
-      <div className="flex flex-col gap-2.5 border-b px-4 pt-3 pb-3">
-        <div className="flex items-center gap-2">
-          <span className="min-w-0 flex-1 truncate text-sm font-medium">{bot.name}</span>
-          <Button size="icon-xs" variant="ghost" aria-label={t("Close")} onClick={closeBotPanel}>
-            <XIcon />
-          </Button>
-        </div>
-        <ToggleGroup
-          aria-label={t("Bot panel")}
-          className="w-full *:flex-1"
-          value={[open]}
-          onValueChange={(values) => {
-            const next = PANELS.find((id) => id === values[0]);
-            if (next) openBotPanel(target, next);
-          }}
-        >
-          {PANELS.map((id) => (
-            <Toggle key={id} value={id}>
-              {t(PANEL_TITLE[id])}
-            </Toggle>
-          ))}
-        </ToggleGroup>
+      <div className="flex h-(--workspace-topbar-height) shrink-0 items-center gap-2 border-b ps-3 pe-2">
+        <BotPanelTabs target={target} open={open} />
+        <Button size="icon-xs" variant="ghost" aria-label={t("Close")} onClick={closeBotPanel}>
+          <XIcon />
+        </Button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <BotPanelContent target={target} panel={open} />
@@ -199,7 +261,8 @@ function SchedulePanel({ target }: { target: ScopedThreadRef }) {
               {formatTokens(bot.tokensToday)} / {formatTokens(bot.dailyTokenCap)}
             </span>
           </li>
-          {next ? (
+          {/* One schedule states its own next run; the fact is for telling several apart. */}
+          {next && tasks.length !== 1 ? (
             <li className={FACT_ROW}>
               <span className={ROW_TEXT}>{t("Next wake")}</span>
               <span className={ROW_META}>{formatWakeIn(next)}</span>
@@ -230,19 +293,26 @@ function SchedulePanel({ target }: { target: ScopedThreadRef }) {
                   }
                 >
                   <div className={cn("truncate", ROW_TEXT)}>{task.title}</div>
-                  <div className={cn("truncate", ROW_META)}>
-                    {botScheduleLabel(task.schedule)} ·{" "}
-                    {t("last {run}", {
-                      run: task.lastRunAt
-                        ? `${clock(Date.parse(task.lastRunAt))} ${statusWord(task.lastRunStatus)}`
-                        : statusWord("never"),
-                    })}
-                    {task.nextRunAt
+                  {/* Wraps instead of cutting: the next run is what the row is read for. */}
+                  <div className={cn("break-words", ROW_META)}>
+                    {botScheduleLabel(task.schedule)}
+                    {/* A rule that names one moment has already said when it runs next. */}
+                    {task.nextRunAt && !scheduleNamesItsNextRun(task.schedule)
                       ? ` · ${t("next {time}", { time: formatWakeIn(task.nextRunAt) })}`
+                      : null}
+                    {task.lastRunAt
+                      ? ` · ${t("last {run}", {
+                          run: `${clock(Date.parse(task.lastRunAt))} ${statusWord(task.lastRunStatus)}`,
+                        })}`
                       : null}
                   </div>
                 </MenuTrigger>
-                <MenuPopup data-bot-surface align="start" collisionPadding={menuCollisionPadding()}>
+                <MenuPopup
+                  data-bot-surface
+                  data-bot-sheet
+                  align="start"
+                  collisionPadding={menuCollisionPadding()}
+                >
                   <MenuItem
                     onClick={() =>
                       void runNow({ environmentId: target.environmentId, input: { id: task.id } })
@@ -284,9 +354,13 @@ function SchedulePanel({ target }: { target: ScopedThreadRef }) {
 
 function MemoryPanel({ target }: { target: ScopedThreadRef }) {
   const bot = useBot(target.environmentId, target.threadId);
+  const [query, setQuery] = useState("");
   if (!bot) return null;
   return (
     <>
+      <div className="pt-3 max-md:pt-1">
+        <NoteSearch query={query} onChange={setQuery} />
+      </div>
       <NoteList
         environmentId={target.environmentId}
         bot={null}
@@ -294,6 +368,7 @@ function MemoryPanel({ target }: { target: ScopedThreadRef }) {
         scope={t("All bots")}
         addLabel={t("Add to You")}
         empty={t("Every bot gets these notes about you, such as your language or units.")}
+        query={query}
       />
       <NoteList
         environmentId={target.environmentId}
@@ -302,8 +377,25 @@ function MemoryPanel({ target }: { target: ScopedThreadRef }) {
         scope={t("This bot")}
         addLabel={t("Add to {bot}", { bot: bot.name })}
         empty={t("{bot} saves preferences and corrections you give it here.", { bot: bot.name })}
+        query={query}
       />
     </>
+  );
+}
+
+function NoteSearch({ query, onChange }: { query: string; onChange: (query: string) => void }) {
+  const phone = useMediaQuery("max-md");
+  return (
+    <div className="px-4">
+      <Input
+        type="search"
+        size={phone ? "lg" : "compact"}
+        value={query}
+        placeholder={t("Search notes")}
+        aria-label={t("Search notes")}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </div>
   );
 }
 
@@ -324,7 +416,10 @@ export function YouNotes({ environmentId }: { environmentId: EnvironmentId }) {
 
 const SEARCH_FROM = 12;
 
-/** A stale or contradicted note stays out of turns until the user edits it or keeps it as still true. */
+/**
+ * A stale or contradicted note stays out of turns until the user edits it or keeps it as still
+ * true. A panel with several lists passes one `query` for all of them; a list alone has its own.
+ */
 function NoteList({
   environmentId,
   bot,
@@ -332,6 +427,7 @@ function NoteList({
   scope,
   addLabel,
   empty,
+  query: sharedQuery,
 }: {
   environmentId: EnvironmentId;
   bot: BotSummary | null;
@@ -339,11 +435,15 @@ function NoteList({
   scope: string;
   addLabel: string;
   empty?: string;
+  query?: string;
 }) {
   const [editing, setEditing] = useState<{ id: string | null; text: string } | null>(null);
-  const [query, setQuery] = useState("");
+  const [ownQuery, setOwnQuery] = useState("");
+  const query = sharedQuery ?? ownQuery;
   const [retired, setRetired] = useState(false);
-  const [limit, setLimit] = useState(NOTES_PAGE);
+  const [more, setMore] = useState<{ query: string; limit: number }>({ query, limit: NOTES_PAGE });
+  // A new search starts from its first page.
+  const limit = more.query === query ? more.limit : NOTES_PAGE;
   const page = useNotes(environmentId, bot?.threadId ?? null, { query, retired, limit });
   // A saved edit shows until the list read after it arrives.
   const [saved, setSaved] = useState<{ page: typeof page; id: string; text: string } | null>(null);
@@ -360,7 +460,7 @@ function NoteList({
   const showRetired = (next: boolean) => {
     setRetired(next);
     setEditing(null);
-    setLimit(NOTES_PAGE);
+    setMore({ query, limit: NOTES_PAGE });
   };
   const field = (
     <MemoryField
@@ -374,27 +474,15 @@ function NoteList({
   const searching = query.trim() !== "";
   return (
     <section>
-      <div className="flex items-baseline justify-between gap-3 px-4 pt-3 pb-1.5 max-md:px-5 max-md:pt-4">
-        <h3 className="truncate text-sm font-medium max-md:text-bot-heading max-md:font-bold">
-          {retired ? t("Removed") : title}
-        </h3>
+      <div className="flex items-baseline justify-between gap-3 px-4 pt-3 pb-1.5 max-md:ps-9 max-md:pe-5 max-md:pt-5">
+        <h3 className={SECTION_TITLE}>{retired ? t("Removed") : title}</h3>
         <Button variant="ghost-muted" size="xs" onClick={() => showRetired(!retired)}>
           {retired ? t("Back to notes") : scope}
         </Button>
       </div>
-      {total >= SEARCH_FROM || searching ? (
-        <div className="px-4 pb-1.5 max-md:px-5">
-          <Input
-            type="search"
-            size="compact"
-            value={query}
-            placeholder={t("Search notes")}
-            aria-label={t("Search notes")}
-            onChange={(event) => {
-              setQuery(event.target.value);
-              setLimit(NOTES_PAGE);
-            }}
-          />
+      {sharedQuery === undefined && (total >= SEARCH_FROM || searching) ? (
+        <div className="pb-1.5">
+          <NoteSearch query={ownQuery} onChange={setOwnQuery} />
         </div>
       ) : null}
       {page !== null && notes.length === 0 && !editing && (searching || retired || empty) ? (
@@ -408,58 +496,13 @@ function NoteList({
             {editing?.id === note.id ? (
               field
             ) : (
-              <div className="flex items-center gap-2 pe-4 max-md:pe-5">
-                <button
-                  type="button"
-                  disabled={retired}
-                  className="min-w-0 flex-1 py-2.5 ps-4 text-left outline-none not-disabled:hover:bg-accent max-md:py-2.75 max-md:ps-5 max-md:hover:bg-transparent"
-                  onClick={() => setEditing({ id: note.id, text: note.text })}
-                >
-                  <div
-                    className={cn(
-                      "break-words",
-                      ROW_TEXT,
-                      (retired || note.status !== "fresh") && "text-muted-foreground",
-                    )}
-                  >
-                    {note.text}
-                  </div>
-                  <div className={cn("line-clamp-2 break-words", ROW_META)}>{noteMeta(note)}</div>
-                </button>
-                {retired ? (
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    onClick={() => void setNote(environmentId, bot, note.id, { retired: false })}
-                  >
-                    {t("Restore")}
-                  </Button>
-                ) : (
-                  <>
-                    {note.status === "fresh" ? null : (
-                      <Button
-                        variant="ghost"
-                        size="xs"
-                        onClick={() => void saveNote(environmentId, bot, note.id, note.text)}
-                      >
-                        {t("Still true")}
-                      </Button>
-                    )}
-                    <Button
-                      variant={note.pinned ? "ghost" : "ghost-muted"}
-                      size="icon-xs"
-                      aria-pressed={note.pinned !== undefined}
-                      aria-label={note.pinned ? t("Unpin") : t("Pin to every reply")}
-                      title={note.pinned ? t("Unpin") : t("Pin to every reply")}
-                      onClick={() =>
-                        void setNote(environmentId, bot, note.id, { pinned: !note.pinned })
-                      }
-                    >
-                      <PinIcon className={note.pinned ? "fill-current" : undefined} />
-                    </Button>
-                  </>
-                )}
-              </div>
+              <NoteRow
+                environmentId={environmentId}
+                bot={bot}
+                note={note}
+                retired={retired}
+                onEdit={() => setEditing({ id: note.id, text: note.text })}
+              />
             )}
           </li>
         ))}
@@ -471,7 +514,7 @@ function NoteList({
                 "w-full px-4 py-2.5 text-left text-muted-foreground outline-none hover:bg-accent max-md:px-5 max-md:py-3 max-md:hover:bg-transparent",
                 ROW_TEXT,
               )}
-              onClick={() => setLimit((current) => current + NOTES_PAGE)}
+              onClick={() => setMore({ query, limit: limit + NOTES_PAGE })}
             >
               {t("Show {count} more", { count: Math.min(NOTES_PAGE, total - notes.length) })}
             </button>
@@ -484,10 +527,7 @@ function NoteList({
             ) : (
               <button
                 type="button"
-                className={cn(
-                  "flex w-full items-center gap-2 px-4 py-2.5 text-left text-muted-foreground outline-none hover:bg-accent max-md:px-5 max-md:py-3 max-md:hover:bg-transparent",
-                  ROW_TEXT,
-                )}
+                className={cn(ACTION_ROW, ROW_TEXT)}
                 onClick={() => setEditing({ id: null, text: "" })}
               >
                 <PlusIcon aria-hidden className="size-4 shrink-0 max-md:size-5" />
@@ -498,6 +538,114 @@ function NoteList({
         )}
       </ul>
     </section>
+  );
+}
+
+type Note = NonNullable<ReturnType<typeof useNotes>>["notes"][number];
+
+/**
+ * A note at rest. A press edits it; a long press or a right click opens its menu (pin, remove).
+ * Only a pinned note shows a pin, so the pinned ones stand out; a pointer also gets the pin on
+ * the row it hovers.
+ */
+function NoteRow({
+  environmentId,
+  bot,
+  note,
+  retired,
+  onEdit,
+}: {
+  environmentId: EnvironmentId;
+  bot: BotSummary | null;
+  note: Note;
+  retired: boolean;
+  onEdit: () => void;
+}) {
+  const togglePin = () => void setNote(environmentId, bot, note.id, { pinned: !note.pinned });
+  const menu = async (point: { x: number; y: number }) => {
+    const picked = await readLocalApi()?.contextMenu.show(
+      [
+        {
+          id: "pin" as const,
+          label: note.pinned ? t("Unpin") : t("Pin to every reply"),
+          icon: note.pinned ? "pin-off" : "pin",
+        },
+        { id: "remove" as const, label: t("Remove"), icon: "trash", destructive: true },
+      ],
+      point,
+    );
+    if (picked === "pin") togglePin();
+    if (picked === "remove") void setNote(environmentId, bot, note.id, { retired: true });
+  };
+  const { consumeClick, ...press } = useLongPress((point) => {
+    if (!retired) void menu(point);
+  });
+  return (
+    <div
+      className="group/note flex items-center gap-2 pe-4 [-webkit-touch-callout:none] max-md:pe-5"
+      {...press}
+    >
+      <button
+        type="button"
+        disabled={retired}
+        className="min-w-0 flex-1 py-2.5 ps-4 text-left outline-none not-disabled:hover:bg-accent max-md:py-2.75 max-md:ps-5 max-md:hover:bg-transparent"
+        onClick={() => {
+          if (!consumeClick()) onEdit();
+        }}
+      >
+        <div
+          className={cn(
+            "break-words",
+            ROW_TEXT,
+            (retired || note.status !== "fresh") && "text-muted-foreground",
+          )}
+        >
+          {note.text}
+        </div>
+        {noteMeta(note) ? (
+          <div className={cn("line-clamp-2 break-words", ROW_META)}>{noteMeta(note)}</div>
+        ) : null}
+      </button>
+      {retired ? (
+        <Button
+          variant="ghost"
+          size="xs"
+          onClick={() => void setNote(environmentId, bot, note.id, { retired: false })}
+        >
+          {t("Restore")}
+        </Button>
+      ) : (
+        <>
+          {note.status === "fresh" ? null : (
+            <Button
+              variant="ghost"
+              size="xs"
+              onClick={() => void saveNote(environmentId, bot, note.id, note.text)}
+            >
+              {t("Still true")}
+            </Button>
+          )}
+          <span
+            className={cn(
+              "flex",
+              !note.pinned &&
+                "opacity-0 group-hover/note:opacity-100 has-focus-visible:opacity-100 pointer-coarse:hidden",
+            )}
+          >
+            <Button
+              variant={note.pinned ? "ghost" : "ghost-muted"}
+              size="icon-xs"
+              aria-pressed={note.pinned !== undefined}
+              aria-label={note.pinned ? t("Unpin") : t("Pin to every reply")}
+              title={note.pinned ? t("Unpin") : t("Pin to every reply")}
+              onClick={togglePin}
+            >
+              <PinIcon className={note.pinned ? "fill-current" : undefined} />
+            </Button>
+          </span>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -582,6 +730,19 @@ function MemoryField({
   );
 }
 
+/**
+ * An activity row: the outcome has the row's width, so it is never cut to make room for what the
+ * run cost; the cost and the time sit on the line under it.
+ */
+const ACTIVITY_ROW =
+  "grid w-full grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-2 gap-y-0.5 px-4 py-2.5 text-left max-md:px-5";
+const ACTIVITY_TIME = `${ROW_META} col-start-2 row-start-2`;
+const ACTIVITY_TEXT = `${ROW_TEXT} col-span-2 row-start-1 min-w-0 truncate`;
+const ACTIVITY_META = `${ROW_META} col-start-1 row-start-2`;
+
+/** "9–14 Nov": the nights a run of equal nightly results covers. */
+const DAY_RANGE = new Intl.DateTimeFormat(uiLocales, { day: "numeric", month: "short" });
+
 function ActivityPanel({ target }: { target: ScopedThreadRef }) {
   const bot = useBot(target.environmentId, target.threadId);
   const dreams = bot?.dreams ?? [];
@@ -604,6 +765,10 @@ function ActivityPanel({ target }: { target: ScopedThreadRef }) {
   );
   return (
     <>
+      {/* Named only beside the nightly check's own list. */}
+      {dreams.length > 0 && detail.runs.length > 0 ? (
+        <h3 className={SECTION_HEADER}>{t("Runs")}</h3>
+      ) : null}
       <ul className={SHEET_LIST}>
         {detail.runs
           .map((run) => {
@@ -630,28 +795,39 @@ function ActivityPanel({ target }: { target: ScopedThreadRef }) {
             return (
               <li key={run.id}>
                 <Collapsible>
-                  {/* On a phone the title gets the line, with the time trailing and the meta below. */}
-                  <CollapsibleTrigger className="flex w-full items-baseline gap-2 px-4 py-2.5 text-left hover:bg-accent max-md:grid max-md:grid-cols-[minmax(0,1fr)_auto] max-md:gap-x-2 max-md:gap-y-0.5 max-md:px-5 max-md:hover:bg-transparent">
-                    <span
-                      className={cn("shrink-0 max-md:col-start-2 max-md:row-start-1", ROW_META)}
-                    >
-                      {clock(DateTime.toEpochMillis(run.requestedAt))}
+                  <CollapsibleTrigger className={ACTIVITY_ROW}>
+                    <span className={ACTIVITY_TIME}>
+                      {messageTimeLabel(DateTime.toEpochMillis(run.requestedAt))}
                     </span>
-                    <span
-                      className={cn(
-                        "min-w-0 flex-1 truncate max-md:col-start-1 max-md:row-start-1",
-                        ROW_TEXT,
-                      )}
-                    >
-                      {message?.text.slice(0, 80) ?? t("run")}
-                    </span>
-                    <span className={cn("shrink-0 max-md:col-span-2", ROW_META)}>
-                      {plural(tools.length, {
-                        en: ["{count} tool", "{count} tools"],
-                        uk: ["{count} інструмент", "{count} інструменти", "{count} інструментів"],
-                        ru: ["{count} инструмент", "{count} инструмента", "{count} инструментов"],
-                      })}{" "}
-                      · {formatTokens(tokens)} · {notified ? t("notified") : statusWord(run.status)}
+                    <span className={ACTIVITY_TEXT}>{message?.text.slice(0, 80) ?? t("run")}</span>
+                    <span className={ACTIVITY_META}>
+                      {run.status !== "completed" ? (
+                        <span
+                          className={
+                            run.status === "failed" ? "text-destructive-foreground" : undefined
+                          }
+                        >
+                          {statusWord(run.status)} ·{" "}
+                        </span>
+                      ) : notified ? (
+                        `${t("notified")} · `
+                      ) : null}
+                      {tools.length > 0
+                        ? `${plural(tools.length, {
+                            en: ["{count} tool", "{count} tools"],
+                            uk: [
+                              "{count} інструмент",
+                              "{count} інструменти",
+                              "{count} інструментів",
+                            ],
+                            ru: [
+                              "{count} инструмент",
+                              "{count} инструмента",
+                              "{count} инструментов",
+                            ],
+                          })} · `
+                        : null}
+                      {t("{tokens} tokens", { tokens: formatTokens(tokens) })}
                     </span>
                   </CollapsibleTrigger>
                   <CollapsiblePanel animate={false}>
@@ -684,39 +860,49 @@ function ActivityPanel({ target }: { target: ScopedThreadRef }) {
         <>
           <h3 className={SECTION_HEADER}>{t("Nightly check")}</h3>
           <ul className={SHEET_LIST}>
-            {dreams.map((run) => {
-              const tokens = chargedTokens({
-                inputTokens: run.input,
-                cachedInputTokens: run.cached,
-                outputTokens: run.output,
-              });
+            {groupRepeatedRuns(dreams).map((nights) => {
+              const [first] = nights;
+              const tokens = nights.reduce(
+                (sum, run) =>
+                  sum +
+                  chargedTokens({
+                    inputTokens: run.input,
+                    cachedInputTokens: run.cached,
+                    outputTokens: run.output,
+                  }),
+                0,
+              );
+              const durationMs = nights.reduce((sum, run) => sum + run.durationMs, 0);
               // A scope with nothing to check made no call: no duration and no tokens to show.
               const spent = [
-                run.durationMs > 0 ? formatDuration(run.durationMs) : null,
-                tokens > 0 ? formatTokens(tokens) : null,
+                nights.length > 1
+                  ? plural(nights.length, {
+                      en: ["{count} night", "{count} nights"],
+                      uk: ["{count} ніч", "{count} ночі", "{count} ночей"],
+                      ru: ["{count} ночь", "{count} ночи", "{count} ночей"],
+                    })
+                  : null,
+                durationMs > 0 ? formatDuration(durationMs) : null,
+                tokens > 0 ? t("{tokens} tokens", { tokens: formatTokens(tokens) }) : null,
               ]
                 .filter(Boolean)
                 .join(" · ");
               return (
-                <li
-                  key={`${run.at}#${run.result}`}
-                  className="flex items-baseline gap-2 px-4 py-2.5 max-md:grid max-md:grid-cols-[minmax(0,1fr)_auto] max-md:gap-x-2 max-md:gap-y-0.5 max-md:px-5"
-                >
-                  <span className={cn("shrink-0 max-md:col-start-2 max-md:row-start-1", ROW_META)}>
-                    {messageTimeLabel(Date.parse(run.at))}
+                <li key={`${first.at}#${first.result}`} className={ACTIVITY_ROW}>
+                  <span className={ACTIVITY_TIME}>
+                    {nights.length > 1
+                      ? DAY_RANGE.formatRange(...runsRange(nights))
+                      : messageTimeLabel(Date.parse(first.at))}
                   </span>
                   <span
                     className={cn(
-                      "min-w-0 flex-1 truncate max-md:col-start-1 max-md:row-start-1",
-                      ROW_TEXT,
-                      run.outcome === "failed" && "text-destructive-foreground",
+                      ACTIVITY_TEXT,
+                      first.outcome === "failed" && "text-destructive-foreground",
                     )}
                   >
-                    {run.result}
+                    {first.result}
                   </span>
-                  {spent === "" ? null : (
-                    <span className={cn("shrink-0 max-md:col-span-2", ROW_META)}>{spent}</span>
-                  )}
+                  {spent === "" ? null : <span className={ACTIVITY_META}>{spent}</span>}
                 </li>
               );
             })}

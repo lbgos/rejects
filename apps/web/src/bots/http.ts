@@ -3,7 +3,7 @@ import { ManagedRelay } from "@t3tools/client-runtime/relay";
 import { executeAtomQuery, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
+import { FetchHttpClient, HttpClient, HttpClientError, HttpClientRequest } from "effect/http";
 import { connectionAtomRuntime } from "../connection/runtime";
 import { countEffect } from "../observability/stuckControl";
 import { t } from "../i18n";
@@ -71,7 +71,13 @@ export async function postToEnvironment(
     reportFailure: false,
     reportDefect: false,
   });
-  if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+  if (result._tag === "Failure") {
+    const failure = squashAtomCommandFailure(result);
+    // A request that never got an answer carries the method and URL; people get a plain sentence.
+    if (HttpClientError.isHttpClientError(failure) && failure.reason._tag === "TransportError")
+      throw new Error(t("The server did not answer."), { cause: failure });
+    throw failure;
+  }
   const { status, text } = result.value;
   if (status < 200 || status >= 300) {
     const decoded = decodeError(text);

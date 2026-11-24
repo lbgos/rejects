@@ -19,7 +19,7 @@ export function PairingPendingSurface() {
   return (
     <StandalonePage>
       <StandalonePageHeader
-        title="Pairing with this environment"
+        title="Pairing with this server"
         description="Validating the pairing link and preparing your session."
       />
     </StandalonePage>
@@ -85,7 +85,7 @@ export function PairingRouteSurface({
   return (
     <StandalonePage>
       <StandalonePageHeader
-        title="Pair with this environment"
+        title="Pair this device"
         description={describeAuthGate(auth.bootstrapMethods)}
       />
 
@@ -102,7 +102,7 @@ export function PairingRouteSurface({
             disabled={isSubmitting}
             nativeInput
             onChange={(event) => setCredential(event.currentTarget.value)}
-            placeholder="Paste a one-time token or pairing secret"
+            placeholder="Paste pairing token"
             spellCheck={false}
             value={credential}
           />
@@ -128,10 +128,6 @@ export function PairingRouteSurface({
           </Button>
         </div>
       </form>
-
-      <div className="mt-6 rounded-lg border border-border/70 bg-background/55 px-3 py-3 text-xs leading-relaxed text-muted-foreground">
-        {describeSupportedMethods(auth.bootstrapMethods)}
-      </div>
     </StandalonePage>
   );
 }
@@ -179,7 +175,7 @@ export function HostedPairingRouteSurface() {
     });
     if (result._tag === "Success") {
       setStatus("paired");
-      setMessage(`${request.label || "The environment"} is saved in this browser.`);
+      setMessage(`${request.label || "The server"} is saved in this browser.`);
       return;
     }
 
@@ -268,23 +264,8 @@ function errorMessageFromUnknown(error: unknown): string {
 
 function describeAuthGate(bootstrapMethods: ReadonlyArray<string>): string {
   if (bootstrapMethods.includes("desktop-bootstrap")) {
-    return "This environment expects a trusted pairing credential before the app can connect.";
+    return "Open this server from the desktop app, or paste a pairing token it issued.";
   }
 
-  return "Enter a pairing token to start a session with this environment.";
-}
-
-function describeSupportedMethods(bootstrapMethods: ReadonlyArray<string>): string {
-  if (
-    bootstrapMethods.includes("desktop-bootstrap") &&
-    bootstrapMethods.includes("one-time-token")
-  ) {
-    return "Desktop-managed pairing and one-time pairing tokens are both accepted for this environment.";
-  }
-
-  if (bootstrapMethods.includes("desktop-bootstrap")) {
-    return "This environment is desktop-managed. Open it from the desktop app or paste a bootstrap credential if one was issued explicitly.";
-  }
-
-  return "This environment accepts one-time pairing tokens. Pairing links can open this page directly, or you can paste the token here.";
+  return "Open a pairing link from your server, or paste its token here.";
 }

@@ -8,6 +8,7 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import { useState, type ReactNode } from "react";
+import { useMessages } from "gt-react";
 import { ChevronLeftIcon, RotateCcwIcon } from "lucide-react";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useBotTabHostActive } from "../bots/BotTabHost";
@@ -31,7 +32,11 @@ import {
 } from "../components/settings/SettingsScopeContext";
 import { SettingsScopeNotice } from "../components/settings/SettingsScopeNotice";
 import { SETTINGS_DEVICE_ONLY_PATHS } from "../components/settings/SettingsScopeSentence";
-import { SettingsPageContainer } from "../components/settings/settingsLayout";
+import {
+  SettingsPageContainer,
+  SettingsPhoneBarContext,
+  type SettingsPhoneBarDetail,
+} from "../components/settings/settingsLayout";
 import {
   retainSettingsScope,
   validateSettingsRouteSearch,
@@ -48,11 +53,13 @@ function RestoreDeviceDefaultsButton({ onRestored }: { onRestored: () => void })
     <Button
       size="xs"
       variant="ghost"
+      data-settings-restore
+      aria-label="Restore device defaults"
       disabled={changedSettingLabels.length === 0}
       onClick={() => void restoreDefaults()}
     >
       <RotateCcwIcon className="mx-1 size-3.5" />
-      <span className="max-sm:sr-only">Restore device defaults</span>
+      Restore device defaults
     </Button>
   );
 }
@@ -112,7 +119,17 @@ function SettingsContentLayout() {
       ? environment?.environmentId
       : JSON.stringify(search);
   const [restoreSignal, setRestoreSignal] = useState(0);
+  const [actionSlot, setActionSlot] = useState<HTMLElement | null>(null);
+  // An item a page opened full-screen on a phone, kept with the page it belongs to so it never
+  // outlives a move to another page.
+  const [pageDetail, setPageDetail] = useState<{
+    readonly pathname: string;
+    readonly detail: SettingsPhoneBarDetail;
+  } | null>(null);
+  const detail = pageDetail?.pathname === location.pathname ? pageDetail.detail : null;
+  const m = useMessages();
   const phone = useMediaQuery("max-md");
+  const pageLabel = settingsBreadcrumbLabel(location.pathname);
   const phoneIndex = phone && location.pathname === "/settings";
   const tabHost = useBotTabHostActive();
 
@@ -129,7 +146,7 @@ function SettingsContentLayout() {
     <AppRouteModal label="Settings">
       <div className="relative flex min-h-0 flex-1">
         {phone ? null : <SettingsSidebarNav pathname={location.pathname} />}
-        <div {...contentArea} className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div {...contentArea} data-settings-pane className="flex min-h-0 min-w-0 flex-1 flex-col">
           <header
             data-settings-page-header
             className="relative flex h-12 shrink-0 items-center gap-3 border-b ps-5 pe-2 max-md:mt-1 max-md:h-11 max-md:gap-1 max-md:border-b-0 max-md:ps-0 max-md:pe-4"
@@ -137,24 +154,39 @@ function SettingsContentLayout() {
             {phone ? (
               <>
                 {/* A pushed page: the chat header's back button, the page title centered. */}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="z-10 ms-3"
-                  aria-label="Back to settings"
-                  render={<Link to="/settings" />}
-                >
-                  <ChevronLeftIcon />
-                </Button>
+                {detail ? (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="z-10 ms-3"
+                    aria-label={pageLabel ? `Back to ${m(pageLabel)}` : "Back"}
+                    onClick={detail.onBack}
+                  >
+                    <ChevronLeftIcon />
+                  </Button>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="z-10 ms-3"
+                    aria-label="Back to settings"
+                    render={<Link to="/settings" />}
+                  >
+                    <ChevronLeftIcon />
+                  </Button>
+                )}
                 <h1 className="pointer-events-none absolute inset-x-18 truncate text-center text-bot-body font-semibold">
-                  {settingsBreadcrumbLabel(location.pathname) ?? "Settings"}
+                  {detail ? detail.title : pageLabel ? m(pageLabel) : "Settings"}
                 </h1>
               </>
             ) : (
               <SettingsBreadcrumb pathname={location.pathname} />
             )}
             <div className="ms-auto flex shrink-0 items-center gap-1">
-              {location.pathname === "/settings/general" ? (
+              {/* A phone's bar holds the page's own action; its reset is a row at the page's end. */}
+              {phone ? (
+                <div ref={setActionSlot} data-settings-bar-action className="contents" />
+              ) : location.pathname === "/settings/general" ? (
                 <RestoreDeviceDefaultsButton
                   onRestored={() => setRestoreSignal((value) => value + 1)}
                 />
@@ -163,9 +195,26 @@ function SettingsContentLayout() {
             </div>
           </header>
           <div key={`${contentScopeKey}:${restoreSignal}`} className="min-h-0 flex flex-1 flex-col">
-            <SettingsScopeBoundary pathname={location.pathname}>
-              <Outlet />
-            </SettingsScopeBoundary>
+            <SettingsPhoneBarContext
+              value={
+                phone && pageLabel
+                  ? {
+                      titles: [pageLabel, m(pageLabel)],
+                      // An opened item has the bar; the page's own action waits for the list.
+                      actionSlot: detail ? null : actionSlot,
+                      onRestored: () => setRestoreSignal((value) => value + 1),
+                      setDetail: (next) =>
+                        setPageDetail(
+                          next === null ? null : { pathname: location.pathname, detail: next },
+                        ),
+                    }
+                  : null
+              }
+            >
+              <SettingsScopeBoundary pathname={location.pathname}>
+                <Outlet />
+              </SettingsScopeBoundary>
+            </SettingsPhoneBarContext>
           </div>
         </div>
       </div>

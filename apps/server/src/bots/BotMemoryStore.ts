@@ -31,7 +31,7 @@ import {
   ftsQuery,
   fuseRanked,
   importPins,
-  MIN_MATCH,
+  matchesTyped,
   PINNED_CHARS,
   QUERY_CHARS,
   type Ranked,
@@ -633,12 +633,12 @@ export const makeMemoryStore = Effect.gen(function* () {
     const retired = request.retired === true;
     const query = request.query?.trim();
     if (query) {
-      const ranked = yield* search([scope], query, {
+      const ranked = (yield* search([scope], query, {
         limit: scopeMax(scope),
-        min: MIN_MATCH,
+        min: 0,
         now: yield* Clock.currentTimeMillis,
         retired,
-      });
+      })).filter(({ entry }) => matchesTyped(entry.note.text, query));
       return {
         notes: ranked
           .slice(request.offset, request.offset + request.limit)

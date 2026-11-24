@@ -1,4 +1,4 @@
-import { PlusIcon, XIcon } from "lucide-react";
+import { PaletteIcon, XIcon } from "lucide-react";
 import { useRef, useState, type PointerEvent } from "react";
 
 import { hexToHsv, hsvToHex, type HsvColor } from "../../lib/color";
@@ -131,7 +131,7 @@ function ProviderCustomColorPicker(props: {
             {normalized ? (
               <span className="sr-only">Change accent color</span>
             ) : (
-              <PlusIcon aria-hidden />
+              <PaletteIcon aria-hidden />
             )}
           </Button>
         }

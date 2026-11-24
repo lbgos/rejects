@@ -7,7 +7,7 @@ import {
 } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { EllipsisIcon, PauseIcon } from "lucide-react";
+import { EllipsisIcon, PauseIcon, WifiOffIcon } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { resolveSidebarThreadStatus } from "../components/Sidebar.logic";
 import type { ComposerBannerStackItem } from "../components/chat/ComposerBannerStack";
@@ -21,6 +21,7 @@ import { HolidayWreath } from "../holiday/HolidayWreath";
 import { MailSendCards } from "../connections/MailCards";
 import { LabChangeCards } from "../connections/LabCards";
 import { useThreadShell } from "../state/entities";
+import { serverEnvironment } from "../state/server";
 import { botActions, reactToMessage, saveBotModel, useBotActions } from "./actions";
 import { BotAvatar } from "./BotAvatar";
 import { BotSidePanel } from "./BotOverlays";
@@ -31,6 +32,7 @@ import { BOT_ACTION_ICONS } from "./icons";
 import { BotThreadContext, BotChromeContext } from "./context";
 import {
   botNoticeKey,
+  botProviderDown,
   botScheduleLabel,
   formatResume,
   formatWakeIn,
@@ -40,9 +42,11 @@ import { setViewingBot, useBot, useBots, useReadOnOpen } from "./state";
 import { openBotDialog, openBotPanel, setBotReply } from "./ui";
 import { nextWakeAt, useScheduledTasks } from "./useBotTasks";
 import { useBotPreferences } from "./preferences";
+import { useOnline } from "./useOnline";
 import { QuickStart } from "./QuickStart";
 import { menuCollisionPadding } from "../safeArea";
 import { plural, t } from "../i18n";
+import { cn } from "../lib/utils";
 
 export function BotThread({ target, children }: { target: ScopedThreadRef; children: ReactNode }) {
   const { environmentId, threadId } = target;
@@ -130,7 +134,16 @@ export function BotThread({ target, children }: { target: ScopedThreadRef; child
       ) : null}
     </div>
   );
+  const online = useOnline();
   const banner = ((): ComposerBannerStackItem | null => {
+    // Losing the network is said at once, where the next message would be typed.
+    if (!online)
+      return {
+        id: "bot-offline",
+        variant: "default",
+        icon: <WifiOffIcon />,
+        title: t("Offline. Your draft is kept; send it when the network is back."),
+      };
     if (!stopped) return null;
     return {
       id: `bot-paused:${threadId}`,
@@ -152,9 +165,14 @@ export function BotThread({ target, children }: { target: ScopedThreadRef; child
     if (bot) void saveBotModel(environmentId, bot, modelSelection);
   };
   const modelSelection = bot?.modelSelection;
+  const providers = useAtomValue(serverEnvironment.providersValueAtom(environmentId));
+  const providerDown = botProviderDown(providers, modelSelection?.instanceId);
   const chrome = modelSelection
     ? {
         title: botName,
+        placeholder: stopped
+          ? t("Paused, resumes {resume}", { resume })
+          : t("Message {name}", { name: botName }),
         header,
         banner,
         emptyState,
@@ -163,6 +181,7 @@ export function BotThread({ target, children }: { target: ScopedThreadRef; child
         selectModel,
         sendDisabledReason,
         historyFrom: bot?.historyFrom,
+        providerDown,
         reactions: bot?.reactions,
         react: (messageId: MessageId, emoji: BotReaction | null) => {
           if (bot) void reactToMessage(environmentId, bot, messageId, emoji);
@@ -174,7 +193,10 @@ export function BotThread({ target, children }: { target: ScopedThreadRef; child
   return (
     <BotThreadContext value={true}>
       <BotChromeContext value={chrome}>
-        <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+        <div
+          data-bot-stopped={stopped || undefined}
+          className="flex min-h-0 min-w-0 flex-1 overflow-hidden"
+        >
           {children}
           <BotSidePanel target={target} />
         </div>
@@ -220,18 +242,26 @@ function BotHeaderSubtitle({ target }: { target: ScopedThreadRef }) {
   const bot = useBot(target.environmentId, target.threadId);
   const shell = useThreadShell(target);
   const schedules = useBotSchedules(target);
+  const providers = useAtomValue(serverEnvironment.providersValueAtom(target.environmentId));
   if (!bot) return null;
-  const state = resolveBotState(
+  const resolved = resolveBotState(
     shell ? resolveSidebarThreadStatus(shell) : "ready",
     bot,
     schedules,
   );
-  const next = state === "capped" ? null : nextWakeAt(schedules);
-  if (state === "idle" && !next) return null;
+  // The notice over the composer explains a model that is not set up; the header stays quiet.
+  const state =
+    resolved === "failed" && botProviderDown(providers, bot.modelSelection.instanceId)
+      ? "idle"
+      : resolved;
+  // The header names the same state as the bot's row in the list; a running turn has no next wake.
+  const next = state === "capped" || state === "running" ? null : nextWakeAt(schedules);
+  const shown = state === "idle" ? null : state;
+  if (!shown && !next) return null;
   return (
     <span className="flex max-w-full items-center gap-1 truncate text-xs leading-4 text-muted-foreground tabular-nums">
-      {state !== "idle" ? <BotStateLabel state={state} /> : null}
-      {state !== "idle" && next ? <span aria-hidden>·</span> : null}
+      {shown ? <BotStateLabel state={shown} /> : null}
+      {shown && next ? <span aria-hidden>·</span> : null}
       {next ? <span>{t("next {time}", { time: formatWakeIn(next) })}</span> : null}
     </span>
   );
@@ -261,7 +291,12 @@ function BotActionsMenu({
       >
         <EllipsisIcon />
       </MenuTrigger>
-      <MenuPopup data-bot-surface align="end" collisionPadding={menuCollisionPadding()}>
+      <MenuPopup
+        data-bot-surface
+        data-bot-sheet
+        align="end"
+        collisionPadding={menuCollisionPadding()}
+      >
         {botActions({ bot, schedules, where: "header", canShareWithGuest }).flatMap((action) => {
           const Icon = BOT_ACTION_ICONS[action.icon];
           const item = (
@@ -308,16 +343,31 @@ function BotEmptyState({ target }: { target: ScopedThreadRef }) {
       : null,
   ].filter((fact) => fact !== null);
   return (
-    <div className="relative flex w-full max-w-md flex-col items-center px-8 text-center">
+    <div
+      className={cn(
+        "relative flex w-full flex-col items-center px-8 text-center",
+        quickStart && "max-md:px-5",
+        // The quick start is a list to read, so it takes a wider column than a bot's own facts.
+        quickStart ? "max-w-xl" : "max-w-md",
+      )}
+    >
       <HolidayWreath />
-      <BotAvatar bot={bot} className="mb-3.5 size-16 bg-bot-fill max-md:size-19" />
-      <div className="text-lg font-semibold max-md:text-bot-heading max-md:font-bold">
+      {/* On a phone the quick start fills the screen and the bar already names the bot, so the
+          list starts the page instead of being pushed under the bar by a second name. */}
+      <BotAvatar
+        bot={bot}
+        className={cn("mb-3.5 size-16 bg-bot-fill max-md:size-19", quickStart && "max-md:hidden")}
+      />
+      <div
+        className={cn(
+          "text-lg font-semibold max-md:text-bot-heading max-md:font-bold",
+          quickStart && "max-md:hidden",
+        )}
+      >
         {bot.name}
       </div>
       {facts.length > 0 ? (
-        <p className="mt-1.5 text-xs text-muted-foreground/70 max-md:text-bot-footnote">
-          {facts.join(" · ")}
-        </p>
+        <p className="mt-1.5 text-bot-footnote text-muted-foreground">{facts.join(" · ")}</p>
       ) : null}
       {quickStart ? <QuickStart environmentId={target.environmentId} /> : null}
       {!quickStart && bot.starters && bot.starters.length > 0 ? (

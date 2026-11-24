@@ -89,7 +89,7 @@ export function LinkedEnvironmentsSettings({
       ) : links.data.links.length === 0 ? (
         <SettingsRow
           title="No linked environments"
-          description={`Link another machine running ${APP_BASE_NAME}, such as a VPS, so agents here can launch and drive threads there.`}
+          description={`Link another machine running ${APP_BASE_NAME}, such as a VPS, so bots here can work there.`}
         />
       ) : (
         links.data.links.map((link) => (

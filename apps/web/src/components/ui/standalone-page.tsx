@@ -6,7 +6,10 @@ import { T3Wordmark } from "../T3Wordmark";
 export function StandalonePage({ children }: { readonly children: ReactNode }) {
   return (
     // The page owns scrolling because root cannot scroll; safe centering keeps oversized cards top-aligned.
-    <div className="flex h-full items-center-safe justify-center overflow-y-auto scrollbar-gutter-both bg-background px-4 py-10 text-foreground sm:px-6">
+    <div
+      data-standalone-page
+      className="flex h-full items-center-safe justify-center overflow-y-auto scrollbar-gutter-both bg-background px-4 py-10 text-foreground sm:px-6"
+    >
       <section className="dialog-glass w-full max-w-xl rounded-2xl border p-6">{children}</section>
     </div>
   );
@@ -24,9 +27,11 @@ export function StandalonePageHeader({
   return (
     <>
       <div className="flex items-baseline justify-between gap-3 text-muted-foreground">
-        <span className="flex items-baseline gap-1.5" role="img" aria-label={APP_BASE_NAME}>
+        <span className="flex items-baseline gap-1.5">
           <T3Wordmark className="h-3 w-auto shrink-0 text-foreground" aria-hidden />
-          <span className="text-lg font-medium tracking-tight">Code</span>
+          <span className="text-lg font-medium tracking-tight text-foreground">
+            {APP_BASE_NAME}
+          </span>
         </span>
         {context ? <span className="text-sm">{context}</span> : null}
       </div>

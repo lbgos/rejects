@@ -8,6 +8,7 @@ import {
 import { isReasoningControl } from "@t3tools/client-runtime/model-traits";
 import { type CustomModelDefinition, normalizeCustomModelSlug } from "@t3tools/shared/model";
 
+import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { cn } from "../../lib/utils";
 import { sortModelsForProviderInstance } from "../../modelOrdering";
@@ -138,6 +139,9 @@ export function ProviderModelsSection({
   const [filter, setFilter] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [editingSlug, setEditingSlug] = useState<string | null>(null);
+  // A phone row is the model and its switch; moving models is a mode of its own there.
+  const phone = useMediaQuery("max-md");
+  const [reordering, setReordering] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const scrollToSlugRef = useRef<string | null>(null);
   const hiddenModelSet = new Set(hiddenModels);
@@ -292,6 +296,7 @@ export function ProviderModelsSection({
         canMoveUp={!isFiltering && previousModel !== undefined && groupOf(previousModel) === group}
         canMoveDown={!isFiltering && nextModel !== undefined && groupOf(nextModel) === group}
         isFiltering={isFiltering}
+        layout={!phone ? "wide" : reordering && !isFiltering ? "phone-reorder" : "phone"}
         flagMissingReasoning={flagMissingReasoning}
         canWritePreferences={canWritePreferences}
         canManageCustomModels={canManageCustomModels}
@@ -334,6 +339,17 @@ export function ProviderModelsSection({
               }
             >
               {allBuiltInModelsHidden ? "Enable all" : "Disable all"}
+            </Button>
+          ) : null}
+          {phone && canWritePreferences && !isFiltering && displayModels.length > 1 ? (
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost-muted"
+              aria-pressed={reordering}
+              onClick={() => setReordering((on) => !on)}
+            >
+              {reordering ? "Done" : "Reorder"}
             </Button>
           ) : null}
           <span className="text-xs text-muted-foreground">
@@ -452,6 +468,7 @@ const ProviderModelRow = memo(function ProviderModelRow({
   canMoveUp,
   canMoveDown,
   isFiltering,
+  layout,
   flagMissingReasoning,
   canWritePreferences,
   canManageCustomModels,
@@ -467,6 +484,8 @@ const ProviderModelRow = memo(function ProviderModelRow({
   readonly canMoveUp: boolean;
   readonly canMoveDown: boolean;
   readonly isFiltering: boolean;
+  /** A phone row is two lines (name, full id) with a switch, or with the move arrows while reordering. */
+  readonly layout: "wide" | "phone" | "phone-reorder";
   readonly flagMissingReasoning: boolean;
   readonly canWritePreferences: boolean;
   readonly canManageCustomModels: boolean;
@@ -477,7 +496,12 @@ const ProviderModelRow = memo(function ProviderModelRow({
   readonly onRemove: (slug: string) => void;
 }) {
   const capLabels = describeModelCapabilities(model, flagMissingReasoning);
-  const nameClassName = cn("text-xs", isHidden ? "text-muted-foreground" : "text-foreground/90");
+  const nameClassName = cn(
+    "text-xs max-md:text-bot-callout",
+    isHidden ? "text-muted-foreground" : "text-foreground/90",
+  );
+  const phone = layout !== "wide";
+  const iconSize = phone ? "icon-sm" : "icon-micro";
   const pickerTooltip = model.isCustom
     ? "Custom models are always shown in the picker"
     : isHidden
@@ -488,7 +512,7 @@ const ProviderModelRow = memo(function ProviderModelRow({
     <div
       data-model-slug={model.slug}
       className={cn(
-        "grid h-7 grid-cols-[1.5rem_minmax(0,1fr)_auto_minmax(5.5rem,auto)_auto] items-center gap-2 rounded-md px-2 transition-colors hover:bg-muted/30",
+        "grid h-7 grid-cols-[1.5rem_minmax(0,1fr)_auto_minmax(5.5rem,auto)_auto] items-center gap-2 rounded-md px-2 transition-colors hover:bg-muted/30 max-md:h-auto max-md:min-h-11 max-md:grid-cols-[2rem_minmax(0,1fr)_auto_auto] max-md:py-1",
         isHidden && "opacity-50",
       )}
     >
@@ -496,7 +520,7 @@ const ProviderModelRow = memo(function ProviderModelRow({
         <TooltipTrigger
           render={
             <Button
-              size="icon-micro"
+              size={iconSize}
               variant="ghost-muted"
               disabled={!canWritePreferences}
               onClick={() => onToggleFavorite(model.slug)}
@@ -506,7 +530,9 @@ const ProviderModelRow = memo(function ProviderModelRow({
             />
           }
         >
-          <StarIcon className={cn("size-3", isFavorite && "fill-current text-warning")} />
+          <StarIcon
+            className={cn("size-3 max-md:size-4", isFavorite && "fill-current text-warning")}
+          />
         </TooltipTrigger>
         <TooltipPopup side="top">
           {isFavorite ? "Remove from favorites" : "Add to favorites"}
@@ -516,12 +542,15 @@ const ProviderModelRow = memo(function ProviderModelRow({
         <Tooltip>
           <TooltipTrigger
             render={
-              <span tabIndex={0} className="flex min-w-0 items-baseline gap-2 overflow-hidden" />
+              <span
+                tabIndex={0}
+                className="flex min-w-0 items-baseline gap-2 overflow-hidden max-md:flex-col max-md:items-start max-md:gap-0"
+              />
             }
           >
             <span className={cn(nameClassName, "max-w-full shrink-0 truncate")}>{model.name}</span>
             {model.name !== model.slug ? (
-              <code className="truncate font-mono text-2xs text-muted-foreground/70">
+              <code className="truncate font-mono text-2xs text-muted-foreground/70 max-md:max-w-full max-md:break-all max-md:whitespace-normal max-md:text-muted-foreground">
                 {model.slug}
               </code>
             ) : null}
@@ -537,19 +566,19 @@ const ProviderModelRow = memo(function ProviderModelRow({
           <span className="shrink-0 text-2xs text-muted-foreground/70">custom</span>
         ) : null}
       </span>
-      <span className="text-2xs text-muted-foreground/70">
+      <span className="text-2xs text-muted-foreground/70 max-md:hidden">
         {capLabels.length > 0 ? (
           <span className="hidden sm:inline">{capLabels.join(" · ")}</span>
         ) : null}
       </span>
       <span className="flex shrink-0 items-center justify-end gap-0.5">
-        {!isHidden && !isFiltering ? (
+        {!isHidden && !isFiltering && layout !== "phone" ? (
           <>
             <Tooltip>
               <TooltipTrigger
                 render={
                   <Button
-                    size="icon-micro"
+                    size={iconSize}
                     variant="ghost-muted"
                     disabled={!canWritePreferences || !canMoveUp}
                     onClick={() => onMove(model.slug, -1)}
@@ -557,7 +586,7 @@ const ProviderModelRow = memo(function ProviderModelRow({
                   />
                 }
               >
-                <ArrowUpIcon className="size-3" />
+                <ArrowUpIcon className="size-3 max-md:size-4" />
               </TooltipTrigger>
               <TooltipPopup side="top">Move up</TooltipPopup>
             </Tooltip>
@@ -565,7 +594,7 @@ const ProviderModelRow = memo(function ProviderModelRow({
               <TooltipTrigger
                 render={
                   <Button
-                    size="icon-micro"
+                    size={iconSize}
                     variant="ghost-muted"
                     disabled={!canWritePreferences || !canMoveDown}
                     onClick={() => onMove(model.slug, 1)}
@@ -573,7 +602,7 @@ const ProviderModelRow = memo(function ProviderModelRow({
                   />
                 }
               >
-                <ArrowDownIcon className="size-3" />
+                <ArrowDownIcon className="size-3 max-md:size-4" />
               </TooltipTrigger>
               <TooltipPopup side="top">Move down</TooltipPopup>
             </Tooltip>
@@ -585,7 +614,7 @@ const ProviderModelRow = memo(function ProviderModelRow({
               <TooltipTrigger
                 render={
                   <Button
-                    size="icon-micro"
+                    size={iconSize}
                     variant="ghost-muted"
                     disabled={!canManageCustomModels}
                     aria-label={`Edit ${model.slug}`}
@@ -593,7 +622,7 @@ const ProviderModelRow = memo(function ProviderModelRow({
                   />
                 }
               >
-                <PencilIcon className="size-3" />
+                <PencilIcon className="size-3 max-md:size-4" />
               </TooltipTrigger>
               <TooltipPopup side="top">Edit name and options</TooltipPopup>
             </Tooltip>
@@ -601,7 +630,7 @@ const ProviderModelRow = memo(function ProviderModelRow({
               <TooltipTrigger
                 render={
                   <Button
-                    size="icon-micro"
+                    size={iconSize}
                     variant="ghost-muted"
                     disabled={!canManageCustomModels}
                     aria-label={`Remove ${model.slug}`}
@@ -609,7 +638,7 @@ const ProviderModelRow = memo(function ProviderModelRow({
                   />
                 }
               >
-                <XIcon className="size-3" />
+                <XIcon className="size-3 max-md:size-4" />
               </TooltipTrigger>
               <TooltipPopup side="top">Remove custom model</TooltipPopup>
             </Tooltip>
@@ -618,9 +647,15 @@ const ProviderModelRow = memo(function ProviderModelRow({
       </span>
       {/* Disabled switches receive no pointer events; wrap the tooltip trigger. */}
       <Tooltip>
-        <TooltipTrigger render={<span className="flex shrink-0 items-center" />}>
+        <TooltipTrigger
+          render={
+            <span
+              className={cn("flex shrink-0 items-center", layout === "phone-reorder" && "hidden")}
+            />
+          }
+        >
           <Switch
-            size="sm"
+            size={phone ? "default" : "sm"}
             checked={!isHidden}
             disabled={!canWritePreferences || model.isCustom}
             onCheckedChange={(checked) => onSetHidden(model.slug, !checked)}

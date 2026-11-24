@@ -4,7 +4,7 @@ import {
   type TelegramClaim,
   type TelegramState,
 } from "@t3tools/contracts";
-import { CheckIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon } from "lucide-react";
 import { useState } from "react";
 import { botRequest } from "../bots/http";
 import { useBots } from "../bots/state";
@@ -33,6 +33,7 @@ export function TelegramDetail({
 }) {
   const bots = useBots(environmentId);
   const [claim, setClaim] = useState<TelegramClaim | null>(null);
+  const [choosingMain, setChoosingMain] = useState(false);
   const claimed = (next: TelegramClaim) => {
     setClaim(next);
     onState(next.state);
@@ -46,22 +47,25 @@ export function TelegramDetail({
 
   return (
     <div data-telegram-page className="flex flex-col pb-6 text-sm">
-      <p
-        className={
-          state.error
-            ? "px-4 pt-4 text-base text-destructive-foreground"
-            : "px-4 pt-4 text-base text-muted-foreground"
-        }
-      >
-        {state.connected && state.botUsername ? `@${state.botUsername} · ` : ""}
-        {telegramStatus(state)}
-      </p>
       <Section
         title={t("Bot")}
         footer={t(
           "Make a bot with @BotFather and paste its token. Telegram chats are not end-to-end encrypted.",
         )}
       >
+        {/* The page's state is the group's first row, not a loose line over it. */}
+        <li className={FIELD_ROW}>
+          <span className="shrink-0">{t("Status")}</span>
+          <span
+            className={cn(
+              "min-w-0 text-right break-words",
+              state.error ? "text-destructive-foreground" : "text-muted-foreground",
+            )}
+          >
+            {state.connected && state.botUsername ? `@${state.botUsername} · ` : ""}
+            {telegramStatus(state)}
+          </span>
+        </li>
         <li>
           <TokenField
             connected={state.connected}
@@ -122,28 +126,47 @@ export function TelegramDetail({
           "Telegram reaches this bot’s chat. It hands files to other bots without opening them.",
         )}
       >
-        {bots
-          .filter((bot) => bot.kind !== "music")
-          // The chosen bot stays in view on top of a long list.
-          .toSorted(
-            (a, b) => Number(b.threadId === state.mainBot) - Number(a.threadId === state.mainBot),
-          )
-          .map((bot) => {
-            const main = state.mainBot === bot.threadId;
-            return (
-              <li key={bot.threadId}>
-                <button
-                  type="button"
-                  className={cn(FIELD_ROW, "w-full text-left hover:bg-accent")}
-                  aria-pressed={main}
-                  onClick={() => void configure({ mainBot: main ? null : bot.threadId })}
-                >
-                  <span className="truncate">{bot.name}</span>
-                  {main ? <CheckIcon className="size-4 shrink-0" /> : null}
-                </button>
-              </li>
-            );
-          })}
+        {/* One row names the choice; the bots to choose from open under it on a press. */}
+        <li>
+          <button
+            type="button"
+            data-telegram-main-bot
+            className={cn(FIELD_ROW, "w-full text-left hover:bg-accent")}
+            aria-expanded={choosingMain}
+            onClick={() => setChoosingMain(!choosingMain)}
+          >
+            <span className="truncate">
+              {bots.find((bot) => bot.threadId === state.mainBot)?.name ?? t("None")}
+            </span>
+            <ChevronDownIcon
+              aria-hidden
+              className={cn("size-4 shrink-0 text-muted-foreground", choosingMain && "rotate-180")}
+            />
+          </button>
+        </li>
+        {choosingMain
+          ? bots
+              .filter((bot) => bot.kind !== "music")
+              .map((bot) => {
+                const main = state.mainBot === bot.threadId;
+                return (
+                  <li key={bot.threadId}>
+                    <button
+                      type="button"
+                      className={cn(FIELD_ROW, "w-full text-left hover:bg-accent")}
+                      aria-pressed={main}
+                      onClick={() => {
+                        setChoosingMain(false);
+                        void configure({ mainBot: main ? null : bot.threadId });
+                      }}
+                    >
+                      <span className="truncate ps-4">{bot.name}</span>
+                      {main ? <CheckIcon className="size-4 shrink-0" /> : null}
+                    </button>
+                  </li>
+                );
+              })
+          : null}
       </Section>
       <Section
         title={t("Delivery")}

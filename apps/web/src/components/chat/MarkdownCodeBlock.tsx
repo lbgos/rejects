@@ -10,6 +10,7 @@ import {
   highlightCodeToHast,
 } from "../../lib/incrementalHighlighting";
 import { LRUCache } from "../../lib/lruCache";
+import { observeResize } from "../../lib/observeResize";
 import { getSyntaxHighlighterPromise } from "../../lib/syntaxHighlighting";
 import { cn } from "../../lib/utils";
 import {
@@ -39,12 +40,27 @@ const THREAD_FIND_IGNORE_PROPS = {
   "data-thread-find-ignore": "",
 } as React.HTMLAttributes<HTMLDivElement>;
 
+/**
+ * Marks a block whose lines run past its width (`data-overflow`), so a phone can show that more
+ * lies to the side and offer wrapping. Written to the DOM: a width change re-renders nothing.
+ */
+function markCodeOverflow(block: HTMLElement | null) {
+  if (!block) return;
+  // The block is watched, not its `pre`: highlighted code mounts later and replaces it.
+  return observeResize(block, () => {
+    const pre = block.querySelector("pre");
+    block.toggleAttribute("data-overflow", pre !== null && pre.scrollWidth > pre.clientWidth + 1);
+  });
+}
+
 export function MarkdownCodeBlockFrame({
   as: Wrapper = "div",
   language,
   fenceTitle,
   theme,
   wrapped = true,
+  wrapChosen = false,
+  watchOverflow = false,
   title,
   actions,
   headerProps,
@@ -55,6 +71,10 @@ export function MarkdownCodeBlockFrame({
   fenceTitle: string | null;
   theme: "light" | "dark";
   wrapped?: boolean;
+  /** The reader set wrapping on this block, so a layout's own default gives way to it. */
+  wrapChosen?: boolean;
+  /** Mark the block while its lines run past its width. For a plain `div` wrapper only. */
+  watchOverflow?: boolean;
   title?: React.ReactNode;
   actions?: React.ReactNode;
   headerProps?: React.HTMLAttributes<HTMLDivElement>;
@@ -62,10 +82,12 @@ export function MarkdownCodeBlockFrame({
 }) {
   return (
     <Wrapper
+      {...(watchOverflow ? { ref: markCodeOverflow } : {})}
       dir="ltr"
-      className="chat-markdown-codeblock my-[0.65rem] text-start overflow-hidden rounded-lg border border-border/70 bg-secondary leading-snug dark:border-transparent dark:bg-input/32"
+      className="chat-markdown-codeblock relative my-[0.65rem] text-start overflow-hidden rounded-lg border border-border/70 bg-secondary leading-snug dark:border-transparent dark:bg-input/32"
       data-language={language}
       data-wrap={wrapped ? "true" : "false"}
+      data-wrap-chosen={wrapChosen ? "" : undefined}
     >
       <div
         {...headerProps}
@@ -217,6 +239,8 @@ export function MarkdownCodeBlock({
       fenceTitle={fenceTitle}
       theme={theme}
       wrapped={wrapped}
+      wrapChosen={wrapOverride !== null}
+      watchOverflow
       headerProps={THREAD_FIND_IGNORE_PROPS}
       actions={
         <span className="flex items-center gap-0.5" role="toolbar" aria-label="Code block actions">

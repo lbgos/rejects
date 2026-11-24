@@ -219,7 +219,13 @@ import { canUseMarkdownFileShellActions } from "./chat/MarkdownFileLink.logic";
 import { rehypeChipPunctuation } from "./chat/markdownChipPunctuation";
 import { handleMarkdownFragmentClick, rehypeHeadingIds } from "./chat/markdownFragments";
 import { rehypeTextDirection } from "./chat/markdownTextDirection";
-import { hastHasText, hastPlainTextDeep, plainHastText } from "./chat/markdownHast.logic";
+import {
+  hastHasText,
+  hastPlainTextDeep,
+  isEmptyListItem,
+  isShortCell,
+  plainHastText,
+} from "./chat/markdownHast.logic";
 import {
   extractCodeBlock,
   extractFenceLanguage,
@@ -1118,6 +1124,8 @@ const CHAT_MARKDOWN_COMPONENTS = {
   },
   li: function MarkdownListItem({ node, children, ...props }) {
     const { skills, threadRef, environmentId } = use(ChatMarkdownRendererContext);
+    // A reply cut off after a list marker would leave a bullet with nothing beside it.
+    if (isEmptyListItem(node)) return null;
     // Resolve checkbox markers by offset to avoid rerendering list items on every streamed token.
     const isTaskItem = String(props.className ?? "").includes("task-list-item");
     return (
@@ -1672,6 +1680,13 @@ const CHAT_MARKDOWN_COMPONENTS = {
   },
   table: function MarkdownTableRenderer({ node: _node, ...props }) {
     return <MarkdownTable {...props} />;
+  },
+  // A short value (an amount, a day, a time) is marked so a narrow table can keep it on one line.
+  th: function MarkdownHeaderCell({ node, ...props }) {
+    return <th {...props} data-short={isShortCell(node) || undefined} />;
+  },
+  td: function MarkdownCell({ node, ...props }) {
+    return <td {...props} data-short={isShortCell(node) || undefined} />;
   },
   details: function MarkdownDetailsRenderer({ node: _node, children, open: detailsOpen }) {
     return <MarkdownDetails open={detailsOpen}>{children}</MarkdownDetails>;

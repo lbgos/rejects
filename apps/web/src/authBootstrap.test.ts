@@ -134,6 +134,19 @@ describe("resolveInitialServerAuthGateState", () => {
     vi.restoreAllMocks();
   });
 
+  it("gives up on a server that never answers the session check", async () => {
+    const testApi = await installEnvironmentHttpTest({ session: () => Effect.never });
+    disposeHttpTest = testApi.dispose;
+    const { resolveInitialServerAuthGateState } = await import("./environments/primary");
+    vi.useFakeTimers();
+
+    const gate = expect(resolveInitialServerAuthGateState()).rejects.toMatchObject({
+      _tag: "PrimaryEnvironmentUnreachableError",
+    });
+    await vi.advanceTimersByTimeAsync(20_000);
+    await gate;
+  });
+
   it("reuses an in-flight silent bootstrap attempt", async () => {
     const nextSession = sequence(
       unauthenticatedSession(DESKTOP_AUTH),

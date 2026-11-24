@@ -102,9 +102,10 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
       ) : null}
     </>
   );
-  // Bot chats have no per-message row: copy, reply and the time live in the bubble's menu. A
-  // phone shows the reply in a bubble; wider screens keep T3's unboxed prose.
+  // Bot chats have no per-message row: copy, reply and the time live in the message's menu. A
+  // reply is unboxed prose at every width, so a table or code has the whole lane.
   if (bot) {
+    const thinking = row.thinking;
     return (
       <>
         <BotGestures
@@ -112,10 +113,18 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
           messageId={row.message.id}
           text={row.message.text}
           at={row.message.updatedAt}
+          {...(thinking === undefined
+            ? {}
+            : {
+                thinking: {
+                  shown: thinking.shown,
+                  onToggle: () => ctx.onToggleTurnFold(thinking.runId),
+                },
+              })}
         >
           <div
             data-bot-bubble
-            className="relative min-w-0 max-md:w-fit max-md:max-w-full max-md:rounded-3xl max-md:bg-bot-bubble max-md:px-3.75 max-md:py-2.25 max-md:text-bot-message"
+            className="relative min-w-0 max-md:max-w-full max-md:px-1 max-md:text-bot-message"
           >
             {content}
           </div>

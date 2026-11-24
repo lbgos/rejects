@@ -14,9 +14,15 @@ export function useBotsMode(): { readonly active: boolean; readonly home: boolea
   // Route params are decoded; ids such as `builtin:steward` are percent-encoded in the path.
   const threadRef = useParams({ strict: false, select: resolveThreadRouteRef });
   const bot = useBot(threadRef?.environmentId ?? null, threadRef?.threadId ?? null);
-  const active = home || pathname === "/connections" || bot !== undefined;
+  // A link to no page is drawn inside the bots app, whose list is the way back.
+  const notFound = useRouterState({
+    select: ({ matches }) => matches.some((match) => match.globalNotFound === true),
+  });
+  const active = home || pathname === "/connections" || bot !== undefined || notFound;
   const modal = isAppModalPage(pathname);
-  const [underModal, setUnderModal] = useState(active);
+  // A page that loads straight into Settings or Usage has no page under it yet; the app's home
+  // is the bots list, so it is drawn as part of the bots app.
+  const [underModal, setUnderModal] = useState(active || modal);
   if (!modal && underModal !== active) setUnderModal(active);
   return { active: modal ? underModal : active, home };
 }

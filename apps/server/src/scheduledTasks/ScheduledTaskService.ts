@@ -28,6 +28,7 @@ import {
   type ScheduledTaskThreadMode,
   type ScheduledTaskUpsertInput,
   managedPolicyDeniedMessage,
+  SCHEDULED_TASK_MISSED_RUN,
   scheduledTaskThreadMode,
   managedRuntimeModeDenial,
 } from "@t3tools/contracts";
@@ -1378,12 +1379,7 @@ export const layer = Layer.effect(
         ({ task, dueAt }) =>
           Effect.suspend(() =>
             isMissedFixedTimeRun(task.schedule, dueAt, now)
-              ? rescheduleMissedRun(
-                  task,
-                  now,
-                  "missed",
-                  "Missed a scheduled run because the server was not running at that time.",
-                )
+              ? rescheduleMissedRun(task, now, "missed", SCHEDULED_TASK_MISSED_RUN)
               : runTask(task, "scheduled"),
           ).pipe(
             Effect.catch((cause) =>

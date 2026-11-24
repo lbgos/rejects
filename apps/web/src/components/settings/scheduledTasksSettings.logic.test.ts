@@ -23,6 +23,7 @@ import {
   matchesScheduledTaskScope,
   scheduleFromDraft,
   scheduleLabel,
+  scheduleZoneToName,
   taskToDraft,
   unbindDraftFromThread,
 } from "./scheduledTasksSettings.logic";
@@ -423,4 +424,7 @@ it("appends the server zone only to fixed-time schedule labels", () => {
   expect(scheduleLabel({ type: "fixed_time", timeOfDay: "09:00" })).toBe("Daily at 09:00");
   expect(scheduleLabel({ type: "interval", everyMs: 60_000 }, "Etc/UTC")).toBe("Every 1 min");
   expect(scheduleLabel({ type: "webhook", signature: null }, "Etc/UTC")).toBe("On webhook");
+  // A viewer in the server's own zone reads the time as their clock's, with no zone to name.
+  expect(scheduleZoneToName("Europe/London", "Europe/London")).toBeUndefined();
+  expect(scheduleZoneToName("Etc/UTC", "Europe/London")).toBe("Etc/UTC");
 });

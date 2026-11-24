@@ -33,7 +33,7 @@ not apply. It does not install that version again on its own, even when another
 device asks. Use the update button on that machine to retry.
 
 The confirmation counts the running threads that the restarts will interrupt,
-and how many can resume afterwards. See **Continue threads after restarts**
+and how many can resume afterwards. See **Continue chats after restarts**
 below.
 
 ## Switch between Stable and Nightly
@@ -64,7 +64,7 @@ checks.
 Server updates restart the connection and can interrupt active agents and
 terminal commands. Saved threads, settings, and project files remain.
 
-**Settings → Maintenance → Continue threads after restarts** is on by default.
+**Settings → Maintenance → Continue chats after restarts** is on by default.
 It resumes supported active threads after an update, crash, or machine
 restart. Changes are saved to connected environments that support this setting;
 update older servers first. If a supported environment was offline or has a

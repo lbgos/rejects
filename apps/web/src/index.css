@@ -187,7 +187,10 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --color-bot-delete: #d70015;
   --color-bot-glass: color-mix(in srgb, var(--foreground) 12%, var(--background));
   --color-bot-hairline: color-mix(in srgb, var(--foreground) 20%, transparent);
+  /* A row or a line of text that acts when pressed: the app's tint, readable as text. */
+  --color-bot-action: var(--info-foreground);
   --color-bot-scrim: rgb(0 0 0 / 0.62);
+  --color-bot-sheet-scrim: rgb(0 0 0 / 0.4);
   /* Variant C's type ramp for the bots app on a phone: size, line height and tracking. */
   --text-bot-title: 34px;
   --text-bot-title--line-height: 41px;
@@ -198,9 +201,9 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --text-bot-body: 17px;
   --text-bot-body--line-height: 22px;
   --text-bot-body--letter-spacing: -0.43px;
-  --text-bot-message: 17px;
-  --text-bot-message--line-height: 23px;
-  --text-bot-message--letter-spacing: -0.43px;
+  --text-bot-message: 16px;
+  --text-bot-message--line-height: 22px;
+  --text-bot-message--letter-spacing: -0.31px;
   --text-bot-callout: 15px;
   --text-bot-callout--line-height: 20px;
   --text-bot-callout--letter-spacing: -0.23px;
@@ -2714,4 +2717,76 @@ html.dark:not([data-theme-id]:not([data-theme-id=""])) [data-app-sidebar] {
 
 .messages-timeline-scroll:focus-visible {
   outline: none;
+}
+
+/* An entry page (pairing, a sign-in, a link that ended) on a phone is the page itself, not a card
+   floating on it: a large title from the top, the field, and full-width actions at the bottom edge
+   above the home indicator. */
+@media (max-width: 639px) {
+  [data-standalone-page] {
+    align-items: stretch;
+    scrollbar-gutter: auto;
+    padding: calc(env(safe-area-inset-top) + 1.5rem) 1.25rem
+      calc(env(safe-area-inset-bottom) + 1.25rem);
+  }
+  [data-standalone-page] > section {
+    display: flex;
+    min-height: 100%;
+    flex-direction: column;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    padding: 0;
+  }
+  [data-standalone-page] h1 {
+    margin-top: 2.5rem;
+    font-size: var(--text-bot-title);
+    font-weight: 700;
+    line-height: var(--text-bot-title--line-height);
+  }
+  [data-standalone-page] h1 + p {
+    font-size: var(--text-bot-body);
+    line-height: var(--text-bot-body--line-height);
+  }
+  [data-standalone-page] label {
+    font-size: var(--text-bot-callout);
+  }
+  [data-standalone-page] [data-slot="input-control"] {
+    min-height: 3rem;
+    border-radius: 0.75rem;
+    font-size: var(--text-bot-body);
+  }
+  [data-standalone-page] [data-slot="input"] {
+    height: 3rem;
+    padding-inline: 0.875rem;
+    font-size: inherit;
+  }
+  /* The actions close the page. A form fills what is left so its buttons reach the bottom. */
+  [data-standalone-page] > section > form:last-child {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+  }
+  [data-standalone-page] > section > form:last-child > :last-child,
+  [data-standalone-page] > section > div:last-child:has(> [data-slot="button"]) {
+    margin-top: auto;
+    padding-top: 1.5rem;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    gap: 0.625rem;
+  }
+  /* A form's actions follow its field and any error under it; only a page with nothing to fill
+     in sends its actions to the bottom edge. */
+  [data-standalone-page] > section > form:last-child > :last-child {
+    margin-top: 0;
+  }
+  [data-standalone-page] [data-slot="button"] {
+    width: 100%;
+    min-height: 3.125rem;
+    border-radius: 0.75rem;
+    font-size: var(--text-bot-body);
+  }
 }

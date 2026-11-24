@@ -31,11 +31,7 @@ export type BotActionId =
   | "unmute"
   | "mark-read"
   | "mark-unread"
-  | "schedule"
-  | "activity"
-  | "memory"
-  | "bridge"
-  | "screen"
+  | "details"
   | "share-guest"
   | "rename"
   | "edit"
@@ -57,9 +53,7 @@ export function botActions(input: {
   readonly canShareWithGuest?: boolean;
 }): BotAction[] {
   const { bot, schedules, where } = input;
-  const screen = { id: "screen" as const, label: t("Screen"), icon: "monitor" };
   return [
-    ...(where === "header" ? [screen] : []),
     ...(schedules.length === 0
       ? []
       : [
@@ -93,16 +87,13 @@ export function botActions(input: {
               },
         ]
       : []),
-    { id: "schedule", label: t("Schedule"), icon: "clock", separatorBefore: true },
-    { id: "activity", label: t("Activity"), icon: "activity" },
-    { id: "memory", label: t("Memory"), icon: "brain" },
-    { id: "bridge", label: t("Bridge"), icon: "shield-check" },
-    ...(where === "row" ? [screen] : []),
+    // Schedule, activity and memory are one place; its tabs switch between them.
+    { id: "details", label: t("Schedule and memory"), icon: "clock", separatorBefore: true },
     ...(input.canShareWithGuest
       ? [{ id: "share-guest" as const, label: t("Share with guest"), icon: "share" }]
       : []),
-    { id: "rename", label: t("Rename"), icon: "pencil", separatorBefore: true },
-    { id: "edit", label: t("Edit job and model"), icon: "sliders" },
+    { id: "rename", label: t("Rename"), icon: "pencil" },
+    { id: "edit", label: t("Edit bot"), icon: "sliders" },
     ...(isBuiltinBot(bot)
       ? []
       : [
@@ -269,13 +260,9 @@ export function useBotActions(environmentId: EnvironmentId) {
         for (const task of schedules)
           void setEnabled({ environmentId, input: { id: task.id, enabled: id === "resume" } });
         return;
-      case "schedule":
-      case "activity":
-      case "memory":
-      case "bridge":
-      case "screen":
+      case "details":
         if (routeThreadId !== bot.threadId) await open(bot);
-        return openBotPanel(scopeThreadRef(environmentId, bot.threadId), id);
+        return openBotPanel(scopeThreadRef(environmentId, bot.threadId), "schedule");
       case "share-guest":
         return openGuestShareDialog(scopeThreadRef(environmentId, bot.threadId));
       case "mark-read":
@@ -316,8 +303,11 @@ export function useBotActions(environmentId: EnvironmentId) {
     position: { x: number; y: number },
     onClose?: () => void,
   ) => {
+    const actions = botActions({ bot, schedules, where: "row" });
+    // A phone's sheet covers the row it was opened from, so it names the bot it acts on.
+    const sheet = window.matchMedia("(max-width: 767px) and (pointer: coarse)").matches;
     const picked = await readLocalApi()?.contextMenu.show(
-      botActions({ bot, schedules, where: "row" }),
+      sheet ? [{ id: "edit" as const, label: bot.name, header: true }, ...actions] : actions,
       position,
     );
     onClose?.();

@@ -154,6 +154,7 @@ function CopyErrorButton({ text }: { text: string }) {
             size="icon-micro"
             variant="ghost-muted"
             aria-label={label}
+            data-slot="toast-copy"
             className="[--control-icon-color:currentColor] rounded-md text-muted-foreground/80 hover:bg-transparent hover:text-muted-foreground"
             onClick={() => copyToClipboard(text)}
           />
@@ -685,6 +686,7 @@ function Toasts({ position }: { position: ToastPosition }) {
                 </button>
               </div>
               <Toast.Content
+                data-slot="toast-content"
                 className={cn(
                   // overflow-x:clip preserves visible vertical overflow; hidden would force overflow-y:auto
                   // and clip detail panels.

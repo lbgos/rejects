@@ -610,6 +610,8 @@ type MessagesTimelineRowContent =
       assistantCopyStreaming: boolean;
       assistantTurnDiffSummary?: TurnDiffSummary | undefined;
       revertTurnCount?: number | undefined;
+      /** A bot reply whose short turn has no row: its thinking opens from the message's menu. */
+      thinking?: { readonly runId: RunId; readonly shown: boolean };
       /** Another of your messages follows directly, so the two sit closer together. */
       groupedWithNext?: boolean;
       /** Another of your messages sits directly above, so the joined corners tighten. */
@@ -747,6 +749,8 @@ interface TurnFold {
   /** Every entry in the segment, including the cards a fold never hides. */
   entryIds: ReadonlySet<string>;
   label: string;
+  /** A bot chat's turn too short for its time to be worth a line: the row names its tools only. */
+  quiet?: boolean;
 }
 
 interface SupersededAttemptFold {
@@ -1046,6 +1050,13 @@ const isButtonsCall = (entry: TimelineEntry) => {
   return tool === "offer_replies" || tool === "propose_bots";
 };
 
+/** Under this a bot chat's turn shows no time: only the tools it ran, or no row at all. */
+const QUIET_TURN_MS = 5_000;
+
+/** A bot chat reads a turn's time in whole seconds. */
+const formatWholeSeconds = (durationMs: number) =>
+  durationMs < 1_000 ? "<1s" : formatDuration(Math.round(durationMs / 1_000) * 1_000);
+
 function deriveTurnFolds(input: {
   timelineEntries: ReadonlyArray<TimelineEntry>;
   terminalAssistantMessageIds: ReadonlySet<string>;
@@ -1230,7 +1241,8 @@ function deriveTurnFolds(input: {
             maxIsoTimestamp(group.terminalEntry?.message.updatedAt ?? null, lastEntryEnd) ??
               lastEntryEnd,
           );
-    const duration = elapsedMs !== null ? formatDuration(elapsedMs) : null;
+    const formatTurnDuration = input.collapseScheduledWakes ? formatWholeSeconds : formatDuration;
+    const duration = elapsedMs !== null ? formatTurnDuration(elapsedMs) : null;
     const label = isLatestInterruptedTurn
       ? duration
         ? `You stopped after ${duration}`
@@ -1252,6 +1264,12 @@ function deriveTurnFolds(input: {
       hiddenEntryIds: segmentHiddenIds(firstSegment),
       entryIds: new Set(firstSegment.map((entry) => entry.id)),
       label,
+      ...(input.collapseScheduledWakes &&
+      !isLatestInterruptedTurn &&
+      elapsedMs !== null &&
+      elapsedMs < QUIET_TURN_MS
+        ? { quiet: true }
+        : {}),
     });
     for (const [index, { startIndex, steer }] of group.steerSegments.entries()) {
       const entries = group.entries.slice(startIndex, group.steerSegments[index + 1]?.startIndex);
@@ -1268,7 +1286,7 @@ function deriveTurnFolds(input: {
         createdAt: steer.createdAt,
         hiddenEntryIds: segmentHiddenIds(entries),
         entryIds: new Set(entries.map((entry) => entry.id)),
-        label: segmentMs !== null ? `Continued for ${formatDuration(segmentMs)}` : "Continued",
+        label: segmentMs !== null ? `Continued for ${formatTurnDuration(segmentMs)}` : "Continued",
       });
     }
   }
@@ -1684,6 +1702,8 @@ export function deriveMessagesTimelineRows(input: {
       })
     : new Map<MessageId, number>();
   const nextRows: MessagesTimelineRow[] = [];
+  /** Bot turns with thinking and no row of their own, and whether that thinking is open. */
+  const silentRuns = new Map<RunId, boolean>();
   const terminalAssistantMessageIds = deriveTerminalAssistantMessageIds(timelineEntries);
   const failedRunIds = failedTimelineRunIds(timelineEntries, input.latestRun ?? null);
   const itemizedRunIds = itemizedFailedRunIds(timelineEntries, failedRunIds);
@@ -1985,7 +2005,32 @@ export function deriveMessagesTimelineRows(input: {
     }
 
     const turnFold = foldsByAnchorEntryId.get(timelineEntry.id);
-    if (turnFold) {
+    const turnFoldTools = turnFold ? toolCount(turnFold.hiddenEntryIds) : 0;
+    const turnFoldExpanded = turnFold
+      ? (input.expandedRunIds?.has(turnFold.runId) ?? false)
+      : false;
+    // A quiet turn that ran no tool gets no row; a failure it folded keeps one. What it hides,
+    // its thinking, opens from the reply's menu, and the row shows while it is open.
+    const turnFoldIsSilent =
+      turnFold?.quiet === true &&
+      turnFoldTools === 0 &&
+      ![...turnFold.hiddenEntryIds].some((entryId) => {
+        const entry = timelineEntryById.get(entryId);
+        return entry?.kind === "work" && workEntryDisplayIndicatesToolFailure(entry.entry);
+      });
+    const silentThinking =
+      turnFold !== undefined &&
+      turnFoldIsSilent &&
+      [...turnFold.hiddenEntryIds].some((entryId) => {
+        const entry = timelineEntryById.get(entryId);
+        return (
+          entry?.kind === "work" &&
+          entry.entry.itemType === "reasoning" &&
+          Boolean(entry.entry.detail?.trim())
+        );
+      });
+    if (turnFold && silentThinking) silentRuns.set(turnFold.runId, turnFoldExpanded);
+    if (turnFold && (!turnFoldIsSilent || (silentThinking && turnFoldExpanded))) {
       const deferredWorkItemIds = [...turnFold.entryIds].flatMap((entryId) => {
         const entry = timelineEntryById.get(entryId);
         return entry?.kind === "work" &&
@@ -2000,9 +2045,13 @@ export function deriveMessagesTimelineRows(input: {
         ...(deferredWorkItemIds.length > 0 ? { deferredWorkItemIds } : {}),
         createdAt: turnFold.createdAt,
         runId: turnFold.runId,
-        label: turnFold.label,
-        toolCount: toolCount(turnFold.hiddenEntryIds),
-        expanded: input.expandedRunIds?.has(turnFold.runId) ?? false,
+        label: turnFoldIsSilent
+          ? "Thinking"
+          : turnFold.quiet && turnFoldTools > 0
+            ? ""
+            : turnFold.label,
+        toolCount: turnFoldTools,
+        expanded: turnFoldExpanded,
       });
     }
 
@@ -2325,6 +2374,10 @@ export function deriveMessagesTimelineRows(input: {
       timelineEntry.message.role === "assistant" &&
       runIdIsActiveResponse(timelineEntry.message.runId);
 
+    const silentRunId =
+      timelineEntry.message.role === "assistant" ? timelineEntry.message.runId : null;
+    const silentRun = silentRunId == null ? undefined : silentRuns.get(silentRunId);
+
     const showAssistantMeta =
       timelineEntry.message.role === "assistant" &&
       terminalAssistantMessageIds.has(timelineEntry.message.id) &&
@@ -2353,6 +2406,9 @@ export function deriveMessagesTimelineRows(input: {
         timelineEntry.message.role === "user"
           ? revertTurnCountByUserMessageId.get(timelineEntry.message.id)
           : undefined,
+      ...(silentRun === undefined || silentRunId == null
+        ? {}
+        : { thinking: { runId: silentRunId, shown: silentRun } }),
     });
   }
 

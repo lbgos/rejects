@@ -36,8 +36,9 @@ import {
 import * as Arr from "effect/Array";
 import * as Duration from "effect/Duration";
 import * as Result from "effect/Result";
-import { PlusIcon } from "lucide-react";
-import { useRef, useState, type ReactNode } from "react";
+import { ChevronRightIcon, PlusIcon } from "lucide-react";
+import { use, useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 
 import { isDesktopLocalConnectionTarget } from "../../connection/desktopLocal";
 import {
@@ -112,13 +113,14 @@ import {
   PROVIDER_HEALTH_INTERVAL_STEP_SECONDS,
 } from "./SettingsPanels.logic";
 import {
-  PolicyTooltip,
   SettingResetButton,
   SettingsPageContainer,
+  SettingsPhoneBarContext,
   SettingsRow,
   SettingsSection,
   useSettingsSearchTargetId,
 } from "./settingsLayout";
+import { useMediaQuery } from "../../hooks/useMediaQuery";
 import {
   buildProviderEnvironmentOptions,
   buildProviderInstanceOverridePatch,
@@ -126,6 +128,7 @@ import {
   isProviderSettingsEnvironmentAvailable,
   type ProviderEnvironmentAccess,
   type ProviderOperateAccess,
+  resolvePhoneProviderPage,
   resolveRemoteOperateAccess,
   resolveSelectedProviderEnvironmentId,
 } from "./ProviderSettingsPanel.logic";
@@ -174,6 +177,40 @@ function configuredBinaryPath(config: unknown): string {
 }
 
 // Subscribe only in the label because every status push restamps all providers' checkedAt.
+/**
+ * What few people change sits folded under the provider list: usage hubs, text generators and
+ * background checks. A search jump to a row inside opens the fold before the row mounts.
+ */
+function ProvidersAdvanced({
+  targetIds,
+  children,
+}: {
+  readonly targetIds: ReadonlyArray<string>;
+  readonly children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const searchTargetId = useSettingsSearchTargetId();
+  const [seenSearchTargetId, setSeenSearchTargetId] = useState<string | null>(null);
+  if (seenSearchTargetId !== searchTargetId) {
+    setSeenSearchTargetId(searchTargetId);
+    if (searchTargetId !== null && targetIds.includes(searchTargetId)) setOpen(true);
+  }
+  return (
+    <Collapsible data-providers-advanced open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger className="group flex min-h-9 items-center gap-1.5 rounded-md px-3 text-left text-bot-footnote text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-4">
+        <ChevronRightIcon
+          aria-hidden
+          className="size-3.5 shrink-0 transition-transform duration-150 group-data-panel-open:rotate-90 motion-reduce:transition-none"
+        />
+        Other provider settings
+      </CollapsibleTrigger>
+      <CollapsiblePanel>
+        <div className="flex flex-col gap-8 pt-4 max-md:gap-6">{children}</div>
+      </CollapsiblePanel>
+    </Collapsible>
+  );
+}
+
 function ProviderLastChecked({ environmentId }: { environmentId: EnvironmentId }) {
   const serverProviders =
     useAtomValue(serverEnvironment.providersValueAtom(environmentId)) ?? EMPTY_SERVER_PROVIDERS;
@@ -775,6 +812,32 @@ export function EnvironmentProviderSettings({
   const selectedRow =
     rows.find((row) => row.instanceId === selectedInstanceId) ??
     (targetInstanceMissing ? null : (rows[0] ?? null));
+  const phone = useMediaQuery("max-md");
+  const bar = use(SettingsPhoneBarContext);
+  const phoneBar = phone ? bar : null;
+  // A link to one provider, such as the composer's setup notice, opens on that provider.
+  const [phoneProviderOpen, setPhoneProviderOpen] = useState(targetInstanceId !== undefined);
+  const phonePage = resolvePhoneProviderPage({
+    phone: phoneBar !== null,
+    opened: phoneProviderOpen,
+    hasProvider: selectedRow !== null,
+  });
+  const phoneProviderTitle =
+    phonePage !== "provider" || selectedRow === null
+      ? null
+      : selectedRow.explicitInstance
+        ? providerInstanceName(selectedRow.explicitInstance)
+        : (providerClients.get(selectedRow.driver)?.label ?? String(selectedRow.driver));
+  const publishPhoneProvider = useEffectEvent((title: string | null) => {
+    phoneBar?.setDetail(
+      title === null ? null : { title, onBack: () => setPhoneProviderOpen(false) },
+    );
+  });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- names the open provider in the phone settings bar, which the settings layout owns
+  useEffect(() => {
+    publishPhoneProvider(phoneProviderTitle);
+    return () => publishPhoneProvider(null);
+  }, [phoneProviderTitle]);
 
   const persistInstance = async (
     instanceId: ProviderInstanceId,
@@ -915,7 +978,11 @@ export function EnvironmentProviderSettings({
     writeProjectOverride,
     updateModelPreferences: stableUpdateModelPreferences,
     toggleModelFavorite: stableToggleModelFavorite,
-    selectInstance: setSelectedInstanceId,
+    selectInstance: (instanceId) => {
+      setSelectedInstanceId(instanceId);
+      // A phone has room for the list or one provider: the provider opens as its own page.
+      setPhoneProviderOpen(true);
+    },
   };
   // resolveModelPreferences falls back to a fresh `[]`; keep it stable for the rows.
   const favorites = settings.favorites.length > 0 ? settings.favorites : NO_FAVORITES;
@@ -971,7 +1038,8 @@ export function EnvironmentProviderSettings({
         data-provider-section
         variant="plain"
         titleAction={
-          canAddProvider ? (
+          // A phone's list ends in its own "Add provider" row, so the bar names the page alone.
+          canAddProvider && phonePage === null ? (
             <Tooltip>
               <TooltipTrigger
                 render={
@@ -1039,35 +1107,49 @@ export function EnvironmentProviderSettings({
             "overflow-hidden @min-[48rem]/providers:grid @min-[48rem]/providers:grid-cols-[17rem_minmax(0,1fr)]",
           )}
         >
-          <div
-            data-provider-list
-            className="border-b border-border/60 bg-muted/10 @min-[48rem]/providers:flex @min-[48rem]/providers:min-h-0 @min-[48rem]/providers:flex-col @min-[48rem]/providers:border-r @min-[48rem]/providers:border-b-0"
-          >
-            <ScrollArea
-              scrollFade
-              chainVerticalScroll
-              className="@min-[48rem]/providers:min-h-0 @min-[48rem]/providers:flex-1"
+          {phonePage === "provider" ? null : (
+            <div
+              data-provider-list
+              className={cn(
+                "bg-muted/10 @min-[48rem]/providers:flex @min-[48rem]/providers:min-h-0 @min-[48rem]/providers:flex-col @min-[48rem]/providers:border-r @min-[48rem]/providers:border-b-0",
+                phonePage === null && "border-b border-border/60",
+              )}
             >
-              <div data-provider-rows className="divide-y divide-border/50">
-                {rows.map((row) => renderProviderInstance(row, "list"))}
-                {canAddProvider ? (
-                  <button
-                    data-provider-add
-                    type="button"
-                    className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-left text-sm text-muted-foreground transition-colors outline-none hover:bg-muted/25 hover:text-foreground focus-visible:bg-muted/25 focus-visible:text-foreground sm:px-4"
-                    onClick={() => setIsAddInstanceDialogOpen(true)}
-                  >
-                    <PlusIcon className="size-4 shrink-0" />
-                    Add provider
-                  </button>
-                ) : null}
-              </div>
-            </ScrollArea>
-          </div>
-
-          <div data-provider-detail className="min-w-0 @min-[48rem]/providers:min-h-0">
+              <ScrollArea
+                scrollFade
+                chainVerticalScroll
+                className="@min-[48rem]/providers:min-h-0 @min-[48rem]/providers:flex-1"
+              >
+                <div data-provider-rows className="divide-y divide-border/50">
+                  {rows.map((row) => renderProviderInstance(row, "list"))}
+                  {canAddProvider ? (
+                    <button
+                      data-provider-add
+                      type="button"
+                      className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-left text-sm text-muted-foreground transition-colors outline-none hover:bg-muted/25 hover:text-foreground focus-visible:bg-muted/25 focus-visible:text-foreground sm:px-4"
+                      onClick={() => setIsAddInstanceDialogOpen(true)}
+                    >
+                      <PlusIcon className="size-4 shrink-0" />
+                      Add provider
+                    </button>
+                  ) : null}
+                </div>
+              </ScrollArea>
+            </div>
+          )}
+          <div
+            data-provider-detail
+            hidden={phonePage === "list"}
+            className="min-w-0 @min-[48rem]/providers:min-h-0"
+          >
             {selectedRow ? (
-              <ScrollArea scrollFade chainVerticalScroll className="@min-[48rem]/providers:h-full">
+              // Keyed, so another provider opens at its top and not where the last one was left.
+              <ScrollArea
+                key={selectedRow.instanceId}
+                scrollFade
+                chainVerticalScroll
+                className="@min-[48rem]/providers:h-full"
+              >
                 {/* Flat sections run dividers edge to edge and inset text like the list beside them. */}
                 <div className="space-y-6 py-4">
                   {renderProviderInstance(selectedRow, "editor")}
@@ -1084,91 +1166,93 @@ export function EnvironmentProviderSettings({
         </SettingsGroup>
       </SettingsSection>
 
-      <UsageProviderSettings
-        key={environmentId}
-        environmentId={environmentId}
-        environmentLabel={environmentLabel}
-        sources={settings.usageLimitSources}
-        readOnly={readOnly}
-      />
+      {phonePage === "provider" ? null : (
+        <ProvidersAdvanced
+          targetIds={[
+            searchableSetting("usage-providers").id,
+            searchableSetting("text-generators").id,
+            searchableSetting("provider-health-check-interval").id,
+            searchableSetting("compact-idle-threads").id,
+          ]}
+        >
+          <UsageProviderSettings
+            key={environmentId}
+            environmentId={environmentId}
+            environmentLabel={environmentLabel}
+            sources={settings.usageLimitSources}
+            readOnly={readOnly}
+          />
 
-      {/* The server drops text generators under a provider allow-list. */}
-      {managedPolicy?.limits?.providers?.allowedDrivers === undefined ? (
-        <TextGeneratorsSettings
-          key={`text-generators:${environmentId}`}
-          environmentId={environmentId}
-          environmentLabel={environmentLabel}
-          providers={serverProviders}
-          readOnly={readOnly}
-        />
-      ) : null}
+          {/* The server drops text generators under a provider allow-list. */}
+          {managedPolicy?.limits?.providers?.allowedDrivers === undefined ? (
+            <TextGeneratorsSettings
+              key={`text-generators:${environmentId}`}
+              environmentId={environmentId}
+              environmentLabel={environmentLabel}
+              providers={serverProviders}
+              readOnly={readOnly}
+            />
+          ) : null}
 
-      <SettingsSection title="Advanced">
-        <SettingsRow
-          id={searchableSetting("provider-health-check-interval").id}
-          title={
-            <span className="inline-flex items-center gap-1.5">
-              {searchableSetting("provider-health-check-interval").title}
-              <PolicyTooltip>
-                This interval is configured here, then the shared Background activity policy decides
-                whether provider probes may run when the timer fires. Custom intervals appear as
-                Advanced in Maintenance settings.
-              </PolicyTooltip>
-            </span>
-          }
-          description="Refresh provider status, versions, and models in the background. Set to 0 to disable."
-          resetAction={
-            providerHealthRefreshIntervalSeconds !== defaultProviderHealthRefreshIntervalSeconds ? (
-              <span
-                inert={!canWriteSettings}
-                className={!canWriteSettings ? "opacity-50" : undefined}
-              >
-                <SettingResetButton
-                  label="provider health check interval"
-                  onClick={() =>
-                    updateSettings(
-                      backgroundActivityOverrideSettings(
-                        settings.backgroundActivity,
-                        resolvedBackgroundActivity,
-                        { providerHealthRefreshInterval: undefined },
-                      ),
-                    )
-                  }
-                />
-              </span>
-            ) : null
-          }
-          control={
-            <div
-              inert={!canWriteSettings}
-              aria-disabled={!canWriteSettings || undefined}
-              className={cn(
-                "flex shrink-0 items-center gap-2",
-                !canWriteSettings && "opacity-50 select-none",
-              )}
-            >
-              <IntervalSecondsField
-                label="provider health check interval"
-                value={providerHealthRefreshIntervalSeconds}
-                min={0}
-                step={PROVIDER_HEALTH_INTERVAL_STEP_SECONDS}
-                onCommit={(seconds, options) =>
-                  updateSettings(
-                    backgroundActivityOverrideSettings(
-                      settings.backgroundActivity,
-                      resolvedBackgroundActivity,
-                      { providerHealthRefreshInterval: Duration.seconds(seconds) },
-                    ),
-                    options,
-                  )
-                }
-              />
-              <span className="text-xs text-muted-foreground">seconds</span>
-            </div>
-          }
-        />
-        <CompactIdleThreadsRow />
-      </SettingsSection>
+          <SettingsSection title="Background checks">
+            <SettingsRow
+              {...searchableSetting("provider-health-check-interval")}
+              description="How often provider status, versions and models refresh in the background. 0 turns it off. Background activity in Maintenance decides whether a check may run."
+              resetAction={
+                providerHealthRefreshIntervalSeconds !==
+                defaultProviderHealthRefreshIntervalSeconds ? (
+                  <span
+                    inert={!canWriteSettings}
+                    className={!canWriteSettings ? "opacity-50" : undefined}
+                  >
+                    <SettingResetButton
+                      label="provider health check interval"
+                      onClick={() =>
+                        updateSettings(
+                          backgroundActivityOverrideSettings(
+                            settings.backgroundActivity,
+                            resolvedBackgroundActivity,
+                            { providerHealthRefreshInterval: undefined },
+                          ),
+                        )
+                      }
+                    />
+                  </span>
+                ) : null
+              }
+              control={
+                <div
+                  inert={!canWriteSettings}
+                  aria-disabled={!canWriteSettings || undefined}
+                  className={cn(
+                    "flex shrink-0 items-center gap-2",
+                    !canWriteSettings && "opacity-50 select-none",
+                  )}
+                >
+                  <IntervalSecondsField
+                    label="provider health check interval"
+                    value={providerHealthRefreshIntervalSeconds}
+                    min={0}
+                    step={PROVIDER_HEALTH_INTERVAL_STEP_SECONDS}
+                    onCommit={(seconds, options) =>
+                      updateSettings(
+                        backgroundActivityOverrideSettings(
+                          settings.backgroundActivity,
+                          resolvedBackgroundActivity,
+                          { providerHealthRefreshInterval: Duration.seconds(seconds) },
+                        ),
+                        options,
+                      )
+                    }
+                  />
+                  <span className="text-xs text-muted-foreground">seconds</span>
+                </div>
+              }
+            />
+            <CompactIdleThreadsRow />
+          </SettingsSection>
+        </ProvidersAdvanced>
+      )}
 
       {isAddInstanceDialogOpen && !readOnly ? (
         <AddProviderInstanceDialog

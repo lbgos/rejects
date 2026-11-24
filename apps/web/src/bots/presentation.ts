@@ -11,8 +11,10 @@ import {
   type OrchestrationV2RunStatus,
   type OrchestrationV2ThreadShell,
   type OrchestrationV2TurnItemStatus,
+  type ProviderInstanceId,
   type ScheduledTaskRunStatus,
   type ScheduledTaskSchedule,
+  type ServerProvider,
   ShowUiInput,
 } from "@t3tools/contracts";
 import { foldSearchQuery, rankSearchItems, scoreThreadSearch } from "@t3tools/shared/paletteSearch";
@@ -71,6 +73,15 @@ export function botActivityAt(
  */
 export const botNoticeKey = (bot: Pick<BotSummary, "notifiedAt" | "previewAt">) =>
   bot.previewAt ?? bot.notifiedAt ?? "";
+
+/** A bot's provider is in error, such as no model set up: its turns cannot run, which is not a failed turn. */
+export const botProviderDown = (
+  providers: ReadonlyArray<Pick<ServerProvider, "instanceId" | "status">> | null | undefined,
+  instanceId: ProviderInstanceId | undefined,
+) => providers?.find((provider) => provider.instanceId === instanceId)?.status === "error";
+
+/** The server's notice for a failed run (`BotNotifications.failed`); the list shows the state instead. */
+export const isFailureNotice = (text: string) => text.startsWith("Run failed");
 
 export function sortBotRows<
   T extends { readonly bot: Pick<BotSummary, "main">; readonly at: number },
@@ -166,6 +177,13 @@ export function botScheduleLabel(schedule: ScheduledTaskSchedule): string {
             )
             .join(", ");
   return t("{days} at {time}", { days, time: schedule.timeOfDay });
+}
+
+/** A one-off, or a rule for a single weekday: its label is its next run, so a row need not repeat it. */
+export function scheduleNamesItsNextRun(schedule: ScheduledTaskSchedule): boolean {
+  if (schedule.type === "once") return true;
+  if (schedule.type === "interval" || schedule.type === "webhook") return false;
+  return (schedule.weekdays ?? []).length === 1;
 }
 
 type ShownStatus =
@@ -265,14 +283,34 @@ const entryRunId = (entry: TimelineEntry) => {
 const freshSpan = () => ({
   reacted: false,
   answered: false,
+  stopped: false,
   work: [] as string[],
+  thoughts: [] as string[],
   emoji: undefined as { id: string } | undefined,
 });
+
+const planRunOf = (entry: TimelineEntry) => {
+  const item = entry.kind === "work" ? entry.entry.projectedItem?.item : undefined;
+  return item?.type === "todo_list" ? (item.runId ?? "") : null;
+};
+
+const isFailedTurn = (entry: TimelineEntry) => {
+  const item = entry.kind === "work" ? entry.entry.projectedItem?.item : undefined;
+  return item?.type === "error" && item.status === "failed";
+};
 
 export function visibleBotEntries(
   entries: ReadonlyArray<TimelineEntry>,
   historyFrom: string | undefined,
+  /** The bot's model is down, which the notice above the composer says. */
+  providerDown = false,
 ): ReadonlyArray<TimelineEntry> {
+  // A turn's plan is one row: its newest update says where the plan stands.
+  const latestPlan = new Map<string, string>();
+  for (const entry of entries) {
+    const run = planRunOf(entry);
+    if (run !== null) latestPlan.set(run, entry.id);
+  }
   const upkeepRuns = new Set(
     entries.flatMap((entry) =>
       entry.kind === "message" && entry.message.runId && isBotUpkeepMessage(entry.message.id)
@@ -286,6 +324,8 @@ export function visibleBotEntries(
   const close = () => {
     if (span.emoji) echoes.add(span.emoji.id);
     if ((span.reacted || span.emoji) && !span.answered) for (const id of span.work) quiet.add(id);
+    // A stopped turn is its "Reply stopped" line; the thinking it never finished adds no row.
+    if (span.stopped) for (const id of span.thoughts) quiet.add(id);
   };
   for (const entry of entries) {
     if (entry.kind === "message" && entry.message.role === "user") {
@@ -304,9 +344,12 @@ export function visibleBotEntries(
       if (!emoji) span.answered = true;
     }
     if (entry.kind === "work" && entry.entry.tone !== "error") span.work.push(entry.id);
+    if (entry.kind === "work" && entry.entry.itemType === "reasoning") span.thoughts.push(entry.id);
+    if (entry.kind === "event" && entry.projectedItem.item.type === "run_interrupt_result")
+      span.stopped = true;
   }
   close();
-  return entries.filter((entry) => {
+  const shown = entries.filter((entry) => {
     const runId = entryRunId(entry);
     return (
       !(runId !== null && upkeepRuns.has(runId)) &&
@@ -315,10 +358,18 @@ export function visibleBotEntries(
       (historyFrom === undefined || entry.createdAt >= historyFrom) &&
       !(entry.kind === "event" && entry.projectedItem.item.type === "handoff") &&
       !isCallOf(entry, "react") &&
+      // The plan row stands for the provider's own plan tool call.
+      !isNativeCall(entry, "TodoWrite") &&
+      !(planRunOf(entry) !== null && latestPlan.get(planRunOf(entry)!) !== entry.id) &&
       !echoes.has(entry.id) &&
       !quiet.has(entry.id)
     );
   });
+  // A chat with no message yet whose own first turn failed for want of a model: the notice states
+  // the cause once, so the chat stays empty instead of adding a failure row with nothing above it.
+  return providerDown && !shown.some((entry) => entry.kind === "message")
+    ? shown.filter((entry) => !isFailedTurn(entry))
+    : shown;
 }
 
 export function noteMeta(note: MemoryNote, now = Date.now()): string {
@@ -328,16 +379,18 @@ export function noteMeta(note: MemoryNote, now = Date.now()): string {
       : [
           `${note.status === "stale" ? t("Stale") : t("Contradicted")}${note.reason ? `: ${note.reason}` : ""}`,
         ];
-  const by = note.source.by === "user" ? t("You") : note.source.by;
   const quote = note.source.quote ? [`“${note.source.quote}”`] : [];
   const until = note.until ? [t("until {date}", { date: note.until })] : [];
   const removed = note.retiredAt
     ? [t("removed {time}", { time: formatListTime(Date.parse(note.retiredAt), now) })]
     : [];
+  const told = [...removed, ...status, ...until, ...quote];
+  // A note you wrote yourself and nothing has touched says only its text.
+  if (note.source.by === "user" && told.length === 0) return "";
   return [
     ...removed,
     ...status,
-    by,
+    note.source.by === "user" ? t("You") : note.source.by,
     formatListTime(Date.parse(note.source.at), now),
     ...until,
     ...quote,
@@ -353,6 +406,12 @@ const isCallOf = (entry: TimelineEntry, name: string) => {
   return (
     item?.type === "dynamic_tool" && !!item.toolName && resolveT3McpToolName(item.toolName) === name
   );
+};
+
+/** A provider's built-in tool, named as the provider names it. */
+const isNativeCall = (entry: TimelineEntry, name: string) => {
+  const item = entry.kind === "work" ? entry.entry.structuredPayload : undefined;
+  return item?.type === "dynamic_tool" && item.toolName === name;
 };
 
 const isCompletedCall = (entry: TimelineEntry, name: string) => {
@@ -479,6 +538,34 @@ export function botAwaitsAnswer(rows: ReadonlyArray<BotTypingRow>): boolean {
   return !(last?.kind === "message" && last.message.role === "assistant");
 }
 
+/**
+ * The failed last turn that a tap can send again: its error row and the text that started it.
+ * Only a plain message the user wrote qualifies; attachments and the server's own messages do not
+ * survive a resend.
+ */
+export function botRetryTarget(
+  entries: ReadonlyArray<TimelineEntry>,
+): { readonly entryId: string; readonly text: string } | null {
+  const start = entries.findLastIndex(
+    (entry) => entry.kind === "message" && entry.message.role === "user",
+  );
+  const asked = entries[start];
+  if (asked?.kind !== "message") return null;
+  const { message } = asked;
+  if (message.createdBy !== undefined && message.createdBy !== "user") return null;
+  if ((message.attachments?.length ?? 0) > 0 || !message.text.trim()) return null;
+  const failure = entries.slice(start + 1).findLast(isFailedTurn);
+  return failure ? { entryId: failure.id, text: message.text } : null;
+}
+
+/** The dots stand for "nothing to read yet": once the turn has answer text, the status line is the only sign of work. */
+export function botTurnHasText(rows: ReadonlyArray<BotTypingRow>): boolean {
+  const start = rows.findLastIndex((row) => row.kind === "message" && row.message.role === "user");
+  return rows
+    .slice(start + 1)
+    .some((row) => row.kind === "message" && row.message.role === "assistant");
+}
+
 export interface StatusSwapState {
   readonly text: string;
   /** The line sliding out, if the line has changed since mount. */
@@ -498,21 +585,62 @@ export function swapStatus(state: StatusSwapState, text: string): StatusSwapStat
 
 const ACTIVITY_ARG_MAX = 48;
 
+/** What a tool call reads as while the turn runs: plain words, present tense. */
+const TOOL_DOING: Readonly<Record<string, UiText>> = {
+  web_search: "Searching the web",
+  web_read: "Reading a page",
+  web_browse: "Reading a page",
+  memory_search: "Checking its notes",
+  update_memory: "Saving a note",
+  schedule_task: "Setting a schedule",
+  list_scheduled_tasks: "Checking its schedule",
+  delete_scheduled_task: "Changing its schedule",
+  notify_user: "Sending a notification",
+  send_telegram: "Sending a notification",
+  mail_search: "Searching mail",
+  mail_read: "Reading mail",
+  music_search: "Searching for music",
+  music_download: "Downloading music",
+  music_status: "Checking a download",
+  html_render: "Drawing a chart",
+  html_preview: "Drawing a chart",
+  computer_browser: "Using its browser",
+  computer_desktop: "Using its computer",
+  computer_shell: "Running a command",
+  command_execution: "Running a command",
+  file_search: "Searching files",
+  file_change: "Changing files",
+};
+/** Tools whose first text argument says what is being looked for. */
+const TOOL_NAMES_ITS_TARGET = new Set([
+  "web_search",
+  "web_read",
+  "web_browse",
+  "mail_search",
+  "music_search",
+]);
+
 export function botToolActivity(entry: Pick<WorkLogEntry, "label" | "structuredPayload">): string {
   const item = entry.structuredPayload;
-  if (item?.type !== "dynamic_tool" || !item.toolName) return entry.label;
+  if (item?.type !== "dynamic_tool" || !item.toolName) {
+    const doing = item ? TOOL_DOING[item.type] : undefined;
+    return doing ? t(doing) : entry.label;
+  }
   const name = resolveT3McpToolName(item.toolName) ?? item.toolName;
+  const doing = TOOL_DOING[name];
+  // A tool with no plain name stays unnamed: its identifier is not for the reader.
+  if (!doing) return t("Working");
   const input: unknown = item.input;
   const first =
-    typeof input === "object" && input !== null
+    TOOL_NAMES_ITS_TARGET.has(name) && typeof input === "object" && input !== null
       ? Object.values(input).find((value) => typeof value === "string")
       : undefined;
   const arg = (first ?? "")
     .replace(/^https?:\/\//, "")
     .replace(/\s+/g, " ")
     .trim();
-  if (!arg) return name;
-  return `${name} ${arg.length > ACTIVITY_ARG_MAX ? `${arg.slice(0, ACTIVITY_ARG_MAX - 1)}…` : arg}`;
+  if (!arg) return t(doing);
+  return `${t(doing)}: ${arg.length > ACTIVITY_ARG_MAX ? `${arg.slice(0, ACTIVITY_ARG_MAX - 1)}…` : arg}`;
 }
 
 const LINK_PREVIEWS = 2;
@@ -535,4 +663,33 @@ export function usageSourceLabel(source: string): string {
       : source === BOT_USAGE_OTHER
         ? t("Other")
         : source;
+}
+
+/**
+ * Consecutive nightly checks that changed nothing and say the same, such as a week of
+ * "No changes", grouped so the activity list shows each run of them as one row. A night that
+ * changed notes keeps its own row.
+ */
+/** The first and last moment of a group of runs, oldest first, whatever order the runs came in. */
+export function runsRange(runs: ReadonlyArray<{ readonly at: string }>): readonly [number, number] {
+  const times = runs.map((run) => Date.parse(run.at));
+  return [Math.min(...times), Math.max(...times)];
+}
+
+export function groupRepeatedRuns<
+  Run extends { readonly result: string; readonly outcome: string },
+>(runs: ReadonlyArray<Run>): ReadonlyArray<readonly [Run, ...Run[]]> {
+  const groups: Array<[Run, ...Run[]]> = [];
+  for (const run of runs) {
+    const group = groups.at(-1);
+    if (
+      group &&
+      run.outcome !== "changed" &&
+      group[0].result === run.result &&
+      group[0].outcome === run.outcome
+    )
+      group.push(run);
+    else groups.push([run]);
+  }
+  return groups;
 }

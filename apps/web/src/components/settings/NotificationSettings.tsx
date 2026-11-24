@@ -25,7 +25,8 @@ export function NotificationSettings() {
       <SettingsRow
         {...searchableSetting("thread-notifications")}
         description={
-          permissionMessage ?? "Alerts on this device when a thread finishes, fails or needs you."
+          permissionMessage ??
+          "On this device while the app is open, when a reply finishes, fails or needs you."
         }
         control={
           <Select
@@ -67,7 +68,7 @@ export function NotificationSettings() {
               updateSettings({ notificationMode: value });
             }}
           >
-            <SelectTrigger size="sm" className="w-full sm:w-56" aria-label="Thread notifications">
+            <SelectTrigger size="sm" className="w-full sm:w-56" aria-label="Alerts and sound">
               <SelectValue>{NOTIFICATION_MODE_LABELS[mode]}</SelectValue>
             </SelectTrigger>
             <SelectPopup align="end" alignItemWithTrigger={false}>

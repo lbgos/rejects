@@ -90,7 +90,7 @@ export function BotTurnOffers({
         <button
           type="button"
           data-bot-hand-off
-          className="flex w-full items-center gap-3 rounded-lg border p-3 text-start hover:bg-accent max-md:max-w-[88%] max-md:rounded-3xl max-md:border-0 max-md:bg-bot-bubble max-md:px-3.5 max-md:hover:bg-bot-fill md:max-w-md"
+          className="flex w-full items-center gap-3 rounded-lg border p-3 text-start hover:bg-accent max-md:max-w-[88%] max-md:rounded-2xl max-md:border-0 max-md:bg-bot-bubble max-md:px-3.5 max-md:hover:bg-bot-fill md:max-w-md"
           onClick={() => {
             useComposerDraftStore
               .getState()

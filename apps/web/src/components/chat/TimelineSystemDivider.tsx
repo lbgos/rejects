@@ -28,6 +28,7 @@ export function TimelineSystemDivider(props: {
       </span>
       {props.detail ? (
         <span
+          data-divider-detail
           className={cn(
             "min-w-0 opacity-70",
             props.wrapDetail ? "ml-1.5 wrap-anywhere" : "inline-flex items-center",

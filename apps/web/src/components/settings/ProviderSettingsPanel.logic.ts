@@ -72,6 +72,19 @@ export type ProviderEnvironmentAccess =
 
 export type ProviderOperateAccess = "granted" | "denied" | "pending";
 
+/**
+ * A phone shows the provider list or one provider. A link that names a provider opens on that
+ * provider, and so does a press on a row; a provider that is not there leaves the list.
+ */
+export function resolvePhoneProviderPage(input: {
+  readonly phone: boolean;
+  readonly opened: boolean;
+  readonly hasProvider: boolean;
+}): "list" | "provider" | null {
+  if (!input.phone) return null;
+  return input.opened && input.hasProvider ? "provider" : "list";
+}
+
 export function resolveRemoteOperateAccess(input: {
   readonly session: SessionGrantInput | null;
   readonly isPending: boolean;

@@ -7,7 +7,9 @@ import {
   botAwaitsAnswer,
   botReactions,
   botStatusLine,
+  botRetryTarget,
   botToolActivity,
+  botTurnHasText,
 } from "../../bots/presentation";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -21,6 +23,8 @@ import { TimelinePendingApprovalRow } from "./TimelinePendingApprovalRow";
 import type { WorktreeSetupSnapshot } from "@t3tools/contracts";
 import { deriveTimelineMinimapItems } from "./timelineMinimapItems";
 import {
+  botRedirectKind,
+  isBotRedirectMessage,
   type AssistantCitation,
   type EnvironmentId,
   type MessageId,
@@ -72,7 +76,9 @@ import {
   Minimize2Icon,
   ChevronDownIcon,
   ChevronRightIcon,
+  CircleSlashIcon,
 } from "lucide-react";
+import { t } from "../../i18n";
 import { Skeleton } from "../ui/skeleton";
 import { ExpandedImagePreview } from "./ExpandedImagePreview";
 import {
@@ -441,7 +447,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   const botChrome = useContext(BotChromeContext);
   const botEmptyState = botChrome?.emptyState;
   const timelineEntries = botChrome
-    ? visibleBotEntries(allTimelineEntries, botChrome.historyFrom)
+    ? visibleBotEntries(allTimelineEntries, botChrome.historyFrom, botChrome.providerDown)
     : allTimelineEntries;
   const historyFrom = botChrome?.historyFrom;
   // Turns before a bot chat's clear stay hidden, so once they load there is nothing earlier to show.
@@ -798,6 +804,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     ? [...botReactions(allTimelineEntries)].map(([id, emoji]) => `${id}\t${emoji}`).join("\n")
     : "";
   const botReacted = labelsFromKey(botReactionKey);
+  const botRetry = botChrome && !isWorking ? botRetryTarget(timelineEntries) : null;
   const botLiveKey = botLive?.key ?? null;
   const botLiveWork = botLiveKey === null ? null : new Set(botLiveKey.split("\n"));
   const matchedApprovalRequestIds = new Set<string>();
@@ -1202,6 +1209,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
     botTimeLabels,
     botRunContinues,
     botLiveWork,
+    botRetryEntryId: botRetry?.entryId ?? null,
+    botRetryText: botRetry?.text ?? null,
   };
   const compactionAwaitingRow =
     isCompacting &&
@@ -1274,6 +1283,17 @@ const ConversationTimeline = memo(function ConversationTimeline({
   const listHeader = (
     <>
       {parentThreadLink === null ? listHeaderLeadingContent : null}
+      {/* A cleared bot chat says so where it now starts, so the earlier messages read as cleared. */}
+      {botChrome && historyFrom !== undefined ? (
+        <div data-bot-history-cleared className="messages-timeline-row-frame">
+          <div className="chat-content-lane">
+            <TimelineSystemDivider
+              label={t("Chat cleared")}
+              detail={t("Earlier messages are not shown")}
+            />
+          </div>
+        </div>
+      ) : null}
       {historyControls ? <TimelineHistoryControl {...historyControls} /> : null}
       {parentThreadLink !== null ? listHeaderLeadingContent : null}
     </>
@@ -1450,6 +1470,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
               startedAt={botWorkingRow.createdAt ?? null}
               status={botStatusLine(timelineEntries)}
               activity={botLive?.activity ?? null}
+              dots={!botTurnHasText(rows)}
             />
           </TimelineRowCtx>
         </div>
@@ -1736,7 +1757,11 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       data-message-id={
         row.kind === "message" || row.kind === "assistant-meta" ? row.message.id : undefined
       }
-      data-message-role={row.kind === "message" ? row.message.role : undefined}
+      data-message-role={
+        row.kind === "message" && !isBotRedirectMessage(row.message.id)
+          ? row.message.role
+          : undefined
+      }
       data-run-continues={botRunContinues?.has(row.id) ? "true" : undefined}
       data-live-work={botLiveWork?.has(row.id) ? "true" : undefined}
     >
@@ -1779,7 +1804,21 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       {row.kind === "turn-fold" ? <TurnFoldTimelineRow key={row.id} row={row} /> : null}
       {row.kind === "attempt-fold" ? <AttemptFoldTimelineRow row={row} /> : null}
       {row.kind === "context-compaction" ? <ContextCompactionTimelineRow row={row} /> : null}
-      {row.kind === "message" && row.message.role === "user" ? <UserMessageRow row={row} /> : null}
+      {row.kind === "message" && row.message.role === "user" ? (
+        isBotRedirectMessage(row.message.id) ? (
+          <TimelineSystemDivider
+            label={
+              botRedirectKind(row.message.text) === "question"
+                ? t("Question skipped")
+                : t("Approval declined")
+            }
+            detail={t("The bot carries on without it")}
+            icon={CircleSlashIcon}
+          />
+        ) : (
+          <UserMessageRow row={row} />
+        )
+      ) : null}
       {row.kind === "message" && row.message.role === "assistant" ? (
         <AssistantTimelineRow row={row} />
       ) : null}
@@ -2006,11 +2045,13 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
           className="flex cursor-pointer select-none items-center gap-1 rounded-md px-1 text-sm leading-relaxed text-muted-foreground tabular-nums transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
         >
           <span>
-            {row.label}
-            {row.toolCount > 0
-              ? ` · ${row.toolCount} ${row.toolCount === 1 ? "tool" : "tools"}`
-              : ""}
-            {error ? ` · ${error}` : ""}
+            {[
+              row.label,
+              row.toolCount > 0 ? `${row.toolCount} ${row.toolCount === 1 ? "tool" : "tools"}` : "",
+              error,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
           </span>
           {row.expanded ? (
             <ChevronDownIcon className="size-3.5" />
