@@ -36,8 +36,9 @@ import {
 import * as Arr from "effect/Array";
 import * as Duration from "effect/Duration";
 import * as Result from "effect/Result";
-import { PlusIcon } from "lucide-react";
+import { ChevronRightIcon, PlusIcon } from "lucide-react";
 import { use, useRef, useState, type ReactNode } from "react";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 
 import { isDesktopLocalConnectionTarget } from "../../connection/desktopLocal";
 import {
@@ -112,7 +113,6 @@ import {
   PROVIDER_HEALTH_INTERVAL_STEP_SECONDS,
 } from "./SettingsPanels.logic";
 import {
-  PolicyTooltip,
   SettingResetButton,
   SettingsPageContainer,
   SettingsPhoneBarContext,
@@ -176,6 +176,40 @@ function configuredBinaryPath(config: unknown): string {
 }
 
 // Subscribe only in the label because every status push restamps all providers' checkedAt.
+/**
+ * What few people change sits folded under the provider list: usage hubs, text generators and
+ * background checks. A search jump to a row inside opens the fold before the row mounts.
+ */
+function ProvidersAdvanced({
+  targetIds,
+  children,
+}: {
+  readonly targetIds: ReadonlyArray<string>;
+  readonly children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const searchTargetId = useSettingsSearchTargetId();
+  const [seenSearchTargetId, setSeenSearchTargetId] = useState<string | null>(null);
+  if (seenSearchTargetId !== searchTargetId) {
+    setSeenSearchTargetId(searchTargetId);
+    if (searchTargetId !== null && targetIds.includes(searchTargetId)) setOpen(true);
+  }
+  return (
+    <Collapsible data-providers-advanced open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger className="group flex min-h-9 items-center gap-1.5 rounded-md px-3 text-left text-bot-footnote text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-4">
+        <ChevronRightIcon
+          aria-hidden
+          className="size-3.5 shrink-0 transition-transform duration-150 group-data-panel-open:rotate-90 motion-reduce:transition-none"
+        />
+        Other provider settings
+      </CollapsibleTrigger>
+      <CollapsiblePanel>
+        <div className="flex flex-col gap-8 pt-4 max-md:gap-6">{children}</div>
+      </CollapsiblePanel>
+    </Collapsible>
+  );
+}
+
 function ProviderLastChecked({ environmentId }: { environmentId: EnvironmentId }) {
   const serverProviders =
     useAtomValue(serverEnvironment.providersValueAtom(environmentId)) ?? EMPTY_SERVER_PROVIDERS;
@@ -1127,7 +1161,14 @@ export function EnvironmentProviderSettings({
       </SettingsSection>
 
       {phonePage === "provider" ? null : (
-        <>
+        <ProvidersAdvanced
+          targetIds={[
+            searchableSetting("usage-providers").id,
+            searchableSetting("text-generators").id,
+            searchableSetting("provider-health-check-interval").id,
+            searchableSetting("compact-idle-threads").id,
+          ]}
+        >
           <UsageProviderSettings
             key={environmentId}
             environmentId={environmentId}
@@ -1147,20 +1188,10 @@ export function EnvironmentProviderSettings({
             />
           ) : null}
 
-          <SettingsSection title="Advanced">
+          <SettingsSection title="Background checks">
             <SettingsRow
-              id={searchableSetting("provider-health-check-interval").id}
-              title={
-                <span className="inline-flex items-center gap-1.5">
-                  {searchableSetting("provider-health-check-interval").title}
-                  <PolicyTooltip>
-                    This interval is configured here, then the shared Background activity policy
-                    decides whether provider probes may run when the timer fires. Custom intervals
-                    appear as Advanced in Maintenance settings.
-                  </PolicyTooltip>
-                </span>
-              }
-              description="Refresh provider status, versions, and models in the background. Set to 0 to disable."
+              {...searchableSetting("provider-health-check-interval")}
+              description="How often provider status, versions and models refresh in the background. 0 turns it off. Background activity in Maintenance decides whether a check may run."
               resetAction={
                 providerHealthRefreshIntervalSeconds !==
                 defaultProviderHealthRefreshIntervalSeconds ? (
@@ -1214,7 +1245,7 @@ export function EnvironmentProviderSettings({
             />
             <CompactIdleThreadsRow />
           </SettingsSection>
-        </>
+        </ProvidersAdvanced>
       )}
 
       {isAddInstanceDialogOpen && !readOnly ? (

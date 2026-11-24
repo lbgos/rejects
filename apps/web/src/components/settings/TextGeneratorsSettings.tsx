@@ -105,7 +105,7 @@ export function TextGeneratorsSettings({
         {generators.length === 0 ? (
           <SettingsRow
             title="No text generators yet"
-            description="Add a model API to write thread titles, commit messages, and other short text without starting a coding agent."
+            description="A model API that writes chat titles and other short text without starting a provider session."
           />
         ) : null}
         {generators.map(([id, config]) => {
@@ -326,7 +326,7 @@ function TextGeneratorWizard({
       <WizardPopup>
         <WizardHeader
           title={existing ? `Edit ${textGeneratorDisplayName(existing)}` : "Add a text generator"}
-          description="Writes thread titles, commit messages, and other short text without starting a coding agent. Your API key is stored on this environment."
+          description="Writes chat titles and other short text without starting a provider session. Your API key is stored on this server."
         >
           <WizardSteps
             steps={STEPS}

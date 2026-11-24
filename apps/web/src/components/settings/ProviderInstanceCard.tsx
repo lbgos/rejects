@@ -1144,7 +1144,8 @@ export function ProviderInstanceCard({
         data-provider-row
         className={cn(
           "group relative flex min-h-18 items-center gap-3 px-3 py-3 transition-colors sm:px-4",
-          selected ? "bg-foreground/[0.06]" : "hover:bg-muted/25",
+          // The list is its own page under 48rem, where no row is the open one.
+          selected ? "@min-[48rem]/providers:bg-foreground/[0.06]" : "hover:bg-muted/25",
         )}
       >
         <div
@@ -1411,8 +1412,8 @@ export function ProviderInstanceCard({
         <SettingsSection title="Models">
           <div className="px-3 py-3 sm:px-4">
             <p className="mb-3 text-xs text-muted-foreground">
-              Model preferences and custom models are saved on the selected environment and shared
-              across connected devices.
+              Model preferences and custom models are saved on this server and shared across
+              connected devices.
             </p>
             <ProviderModelsSection
               canManageCustomModels={!readOnly}

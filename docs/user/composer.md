@@ -159,7 +159,7 @@ into a normal draft.
 
 ## Suggested next prompt
 
-Turn on **Suggest next prompt** in **Settings → Chat**. After a Claude or Codex turn completes, the
+Turn on **Suggest next message** in **Settings → Chat**. After a Claude or Codex turn completes, the
 empty composer shows a predicted next message. Press `Tab` to fill it in, then edit or send it, or
 press `Escape` to dismiss it. Each suggestion is one extra request that reuses the turn's prompt
 cache, so it uses a little of your plan's usage. Claude skips suggestions on the first turn of a

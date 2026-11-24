@@ -146,7 +146,7 @@ function SettingsContentLayout() {
     <AppRouteModal label="Settings">
       <div className="relative flex min-h-0 flex-1">
         {phone ? null : <SettingsSidebarNav pathname={location.pathname} />}
-        <div {...contentArea} className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div {...contentArea} data-settings-pane className="flex min-h-0 min-w-0 flex-1 flex-col">
           <header
             data-settings-page-header
             className="relative flex h-12 shrink-0 items-center gap-3 border-b ps-5 pe-2 max-md:mt-1 max-md:h-11 max-md:gap-1 max-md:border-b-0 max-md:ps-0 max-md:pe-4"

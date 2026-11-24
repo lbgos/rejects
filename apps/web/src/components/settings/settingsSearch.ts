@@ -168,7 +168,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "thread-details-items",
-    title: "Thread details",
+    title: "Chat details card",
     to: "/settings/appearance",
     searchTerms: [
       "customize show hide panel card environment editor scripts branch pull request git changes servers automations lineage usage limits 5 hour weekly quota tokens context window",
@@ -256,14 +256,14 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "prompt-suggestions-beta",
-    title: "Suggest next prompt",
+    title: "Suggest next message",
     to: "/settings/chat",
     scope: "environment-defaults",
     searchTerms: ["tab autocomplete predict next message claude codex ghost text"],
   },
   {
     id: "agent-browser-access",
-    title: "Agent browser access",
+    title: "Browser access",
     to: "/settings/chat",
     scope: "environment-defaults",
     searchTerms: ["allow disable enable open drive preview tools sessions bots"],
@@ -403,7 +403,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "compact-idle-threads",
-    title: "Compact idle threads",
+    title: "Compact idle chats",
     to: "/settings/providers",
     scope: "environment-defaults",
     searchTerms: ["claude context compaction idle cache tokens usage summary resume"],
@@ -442,7 +442,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "thread-notifications",
-    title: "Thread notifications",
+    title: "Alerts and sound",
     to: "/settings/general",
     searchTerms: ["notification sound alert completion input approval desktop"],
   },
@@ -454,7 +454,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "language",
-    title: msg("Language"),
+    title: "Settings language",
     to: "/settings/general",
     searchTerms: [
       "locale translation english deutsch german español spanish français french português portuguese brasil brazilian chinese 中文 japanese 日本語 korean 한국어 russian русский sprache idioma langue 语言 言語 언어 язык",
@@ -501,7 +501,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "continue-threads-after-server-update",
-    title: "Continue threads after restarts",
+    title: "Continue chats after restarts",
     to: "/settings/maintenance",
     scope: "project-defaults",
     searchTerms: [
@@ -510,7 +510,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "keep-awake-while-agents-work",
-    title: "Keep awake while agents work",
+    title: "Keep awake while bots work",
     to: "/settings/maintenance",
     scope: "environment-defaults",
     searchTerms: ["caffeinate sleep prevent stay awake power laptop lid inhibit"],
@@ -525,16 +525,10 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
-    id: "unpin-confirmation",
-    title: msg("Unpin confirmation"),
-    to: "/settings/general",
-    searchTerms: ["ask before thread pinned section"],
-  },
-  {
     id: "delete-confirmation",
     title: msg("Delete confirmation"),
     to: "/settings/general",
-    searchTerms: ["ask before thread chat history"],
+    searchTerms: ["ask before thread chat history remove"],
   },
   {
     id: "app-version",
@@ -577,7 +571,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "usage-providers",
-    title: "Usage providers",
+    title: "Usage hubs",
     to: "/settings/providers",
     searchTerms: [
       "usage sources CLIProxyAPI CLI proxy hub quota subscription limits management key add remove",

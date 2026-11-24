@@ -1,4 +1,4 @@
-import { Button } from "../components/ui/button";
+import { Switch } from "../components/ui/switch";
 import { SettingsRow } from "../components/settings/settingsLayout";
 import { t } from "../i18n";
 import { searchableSetting } from "../components/settings/settingsSearch";
@@ -13,17 +13,14 @@ export function PushSettings() {
       description={t(
         "Push to this device when a bot messages or answers you, even with the app closed.",
       )}
-      // What stands in the way stays in view; the plain description folds away on a phone.
       status={push.message ?? push.blocker ?? undefined}
       control={
-        <Button
-          size="sm"
-          variant="outline"
+        <Switch
+          checked={push.enabled === true}
           disabled={push.busy || !push.environmentId || push.enabled === null}
-          onClick={() => void (push.enabled ? push.disable() : push.enable())}
-        >
-          {push.busy ? t("Saving…") : push.enabled ? t("Turn off") : t("Turn on")}
-        </Button>
+          onCheckedChange={(enabled) => void (enabled ? push.enable() : push.disable())}
+          aria-label={t("Bot notifications")}
+        />
       }
     />
   );

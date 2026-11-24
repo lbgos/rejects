@@ -68,7 +68,7 @@ from it summarizes first. The cache lasts about an hour on a Claude
 subscription and 5 minutes with an API key, Bedrock, or Vertex. See [commands and skills](./composer.md#commands-and-skills) for using
 composer commands.
 
-**Compact idle threads** in **Settings > Providers > Advanced** controls this for threads
+**Compact idle chats** in **Settings > Providers > Other provider settings** controls this for threads
 over 200,000 tokens. Each Claude provider's settings can override it:
 
 - **When you return** shows the **Compact** chip described above. This is the default.

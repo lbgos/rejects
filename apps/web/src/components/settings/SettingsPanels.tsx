@@ -1,7 +1,7 @@
 import { NotificationSettings } from "./NotificationSettings";
 import { PRIVACY_POLICY_URL } from "../../legalLinks";
-import { CheckIcon, ChevronRightIcon } from "lucide-react";
-import { msg, T, useGT, useMessages } from "gt-react";
+import { CheckIcon } from "lucide-react";
+import { msg, useGT, useMessages } from "gt-react";
 import { Link } from "@tanstack/react-router";
 import { use } from "react";
 import { IDLE_COMPACTION_MODES, globalIdleCompaction } from "@t3tools/contracts";
@@ -30,8 +30,8 @@ import { scopedIdleCompaction } from "./scopedSettings";
 import { managedTelemetryOffMessage, usePrimaryManagedPolicy } from "../../state/managedPolicy";
 import { ensureLocalApi, readLocalApi } from "../../localApi";
 import { isMacPlatform } from "../../lib/utils";
-import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { Button } from "../ui/button";
+import { SettingsGroup } from "./SettingsGroup";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { BotSettingsSection } from "../../bots/BotSettings";
 import { Switch } from "../ui/switch";
@@ -44,6 +44,8 @@ import {
 } from "./SettingsPanels.logic";
 import {
   SettingResetButton,
+  SettingsActionRow,
+  SettingsLinkRow,
   SettingsPageContainer,
   SettingsPhoneBarContext,
   SettingsRow,
@@ -62,7 +64,7 @@ const RESPONSE_STREAMING_MODE_LABELS: Record<ResponseStreamingMode, string> = {
 };
 
 const RESPONSE_STREAMING_MODE_DESCRIPTIONS: Record<ResponseStreamingMode, string> = {
-  turn: "Text appears once the agent finishes its turn.",
+  turn: "Text appears once the bot finishes its reply.",
   paragraph: "Each paragraph or code block appears as soon as it is complete.",
 };
 
@@ -120,12 +122,12 @@ export function useSettingsRestore(onRestored?: () => void) {
     DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode
       ? ["Environment identification"]
       : []),
-    ...(settings.language !== DEFAULT_UNIFIED_SETTINGS.language ? ["Language"] : []),
+    ...(settings.language !== DEFAULT_UNIFIED_SETTINGS.language ? ["Settings language"] : []),
     ...(settings.timestampFormat !== DEFAULT_UNIFIED_SETTINGS.timestampFormat
       ? ["Time format"]
       : []),
     ...(settings.notificationMode !== DEFAULT_UNIFIED_SETTINGS.notificationMode
-      ? ["Thread notifications"]
+      ? ["Alerts and sound"]
       : []),
     ...(settings.inAppNotificationsEnabled !== DEFAULT_UNIFIED_SETTINGS.inAppNotificationsEnabled
       ? ["In-app notifications"]
@@ -201,11 +203,11 @@ export function useSettingsRestore(onRestored?: () => void) {
       : []),
     ...(settings.continueThreadsAfterServerUpdate !==
     DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate
-      ? ["Continue threads after restarts"]
+      ? ["Continue chats after restarts"]
       : []),
     ...(isBackgroundActivityDirty ? ["Background activity"] : []),
     ...(settings.keepAwakeWhileAgentsWork !== DEFAULT_UNIFIED_SETTINGS.keepAwakeWhileAgentsWork
-      ? ["Keep awake while agents work"]
+      ? ["Keep awake while bots work"]
       : []),
     ...(settings.defaultThreadEnvMode !== DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode
       ? ["New thread mode"]
@@ -235,7 +237,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       : []),
     ...getChangedBrowserSettingLabels(settings),
     ...(settings.enableAgentBrowserAccess !== DEFAULT_UNIFIED_SETTINGS.enableAgentBrowserAccess
-      ? ["Agent browser access"]
+      ? ["Browser access"]
       : []),
   ];
 
@@ -398,7 +400,7 @@ export function GeneralSettingsPanel() {
         <NotificationSettings />
         <SettingsRow
           {...setting("in-app-notifications")}
-          description="A toast in this app when another thread finishes, fails or needs you."
+          description="A banner in the app when another chat finishes, fails or needs you."
           control={
             <Switch
               checked={settings.inAppNotificationsEnabled}
@@ -411,33 +413,8 @@ export function GeneralSettingsPanel() {
 
       <SettingsSection id="confirmations" title={gt("Confirmations")}>
         <SettingsRow
-          {...setting("unpin-confirmation")}
-          description={<T>Ask before unpinning a thread from the pinned section.</T>}
-          resetAction={
-            settings.confirmThreadUnpin !== DEFAULT_UNIFIED_SETTINGS.confirmThreadUnpin ? (
-              <SettingResetButton
-                label="unpin confirmation"
-                onClick={() =>
-                  updateSettings({
-                    confirmThreadUnpin: DEFAULT_UNIFIED_SETTINGS.confirmThreadUnpin,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={settings.confirmThreadUnpin}
-              onCheckedChange={(checked) =>
-                updateSettings({ confirmThreadUnpin: Boolean(checked) })
-              }
-              aria-label={gt("Confirm thread unpinning")}
-            />
-          }
-        />
-        <SettingsRow
           {...setting("delete-confirmation")}
-          description={<T>Ask before deleting a thread and its chat history.</T>}
+          description="Ask before deleting a chat and its history."
           resetAction={
             settings.confirmThreadDelete !== DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete ? (
               <SettingResetButton
@@ -456,7 +433,7 @@ export function GeneralSettingsPanel() {
               onCheckedChange={(checked) =>
                 updateSettings({ confirmThreadDelete: Boolean(checked) })
               }
-              aria-label={gt("Confirm thread deletion")}
+              aria-label="Confirm chat deletion"
             />
           }
         />
@@ -465,7 +442,7 @@ export function GeneralSettingsPanel() {
       <SettingsSection id="display" title={gt("Display")}>
         <SettingsRow
           {...setting("language")}
-          description={<T>System default follows your browser or OS language.</T>}
+          description="Settings pages with their own translation. System default follows your browser."
           resetAction={
             settings.language !== DEFAULT_UNIFIED_SETTINGS.language ? (
               <SettingResetButton
@@ -509,7 +486,7 @@ export function GeneralSettingsPanel() {
         />
         <SettingsRow
           {...setting("time-format")}
-          description={<T>System default follows your browser or OS clock preference.</T>}
+          description="System default follows your browser or system clock."
           resetAction={
             settings.timestampFormat !== DEFAULT_UNIFIED_SETTINGS.timestampFormat ? (
               <SettingResetButton
@@ -564,15 +541,16 @@ function PhoneRestoreDefaults() {
   const { changedSettingLabels, restoreDefaults } = useSettingsRestore(bar?.onRestored);
   if (bar === null) return null;
   return (
-    <Button
-      variant="destructive-outline"
-      size="xl"
-      data-settings-restore
-      disabled={changedSettingLabels.length === 0}
-      onClick={() => void restoreDefaults()}
-    >
-      Restore defaults
-    </Button>
+    <SettingsGroup>
+      <SettingsActionRow
+        tone="destructive"
+        data-settings-restore
+        disabled={changedSettingLabels.length === 0}
+        onClick={() => void restoreDefaults()}
+      >
+        Restore defaults
+      </SettingsActionRow>
+    </SettingsGroup>
   );
 }
 
@@ -617,7 +595,7 @@ export function ChatSettingsPanel() {
         />
         <SettingsRow
           {...searchableSetting("send-shortcut")}
-          description="Choose when Enter sends a prompt or inserts a new line"
+          description="When Enter sends a message and when it starts a new line."
           resetAction={
             settings.sendShortcut !== DEFAULT_UNIFIED_SETTINGS.sendShortcut ? (
               <SettingResetButton
@@ -690,11 +668,16 @@ export function ChatSettingsPanel() {
         </AdvancedSettings>
       </SettingsSection>
 
+      {/* The microphone in a chat's composer: its page has no entry of its own in the list. */}
+      <SettingsSection title="Dictation" hideTitle>
+        <SettingsLinkRow title="Voice and dictation" link={<Link to="/settings/voice" />} />
+      </SettingsSection>
+
       <SettingsSection id="follow-ups" title="Follow-ups">
         <SettingsRow
           {...searchableSetting("follow-up-behavior")}
           description={
-            "Queue follow-ups while the agent runs or steer the current run. " +
+            "Queue a message sent while the bot is replying, or steer the reply with it. " +
             (settings.sendShortcut === "mod-enter-multiline"
               ? `Press ${modifierLabel} + Enter for single-line prompts or ${modifierLabel} + Shift + Enter for multiline prompts to do the opposite for one message.`
               : `Press ${modifierLabel}${settings.sendShortcut === "mod-enter" ? " + Shift" : ""} + Enter to do the opposite for one message.`)
@@ -764,7 +747,7 @@ function ToolCallVisibilityRow() {
   return (
     <SettingsRow
       {...searchableSetting("tool-call-visibility")}
-      description="Hide the commands, edits, and searches agents run. Hide successful keeps failures. Zen shows only final answers. Approvals, questions, and errors always show."
+      description="Hide the commands and searches bots run. Hide successful keeps failures. Zen shows only final answers. Questions and errors always show."
       resetAction={
         settings.toolCallVisibility !== DEFAULT_UNIFIED_SETTINGS.toolCallVisibility ? (
           <SettingResetButton
@@ -812,7 +795,7 @@ function ScreenReaderAnnouncementsRow() {
   return (
     <SettingsRow
       {...searchableSetting("screen-reader-announcements")}
-      description="What a screen reader hears from the open thread: a turn starting, needing you, and ending. Status and messages adds what the agent writes before its last message. Everything adds each step."
+      description="What a screen reader hears from the open chat: a reply starting, needing you and ending. Status and messages adds what the bot writes before its last message. Everything adds each step."
       resetAction={
         settings.screenReaderAnnouncements !==
         DEFAULT_UNIFIED_SETTINGS.screenReaderAnnouncements ? (
@@ -863,7 +846,7 @@ function ScreenReaderWindowTitleRow() {
   return (
     <SettingsRow
       {...searchableSetting("screen-reader-window-title")}
-      description="Start the window title with the thread's status, like Needs approval, and its name, so screen readers read them first when you switch apps. Taskbars, shared screens, and time trackers see it too."
+      description="Start the window title with the chat's status and name, so screen readers read them first when you switch apps. Taskbars and shared screens see it too."
       resetAction={
         settings.screenReaderWindowTitle !== DEFAULT_UNIFIED_SETTINGS.screenReaderWindowTitle ? (
           <SettingResetButton
@@ -903,7 +886,7 @@ function ScopedCompactIdleThreadsRow() {
       settingKeys={["idleCompaction", "compactIdleThreads"]}
       mixed={idleCompaction.mixed}
       {...searchableSetting("compact-idle-threads")}
-      description="When to compact an idle Claude thread over 200,000 tokens: after you return, just before its prompt cache expires, or never. Each Claude provider can override this."
+      description="When to compact an idle Claude chat over 200,000 tokens: after you return, just before its prompt cache expires, or never. Each Claude provider can override this."
       resetAction={
         globalIdleCompaction(settings) !== globalIdleCompaction(DEFAULT_UNIFIED_SETTINGS) ? (
           <SettingResetButton
@@ -922,7 +905,7 @@ function ScopedCompactIdleThreadsRow() {
             if (mode) updateSettings({ idleCompaction: mode.value });
           }}
         >
-          <SelectTrigger size="sm" className="w-full sm:w-56" aria-label="Compact idle threads">
+          <SelectTrigger size="sm" className="w-full sm:w-56" aria-label="Compact idle chats">
             <SelectValue>
               {(value: string | null) =>
                 value === null
@@ -958,7 +941,7 @@ function PromptSuggestionsRow() {
       serverScoped
       {...searchableSetting("prompt-suggestions-beta")}
       settingKeys={["promptSuggestionsEnabled"]}
-      description="Show a predicted next message in the empty composer after a Claude or Codex turn. Tab uses it. Each is an extra cached request on your plan. Needs Codex 0.165+. Claude chats update on restart."
+      description="Show a predicted next message in the empty composer after a Claude or Codex reply. Tab uses it. Each is an extra cached request on your plan."
       control={
         <ScopedSwitch
           settingKeys={["promptSuggestionsEnabled"]}
@@ -966,7 +949,7 @@ function PromptSuggestionsRow() {
           onCheckedChange={(checked) =>
             updateSettings({ promptSuggestionsEnabled: Boolean(checked) })
           }
-          aria-label="Suggest next prompt"
+          aria-label="Suggest next message"
         />
       }
     />
@@ -981,7 +964,7 @@ function AgentBrowserAccessRow() {
       serverScoped
       {...searchableSetting("agent-browser-access")}
       settingKeys={["enableAgentBrowserAccess"]}
-      description="Allow agents and bots to use the shared browser. Applies when a session next starts."
+      description="Let bots use the shared browser. Applies when a bot next starts a session."
       control={
         <ScopedSwitch
           settingKeys={["enableAgentBrowserAccess"]}
@@ -989,7 +972,7 @@ function AgentBrowserAccessRow() {
           onCheckedChange={(checked) =>
             updateSettings({ enableAgentBrowserAccess: Boolean(checked) })
           }
-          aria-label="Agent browser access"
+          aria-label="Browser access"
         />
       }
     />
@@ -1055,9 +1038,8 @@ function ResponseStreamingRow() {
 export function MaintenanceSettingsPanel() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
-  const { scope, environment, connectedEnvironments } = useSettingsScope();
+  const { environment, connectedEnvironments } = useSettingsScope();
   const environmentId = environment?.environmentId ?? null;
-  const isEnvironmentScope = scope.environmentIds.length === 1 && environmentId !== null;
   const hasServerTargets = connectedEnvironments.length > 0;
 
   return (
@@ -1067,7 +1049,7 @@ export function MaintenanceSettingsPanel() {
           serverScoped
           settingKeys={["enableProviderUpdateChecks"]}
           {...searchableSetting("provider-update-checks")}
-          description="Check installed provider CLIs for newer available versions and fetch model catalog updates. When off, new models may not appear."
+          description="Check for newer provider versions and new models. When off, new models may not appear."
           resetAction={
             settings.enableProviderUpdateChecks !==
             DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks ? (
@@ -1096,7 +1078,7 @@ export function MaintenanceSettingsPanel() {
           {...searchableSetting("continue-threads-after-server-update")}
           serverScoped
           settingKeys={["continueThreadsAfterServerUpdate"]}
-          description="Automatically resume interrupted threads after an update, crash, or machine restart on the selected environments."
+          description="Resume interrupted replies after an update, a crash or a restart."
           status={
             !hasServerTargets
               ? "All selected connected environments must support restart continuation."
@@ -1125,7 +1107,7 @@ export function MaintenanceSettingsPanel() {
               onCheckedChange={(checked) =>
                 updateSettings({ continueThreadsAfterServerUpdate: Boolean(checked) })
               }
-              aria-label="Continue threads after restarts"
+              aria-label="Continue chats after restarts"
             />
           }
         />
@@ -1137,7 +1119,7 @@ export function MaintenanceSettingsPanel() {
           serverScoped
           settingKeys={["keepAwakeWhileAgentsWork"]}
           {...searchableSetting("keep-awake-while-agents-work")}
-          description="Stop the computer from going to sleep while agents are working, and let it sleep once they finish. Closing a laptop lid still puts it to sleep."
+          description="Keep the server awake while bots are working, and let it sleep once they finish. Closing a laptop lid still puts it to sleep."
           resetAction={
             settings.keepAwakeWhileAgentsWork !==
             DEFAULT_UNIFIED_SETTINGS.keepAwakeWhileAgentsWork ? (
@@ -1158,7 +1140,7 @@ export function MaintenanceSettingsPanel() {
               onCheckedChange={(checked) =>
                 updateSettings({ keepAwakeWhileAgentsWork: Boolean(checked) })
               }
-              aria-label="Keep awake while agents work"
+              aria-label="Keep awake while bots work"
             />
           }
         />
@@ -1167,24 +1149,12 @@ export function MaintenanceSettingsPanel() {
       <StorageCleanupSections />
 
       <SettingsSection id="diagnostics-section" title="Diagnostics">
-        <SettingsRow
+        <SettingsLinkRow
           {...searchableSetting("diagnostics")}
-          description={
-            isEnvironmentScope
-              ? "Inspect processes, resource use, and logs on this environment."
-              : "Inspect processes, resource use, and logs on one environment at a time."
+          link={
+            <Link to="/settings/diagnostics" search={{ machine: environmentId ?? undefined }} />
           }
-          control={
-            <Button
-              render={
-                <Link to="/settings/diagnostics" search={{ machine: environmentId ?? undefined }} />
-              }
-              size="sm"
-              variant="outline"
-            >
-              View diagnostics
-            </Button>
-          }
+          description="Processes, resource use and logs on this server."
         />
       </SettingsSection>
     </SettingsPageContainer>
@@ -1192,7 +1162,6 @@ export function MaintenanceSettingsPanel() {
 }
 
 export function AboutSettingsPanel() {
-  const phone = useMediaQuery("max-md");
   const primaryPolicy = usePrimaryManagedPolicy();
   const telemetryOff = managedTelemetryOffMessage(primaryPolicy);
   return (
@@ -1201,7 +1170,7 @@ export function AboutSettingsPanel() {
         {primaryPolicy ? (
           <SettingsRow
             title="Organization"
-            description={`This environment is managed by ${primaryPolicy.organization}. Some settings and features follow its policy.`}
+            description={`This server is managed by ${primaryPolicy.organization}. Some settings and features follow its policy.`}
             control={
               primaryPolicy.supportUrl ? (
                 <Button
@@ -1221,82 +1190,18 @@ export function AboutSettingsPanel() {
       </SettingsSection>
 
       <SettingsSection id="legal" title="Legal">
-        <SettingsRow
+        <SettingsLinkRow
           {...searchableSetting("privacy-policy")}
-          {...(phone
-            ? {
-                // The whole row is the link; its chevron sits where a control would.
-                className: "relative",
-                title: (
-                  <a
-                    data-settings-row-link
-                    className="after:absolute after:inset-0"
-                    href={PRIVACY_POLICY_URL}
-                    target="_blank"
-                    rel="noreferrer noopener"
-                  >
-                    {searchableSetting("privacy-policy").title}
-                  </a>
-                ),
-              }
-            : {})}
-          // A phone's row is the link alone; what telemetry is off still shows.
+          link={<a href={PRIVACY_POLICY_URL} target="_blank" rel="noreferrer noopener" />}
           description={
             telemetryOff === undefined
-              ? phone
-                ? undefined
-                : "How we handle your data, including the anonymous usage data rejects collects."
-              : `How we handle your data. ${telemetryOff}`
-          }
-          control={
-            phone ? (
-              <ChevronRightIcon aria-hidden className="size-4 text-muted-foreground" />
-            ) : (
-              <Button
-                render={<a href={PRIVACY_POLICY_URL} target="_blank" rel="noreferrer noopener" />}
-                size="sm"
-                variant="outline"
-              >
-                View policy
-              </Button>
-            )
+              ? "How your data is handled, including the anonymous usage data rejects collects."
+              : `How your data is handled. ${telemetryOff}`
           }
         />
-        <SettingsRow
+        <SettingsLinkRow
           {...searchableSetting("open-source-licenses")}
-          {...(phone
-            ? {
-                className: "relative",
-                title: (
-                  <Link
-                    data-settings-row-link
-                    className="after:absolute after:inset-0"
-                    to="/settings/open-source-licenses"
-                  >
-                    {searchableSetting("open-source-licenses").title}
-                  </Link>
-                ),
-              }
-            : {})}
-          {...(phone
-            ? {}
-            : {
-                description:
-                  "Notices for dependencies, assets, and optional tools used by rejects.",
-              })}
-          control={
-            phone ? (
-              <ChevronRightIcon aria-hidden className="size-4 text-muted-foreground" />
-            ) : (
-              <Button
-                render={<Link to="/settings/open-source-licenses" />}
-                size="sm"
-                variant="outline"
-              >
-                View licenses
-              </Button>
-            )
-          }
+          link={<Link to="/settings/open-source-licenses" />}
         />
       </SettingsSection>
     </SettingsPageContainer>

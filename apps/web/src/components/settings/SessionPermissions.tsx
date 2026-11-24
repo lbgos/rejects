@@ -20,7 +20,7 @@ export function SessionPermissions({
       <p className="text-muted-foreground">
         {routeContext
           ? "These permissions apply to your active route. Other routes may have different permissions."
-          : "These permissions apply to this client’s current connection."}
+          : "What this device may do over its current connection."}
       </p>
       <ul className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
         {AUTH_SCOPE_OPTIONS.map(({ scope, title }) => (
