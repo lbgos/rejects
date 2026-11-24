@@ -45,6 +45,7 @@ import { ConnectDeviceApprovalSettings } from "./ConnectDeviceApprovalSettings";
 import { EnvironmentIconMenu } from "./EnvironmentIconPicker";
 import { FoldedSettingsSection } from "./FoldedSettingsSection";
 import { LinkedEnvironmentsSettings } from "./LinkedEnvironmentsSettings";
+import { SavedEnvironmentsSettings } from "./SavedEnvironmentsSettings";
 import { usePeerLinkHosts } from "~/state/peerLinks";
 import { Input } from "../ui/input";
 import {
@@ -1554,6 +1555,7 @@ function ConnectionsSettingsContent({
           isSearchTarget
         />
       ) : null}
+      <SavedEnvironmentsSettings />
     </SettingsPageContainer>
   );
 }

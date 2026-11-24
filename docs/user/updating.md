@@ -2,7 +2,7 @@
 
 The app you use and the server running your agents can be on different machines.
 When a server is behind your web or desktop app, the update button at the bottom
-of the sidebar and **Settings → Environments** offer to update it.
+of the sidebar offers to update it.
 
 ## Update everything at once
 
@@ -25,8 +25,8 @@ restarts.
 Each server checks that it can install the release before it restarts. If the
 release is not available to a server yet, its update fails, the server keeps
 running, and you can retry. The confirmation lists each machine it skips and
-why, such as a machine that is offline or needs a manual update. Use
-**Settings → Environments** for those.
+why, such as a machine that is offline or needs a manual update. Update those
+on the machine itself.
 
 If a desktop app restarts on its old version, T3 Code tells you the update did
 not apply. It does not install that version again on its own, even when another

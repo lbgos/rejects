@@ -112,9 +112,9 @@ If a server is already running, generate a fresh link without restarting it:
 rejects pair
 ```
 
-Scan the QR code on your phone or paste the pairing URL into **Add environment**
-in the receiving app. Connection settings are under **Settings → Environments**
-on web and desktop and **Settings → Environments** on mobile. A loopback address
+Scan the QR code on your phone or open the pairing URL in the receiving app.
+Saved environments can be switched off or removed in **Settings → Sharing &
+access**. A loopback address
 such as `127.0.0.1` reaches only the device opening the link.
 
 On a computer with the desktop app, you can open the printed `t3code://pair`
@@ -160,36 +160,15 @@ again, after the other routes, if none of them connect. While connected over a
 later route, T3 Code checks the earlier ones when your network changes, when you
 return to the app, and every minute, and moves back as soon as one works.
 
-On web and desktop, select the route count under the machine's name in
-**Settings → Environments** to see its routes. Drag a route to change the order,
-or remove it. On mobile, open the machine under **Settings → Environments** and
+On mobile, open the machine under **Settings → Environments** and
 choose **Edit**. Signing out of T3 Connect removes only that route; a machine
 you can still reach another way stays saved.
 
-Open **Permissions** next to **Routes** in web or desktop, or **Your permissions**
-in the mobile route details, to see what your current connection can do on that
+Open **Your permissions** in the mobile route details to see what your current connection can do on that
 environment. For a remote environment, this is in its route details. Permissions
 shown there apply only to the route marked **In use**; other routes are not
 checked. Direct pairing and T3 Connect have separate sessions and may grant
 different permissions.
-
-### Balance new threads across machines
-
-Auto balance is off by default. On web and desktop, enable it in
-**Settings → Environments → Load balancing** to automatically choose a machine for
-new threads in projects grouped across connected environments. The section
-appears once two or more machines are switched on.
-Each machine starts at **Normal**. Choose **Prefer** to favor it when it has CPU and
-memory available, **Less often** to reduce its share, or **Manual only** to exclude
-it from automatic selection. These are preferences, not fixed traffic percentages.
-Preferences are saved separately in each client.
-
-The composer checks eligible machines when choosing a draft's environment, then keeps
-that choice stable. Choose **Auto balance** again to check current resources, or choose
-a specific machine to override it. Choosing a branch or worktree also keeps the draft
-on that machine. Existing threads stay where they started. If resource checks are
-unavailable or all eligible machines are full, choose a machine manually to continue.
-Mobile keeps its manual environment selection.
 
 ### Tailscale HTTPS
 
@@ -457,17 +436,3 @@ screenshots, logs, or bug reports.
 When a T3 Connect connection fails, see
 [T3 Connect troubleshooting](./t3-connect-troubleshooting.md). It explains each
 error, where the problem is, and how to fix it.
-
-## Using the Desktop App as a Remote Only
-
-If a computer should only drive work running elsewhere, turn off its local environment. In the
-desktop app, open **Settings → Environments** and switch off **Local
-environment**. T3 Code restarts without a local server: no local agents or terminals run, WSL
-backends stay off, and other devices can no longer connect to this computer. Your projects,
-history, and saved connections are kept, and you keep working through pairing, T3 Connect, or SSH.
-If a [background service](./background-service.md) on this computer uses the same T3 home, the
-app still treats it as this computer: **Open in** and file reveal for its projects run here,
-whichever connection you reach it through.
-
-Switch **Local environment** back on in the same place to restart with your previous local
-settings.

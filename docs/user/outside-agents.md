@@ -27,9 +27,7 @@ client ID cannot connect.
 
 ## Get the MCP URL
 
-In **Settings → Environments**, open a saved environment's menu and choose
-**Copy MCP URL**. The URL is the environment's address followed by `/mcp`, for
-example:
+The MCP URL is the environment's address followed by `/mcp`, for example:
 
 ```text
 https://<environment-address>/mcp

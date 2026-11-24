@@ -273,6 +273,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
+    id: "prompt-suggestions-beta",
+    title: "Suggest next prompt",
+    to: "/settings/chat",
+    scope: "environment-defaults",
+    searchTerms: ["tab autocomplete predict next message claude codex ghost text"],
+  },
+  {
     id: "response-streaming",
     title: "Response streaming",
     to: "/settings/chat",
@@ -710,6 +717,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
+    id: "saved-environments",
+    title: "Saved environments",
+    to: "/settings/access",
+    searchTerms: ["remote environments backends switch off disable remove forget saved machines"],
+  },
+  {
     id: "linked-environments",
     peerLinksOnly: true,
     title: "Linked environments",
@@ -780,6 +793,7 @@ const SPLIT_SETTINGS_PATHS: ReadonlySet<string> = new Set([
 // Section anchors that moved but are not search results themselves.
 const MOVED_SECTION_ANCHORS: Readonly<Record<string, SettingsPath>> = {
   "authorized-clients": "/settings/access",
+  "remote-environments": "/settings/access",
   about: "/settings/about",
 };
 

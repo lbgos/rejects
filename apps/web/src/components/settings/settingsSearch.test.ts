@@ -212,10 +212,14 @@ describe("movedSettingsPath", () => {
       "/settings/access",
     );
     expect(movedSettingsPath("/settings/connections", "network-access")).toBe("/settings/access");
+    expect(movedSettingsPath("/settings/connections", "remote-environments")).toBe(
+      "/settings/access",
+    );
     expect(movedSettingsPath("/settings/labs", "linked-environments-beta")).toBe(
       "/settings/access",
     );
     expect(movedSettingsPath("/settings/threads", "response-streaming")).toBe("/settings/chat");
+    expect(movedSettingsPath("/settings/labs", "prompt-suggestions-beta")).toBe("/settings/chat");
     expect(movedSettingsPath("/settings/storage", "")).toBe("/settings/maintenance");
   });
 
