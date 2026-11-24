@@ -15,7 +15,7 @@ import { EnvironmentConnecting } from "./EnvironmentConnecting";
 import { FirstRun } from "./FirstRun";
 import { needsFirstRun } from "./firstRun.logic";
 import { botActivityAt } from "./presentation";
-import { useBots, useBotsLoaded } from "./state";
+import { refreshBots, useBots, useBotsListFailed, useBotsLoaded } from "./state";
 import { openBotDialog } from "./ui";
 import { useOnline } from "./useOnline";
 import { useVisualViewportHeight } from "./useVisualViewportHeight";
@@ -149,6 +149,8 @@ function BotSearchBar({
 }
 
 function NoBots({ environmentId }: { environmentId: EnvironmentId }) {
+  const loaded = useBotsLoaded(environmentId);
+  const failed = useBotsListFailed(environmentId);
   return (
     <main className="flex h-full min-h-0 flex-col bg-background text-foreground">
       <header
@@ -161,12 +163,31 @@ function NoBots({ environmentId }: { environmentId: EnvironmentId }) {
         <Button
           size="sm"
           variant="ghost"
+          disabled={!loaded}
           onClick={() => openBotDialog({ environmentId, threadId: null, focus: null })}
         >
           <PlusIcon />
           {t("New bot")}
         </Button>
       </header>
+      {!loaded && failed ? (
+        <div
+          role="alert"
+          className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 px-6 pb-24 text-center"
+        >
+          <h2 className="text-lg font-semibold">{t("Can’t load bots")}</h2>
+          <p className="max-w-sm text-sm text-muted-foreground">
+            {t("The server did not answer.")}
+          </p>
+          <Button
+            className="mt-4"
+            size="pill"
+            onClick={() => void refreshBots(environmentId).catch(() => undefined)}
+          >
+            {t("Try again")}
+          </Button>
+        </div>
+      ) : null}
     </main>
   );
 }

@@ -21,6 +21,7 @@ import { cn } from "../lib/utils";
 import { botRequest } from "../bots/http";
 import { BotIconPicker } from "./BotIconPicker";
 import { MailAccountsList, useMailAccounts } from "../connections/MailCards";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useEnvironmentSettings } from "../hooks/useSettings";
 import { pickModelSelection } from "@t3tools/shared/model";
 import { getCustomModelOptionsByInstance } from "../modelSelection";
@@ -123,10 +124,7 @@ function FieldGroup({ title, children }: { title?: string; children: ReactNode }
   return (
     <section className="space-y-1.5">
       {title ? <h3 className={cn(SECTION_TITLE, "px-4")}>{title}</h3> : null}
-      <div
-        data-bot-form-group
-        className="divide-y divide-bot-hairline overflow-hidden bg-(--bots-list-surface)"
-      >
+      <div data-bot-form-group className="overflow-hidden bg-(--bots-list-surface)">
         {children}
       </div>
     </section>
@@ -267,6 +265,7 @@ export function BotDialog({
   const bot = useBot(environmentId, request.threadId);
   const mail = useMailAccounts(environmentId, request.threadId);
   const navigate = useNavigate();
+  const phone = useMediaQuery("max-md");
   const settings = useEnvironmentSettings(environmentId);
   const allProviders =
     useAtomValue(serverEnvironment.providersValueAtom(environmentId)) ?? EMPTY_SERVER_PROVIDERS;
@@ -457,7 +456,8 @@ export function BotDialog({
               : null}
           </p>
         ) : null}
-        <DialogPanel>
+        {/* On a phone the form is a page: it ends at the screen's edge, with no fade over it. */}
+        <DialogPanel scrollFade={!phone}>
           <form
             id="bot-form"
             className="space-y-5"
@@ -536,7 +536,8 @@ export function BotDialog({
                 <Field label={t("What it does")} htmlFor="bot-job">
                   <Textarea
                     id="bot-job"
-                    className="max-h-64 overflow-y-auto"
+                    // A page shows the whole job and scrolls as one; the dialog keeps it in a window.
+                    className="md:max-h-64 md:overflow-y-auto"
                     maxLength={16000}
                     placeholder={t(
                       "What should this bot do on each wake, and when should it notify you?",

@@ -1,5 +1,4 @@
 import { t, type UiText } from "../i18n";
-import { cn } from "../lib/utils";
 import type { BotState } from "./presentation";
 
 const STATE_CLASS: Record<BotState, string> = {
@@ -20,8 +19,7 @@ const STATE_WORD: Record<BotState, UiText> = {
   failed: "failed",
 };
 
-export function BotStateLabel({ state, className }: { state: BotState; className?: string }) {
-  return (
-    <span className={cn("text-xs", STATE_CLASS[state], className)}>{t(STATE_WORD[state])}</span>
-  );
+/** The state word, in the size of the line it sits in. */
+export function BotStateLabel({ state }: { state: BotState }) {
+  return <span className={STATE_CLASS[state]}>{t(STATE_WORD[state])}</span>;
 }

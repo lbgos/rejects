@@ -45,6 +45,7 @@ import { useOnline } from "./useOnline";
 import { QuickStart } from "./QuickStart";
 import { menuCollisionPadding } from "../safeArea";
 import { plural, t } from "../i18n";
+import { cn } from "../lib/utils";
 
 export function BotThread({ target, children }: { target: ScopedThreadRef; children: ReactNode }) {
   const { environmentId, threadId } = target;
@@ -337,16 +338,20 @@ function BotEmptyState({ target }: { target: ScopedThreadRef }) {
       : null,
   ].filter((fact) => fact !== null);
   return (
-    <div className="relative flex w-full max-w-md flex-col items-center px-8 text-center">
+    <div
+      className={cn(
+        "relative flex w-full flex-col items-center px-8 text-center",
+        // The quick start is a list to read, so it takes a wider column than a bot's own facts.
+        quickStart ? "max-w-xl" : "max-w-md",
+      )}
+    >
       <HolidayWreath />
       <BotAvatar bot={bot} className="mb-3.5 size-16 bg-bot-fill max-md:size-19" />
       <div className="text-lg font-semibold max-md:text-bot-heading max-md:font-bold">
         {bot.name}
       </div>
       {facts.length > 0 ? (
-        <p className="mt-1.5 text-xs text-muted-foreground max-md:text-bot-footnote">
-          {facts.join(" · ")}
-        </p>
+        <p className="mt-1.5 text-bot-footnote text-muted-foreground">{facts.join(" · ")}</p>
       ) : null}
       {quickStart ? <QuickStart environmentId={target.environmentId} /> : null}
       {!quickStart && bot.starters && bot.starters.length > 0 ? (

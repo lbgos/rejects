@@ -41,6 +41,7 @@ import { resolveThreadRouteRef } from "../threadRoutes";
 import { saveNote, setNote } from "./actions";
 import { NightlyCheck } from "./NightlyCheck";
 import {
+  ACTION_ROW,
   EMPTY_NOTE,
   FACT_ROW,
   ROW_META,
@@ -525,10 +526,7 @@ function NoteList({
             ) : (
               <button
                 type="button"
-                className={cn(
-                  "flex w-full items-center gap-2 px-4 py-2.5 text-left text-muted-foreground outline-none hover:bg-accent max-md:px-5 max-md:py-3 max-md:hover:bg-transparent",
-                  ROW_TEXT,
-                )}
+                className={cn(ACTION_ROW, ROW_TEXT)}
                 onClick={() => setEditing({ id: null, text: "" })}
               >
                 <PlusIcon aria-hidden className="size-4 shrink-0 max-md:size-5" />

@@ -212,10 +212,13 @@ export function BotList({
           {shown.length > 0
             ? null
             : !loaded && failed
-              ? notice(t("Can’t load bots"), t("The server did not answer."), {
-                  label: t("Try again"),
-                  run: () => void refreshBots(environmentId).catch(() => undefined),
-                })
+              ? // On desktop the main pane explains the failure and offers the retry (BotsHome).
+                phone
+                ? notice(t("Can’t load bots"), t("The server did not answer."), {
+                    label: t("Try again"),
+                    run: () => void refreshBots(environmentId).catch(() => undefined),
+                  })
+                : notice(t("Can’t load bots"))
               : !loaded
                 ? LOADING_ROWS
                 : settingUp
@@ -495,14 +498,12 @@ function BotRow({
               />
             ) : null}
             {hasUnsentDraft ? <ThreadDraftIndicator threadId={bot.threadId} /> : null}
-            <span className="ms-auto shrink-0 ps-2 text-xs text-muted-foreground tabular-nums max-md:text-bot-callout">
+            <span className="ms-auto shrink-0 ps-2 text-bot-footnote text-muted-foreground tabular-nums max-md:text-bot-callout">
               {formatListTime(at)}
             </span>
           </span>
-          <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground max-md:text-bot-callout">
-            {state !== "idle" ? (
-              <BotStateLabel state={state} className="max-md:text-bot-callout" />
-            ) : null}
+          <span className="flex min-w-0 items-center gap-1.5 text-bot-footnote text-muted-foreground max-md:text-bot-callout">
+            {state !== "idle" ? <BotStateLabel state={state} /> : null}
             <span className={cn("min-w-0 flex-1 truncate", bot.unread && "text-foreground")}>
               {empty ? t("No messages yet") : text}
             </span>

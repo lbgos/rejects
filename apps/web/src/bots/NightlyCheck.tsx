@@ -28,7 +28,14 @@ import {
 import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../state/server";
 import { usePreparedConnection } from "../state/session";
 import { botRequest } from "./http";
-import { EMPTY_NOTE, ROW_META, ROW_TEXT, SECTION_HEADER, SHEET_LIST } from "./panelStyles";
+import {
+  ACTION_ROW,
+  EMPTY_NOTE,
+  ROW_META,
+  ROW_TEXT,
+  SECTION_HEADER,
+  SHEET_LIST,
+} from "./panelStyles";
 import { formatWakeIn, messageTimeLabel } from "./presentation";
 import { notesChanged, readBots, refreshBots } from "./state";
 
@@ -78,6 +85,9 @@ const runSummary = (lastRun: NonNullable<MemoryDreams["lastRun"]>) => {
 };
 
 const ROW = "flex items-center gap-3 px-4 py-2.5 max-md:px-5 max-md:py-2.75";
+
+/** The page shows the latest few changes; the rest are one press away. */
+const CHANGES_SHOWN = 3;
 
 function failed(title: string, error: unknown) {
   toastManager.add(
@@ -131,6 +141,8 @@ export function NightlyCheck({ environmentId }: { environmentId: EnvironmentId }
       },
     );
   const lastRun = dreams?.lastRun;
+  const [allChanges, setAllChanges] = useState(false);
+  const changes = dreams?.changes ?? [];
   const errors = lastRun?.errors ?? [];
   const bots = readBots(environmentId);
   const settings = useEnvironmentSettings(environmentId);
@@ -194,12 +206,22 @@ export function NightlyCheck({ environmentId }: { environmentId: EnvironmentId }
           </li>
         ) : null}
         <li className={ROW}>
-          <div className={cn("min-w-0 flex-1", ROW_TEXT)}>{t("Model")}</div>
-          {dreams?.modelSelection ? (
-            <Button variant="ghost" size="xs" onClick={() => setModel(null)}>
-              {t("Reset")}
-            </Button>
-          ) : null}
+          <div className="min-w-0 flex-1">
+            <div className={ROW_TEXT}>{t("Model")}</div>
+            {/* Only a model that differs from the server's own can be reset to it. */}
+            {dreams?.modelSelection &&
+            (dreams.modelSelection.instanceId !== dreams.fallbackModelSelection.instanceId ||
+              dreams.modelSelection.model !== dreams.fallbackModelSelection.model) ? (
+              <button
+                type="button"
+                // Not ROW_META: its muted colour would win over the action colour.
+                className="text-bot-footnote text-bot-action outline-none hover:underline max-md:text-bot-callout"
+                onClick={() => setModel(null)}
+              >
+                {t("Use the default")}
+              </button>
+            ) : null}
+          </div>
           {selection ? (
             <div data-bot-model-field className="min-w-0">
               <ProviderModelPicker
@@ -222,10 +244,7 @@ export function NightlyCheck({ environmentId }: { environmentId: EnvironmentId }
           <button
             type="button"
             disabled={!dreams || running}
-            className={cn(
-              "w-full px-4 py-2.5 text-left outline-none not-disabled:hover:bg-accent disabled:text-muted-foreground max-md:px-5 max-md:py-2.75 max-md:not-disabled:hover:bg-transparent",
-              ROW_TEXT,
-            )}
+            className={cn(ACTION_ROW, ROW_TEXT)}
             onClick={() =>
               void act(
                 botRequest(environmentId, BOTS_ENDPOINTS.dreamNow, {}),
@@ -284,7 +303,7 @@ export function NightlyCheck({ environmentId }: { environmentId: EnvironmentId }
         <>
           <h3 className={SECTION_HEADER}>{t("Recent changes")}</h3>
           <ul className={SHEET_LIST}>
-            {dreams.changes.map((change) => {
+            {(allChanges ? changes : changes.slice(0, CHANGES_SHOWN)).map((change) => {
               const removed = change.after.length === 0;
               const shown = removed ? change.before : change.after;
               const was =
@@ -340,6 +359,17 @@ export function NightlyCheck({ environmentId }: { environmentId: EnvironmentId }
                 </li>
               );
             })}
+            {changes.length > CHANGES_SHOWN ? (
+              <li>
+                <button
+                  type="button"
+                  className={cn(ACTION_ROW, ROW_TEXT)}
+                  onClick={() => setAllChanges(!allChanges)}
+                >
+                  {allChanges ? t("Show fewer") : t("Show all {count}", { count: changes.length })}
+                </button>
+              </li>
+            ) : null}
           </ul>
         </>
       ) : null}
