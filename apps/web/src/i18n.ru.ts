@@ -533,8 +533,8 @@ export const RU = {
     "{bot} не может ответить: его модель не настроена на этом сервере.",
   "{bot} could not finish this reply.": "{bot} не смог завершить этот ответ.",
   "Add a port, e.g. {example}": "Добавьте порт, например {example}",
-  "{line} is not a private address with a port, e.g. 192.168.1.10:22":
-    "{line}: это не частный адрес с портом, например 192.168.1.10:22",
+  "{line} is not a private address with a port, e.g. 192.168.1.10:22": // leak-scan: allow
+    "{line}: это не частный адрес с портом, например 192.168.1.10:22", // leak-scan: allow
   "Model and limits": "Модель и лимиты",
   Preset: "Набор",
   Advanced: "Дополнительно",

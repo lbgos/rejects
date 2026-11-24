@@ -161,7 +161,7 @@ function Disclosure({
 const localNetworkProblem = (line: string) =>
   /^\d{1,3}(\.\d{1,3}){3}(\/\d{1,2})?$/.test(line)
     ? t("Add a port, e.g. {example}", { example: `${line}:8080` })
-    : t("{line} is not a private address with a port, e.g. 192.168.1.10:22", { line });
+    : t("{line} is not a private address with a port, e.g. 192.168.1.10:22", { line }); // leak-scan: allow
 
 function OwnSkillsList({
   skills,
@@ -731,7 +731,7 @@ export function BotDialog({
                         id="bot-network"
                         className="max-h-32 overflow-y-auto"
                         spellCheck={false}
-                        placeholder="192.168.1.10:22"
+                        placeholder="192.168.1.10:22" // leak-scan: allow
                         aria-invalid={"invalid" in network}
                         value={networkText}
                         onChange={(e) => setNetworkText(e.target.value)}

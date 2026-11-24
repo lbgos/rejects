@@ -533,8 +533,8 @@ export const UK = {
     "{bot} не може відповісти: його модель не налаштована на цьому сервері.",
   "{bot} could not finish this reply.": "{bot} не зміг завершити цю відповідь.",
   "Add a port, e.g. {example}": "Додайте порт, наприклад {example}",
-  "{line} is not a private address with a port, e.g. 192.168.1.10:22":
-    "{line}: це не приватна адреса з портом, наприклад 192.168.1.10:22",
+  "{line} is not a private address with a port, e.g. 192.168.1.10:22": // leak-scan: allow
+    "{line}: це не приватна адреса з портом, наприклад 192.168.1.10:22", // leak-scan: allow
   "Model and limits": "Модель і ліміти",
   Preset: "Набір",
   Advanced: "Додатково",
