@@ -77,21 +77,31 @@ const provide = <A, E>(
 };
 
 const speech = (
-  ready: boolean,
+  ready: boolean | ((backend: Speech.LocalBackend | undefined) => boolean),
   heard: (
     call: number,
-  ) => Effect.Effect<{ readonly text: string; readonly backend: "whisper" }, Speech.SpeechError>,
+    input: Speech.SpeechInput,
+  ) => Effect.Effect<
+    { readonly text: string; readonly backend: Speech.LocalBackend },
+    Speech.SpeechError
+  >,
   onReady: Effect.Effect<void> = Effect.void,
+  configured = true,
 ) => {
   let calls = 0;
   return Speech.SpeechToText.of({
-    ready: () => Effect.as(onReady, ready),
-    transcribe: () => heard(calls++),
+    configured: () => Effect.succeed(configured),
+    ready: (backend) => Effect.as(onReady, typeof ready === "boolean" ? ready : ready(backend)),
+    transcribe: (input) => heard(calls++, input),
   });
 };
-const heardChunks = speech(true, (call) =>
-  Effect.succeed({ text: call === 0 ? " first part " : "second part", backend: "whisper" }),
-);
+const twoParts = (call: number, input: Speech.SpeechInput) =>
+  Effect.succeed({
+    text: call === 0 ? " first part " : "second part",
+    backend: input.backend ?? "nemotron",
+  });
+const heardChunks = speech(true, twoParts);
+const nemotronOff = (backend: Speech.LocalBackend | undefined) => backend === "whisper";
 
 const captionsHttp = (
   calls: Array<string>,
@@ -140,13 +150,21 @@ const fakeMedia = (
       }),
   });
 
-it.effect("reads YouTube's captions first and downloads nothing", () => {
+it.effect.each([
+  {
+    name: "says so when Nemotron is off",
+    configured: true,
+    first: ["Fallback: Nemotron could not transcribe this video. Nemotron is off or busy."],
+  },
+  { name: "says nothing where Nemotron is not set up", configured: false, first: [] },
+])("falls back to YouTube's captions and $name", ({ configured, first }) => {
   const calls: Array<string> = [];
   return Effect.gen(function* () {
     const transcripts = yield* Transcript.Transcript;
     const text = yield* transcripts.transcript({ url: `https://youtu.be/${id}` });
     expect(text).toBe(
       [
+        ...first,
         "Video: A talk about Ferris",
         "Duration: 12:34",
         "Source: youtube captions (auto, en)",
@@ -160,32 +178,112 @@ it.effect("reads YouTube's captions first and downloads nothing", () => {
     expect(calls[1]).toContain("/api/timedtext");
   }).pipe((effect) =>
     provide(effect, {
-      speech: speech(true, () => Effect.die("captions need no speech server")),
+      speech: speech(
+        nemotronOff,
+        () => Effect.die("captions need no speech server"),
+        Effect.void,
+        configured,
+      ),
       media: noMedia,
       http: captionsHttp(calls),
     }),
   );
 });
 
-it.effect("transcribes a YouTube video without captions on the speech server", () => {
+it.effect("transcribes a captioned YouTube video with Nemotron alone, before its captions", () => {
   const requests: Array<Media.AudioRequest> = [];
+  const backends: Array<Speech.LocalBackend | undefined> = [];
   return Effect.gen(function* () {
     const transcripts = yield* Transcript.Transcript;
     const text = yield* transcripts.transcript({ url: `https://youtu.be/${id}` });
     expect(text).toContain("Video: A talk in two parts");
     expect(text).toContain("Duration: 20:34");
-    expect(text).toContain("Source: local speech recognition (whisper)");
+    expect(text).toContain("Source: local speech recognition (nemotron)");
     expect(text).toContain("[00:00] first part");
     expect(text).toContain("[10:00] second part");
     expect(text).not.toContain("Note:");
+    expect(text).not.toContain("Fallback");
+    expect(backends).toEqual(["nemotron", "nemotron"]);
     expect(requests.map(({ url, extractors }) => ({ url, extractors }))).toEqual([
       { url: `https://www.youtube.com/watch?v=${id}`, extractors: ["youtube"] },
     ]);
   }).pipe((effect) =>
     provide(effect, {
-      speech: heardChunks,
+      speech: speech(true, (call, input) => {
+        backends.push(input.backend);
+        return twoParts(call, input);
+      }),
       media: fakeMedia("A talk in two parts", 1_234, 2, requests),
+      http: noHttp,
+    }),
+  );
+});
+
+it.effect("goes to Whisper when Nemotron is off and YouTube has no captions", () =>
+  Effect.gen(function* () {
+    const transcripts = yield* Transcript.Transcript;
+    const text = yield* transcripts.transcript({ url: `https://youtu.be/${id}` });
+    expect(text.split("\n").slice(0, 4)).toEqual([
+      "Fallback: Nemotron could not transcribe this video. Nemotron is off or busy.",
+      "Video: A talk in two parts",
+      "Duration: 20:34",
+      "Source: local speech recognition (whisper)",
+    ]);
+  }).pipe((effect) =>
+    provide(effect, {
+      speech: speech(nemotronOff, twoParts),
+      media: fakeMedia("A talk in two parts", 1_234, 2),
       http: captionsHttp([], { player: UNCAPTIONED }),
+    }),
+  ),
+);
+
+it.effect("tries Nemotron again on the next call instead of a cached fallback", () => {
+  let nemotronUp = false;
+  const requests: Array<Media.AudioRequest> = [];
+  return Effect.gen(function* () {
+    const transcripts = yield* Transcript.Transcript;
+    const url = `https://youtu.be/${id}`;
+    expect(yield* transcripts.transcript({ url })).toContain("Source: youtube captions");
+    expect(yield* transcripts.transcript({ url })).toMatch(/^Fallback: /);
+    nemotronUp = true;
+    const again = yield* transcripts.transcript({ url });
+    expect(again).toMatch(/^Video: /);
+    expect(again).toContain("Source: local speech recognition (nemotron)");
+    expect(yield* transcripts.transcript({ url })).toBe(again);
+    expect(requests).toHaveLength(1);
+  }).pipe((effect) =>
+    provide(effect, {
+      speech: speech((backend) => nemotronUp || backend === "whisper", twoParts),
+      media: fakeMedia("A talk in two parts", 1_234, 2, requests),
+      http: captionsHttp([]),
+    }),
+  );
+});
+
+it.effect("does not download again for Whisper when the download failed for Nemotron", () => {
+  let downloads = 0;
+  return Effect.gen(function* () {
+    const transcripts = yield* Transcript.Transcript;
+    const error = yield* transcripts.transcript({ url: reel() }).pipe(Effect.flip);
+    expect(error.detail).toBe("yt-dlp could not fetch the video.");
+    expect(downloads).toBe(1);
+  }).pipe((effect) =>
+    provide(effect, {
+      speech: speech(true, () => Effect.die("nothing is transcribed")),
+      media: Media.VideoMedia.of({
+        audio: () =>
+          Effect.suspend(() => {
+            downloads++;
+            return Effect.fail(
+              new Media.VideoMediaError({
+                stage: "download",
+                detail: "yt-dlp could not fetch the video.",
+              }),
+            );
+          }),
+      }),
+      http: noHttp,
     }),
   );
 });
@@ -195,7 +293,7 @@ it.effect("sends a reel straight to the downloader with Instagram's extractor on
   return Effect.gen(function* () {
     const transcripts = yield* Transcript.Transcript;
     const text = yield* transcripts.transcript({ url: reel() });
-    expect(text).toContain("Source: local speech recognition (whisper)");
+    expect(text).toContain("Source: local speech recognition (nemotron)");
     expect(requests.map(({ url, extractors }) => ({ url, extractors }))).toEqual([
       { url: "https://www.instagram.com/reel/DAbc12x/", extractors: ["instagram"] },
     ]);
@@ -208,15 +306,16 @@ it.effect("sends a reel straight to the downloader with Instagram's extractor on
   );
 });
 
-it.effect("reports both sources in one line when neither gives a transcript", () =>
+it.effect("reports every source in one line when none gives a transcript", () =>
   Effect.gen(function* () {
     const transcripts = yield* Transcript.Transcript;
     const error = yield* transcripts
       .transcript({ url: `https://youtu.be/${id}` })
       .pipe(Effect.flip);
     expect(error.stage).toBe("stt");
+    expect(error.detail).toContain("Nemotron is off or busy.");
     expect(error.detail).toContain("HTTP 429");
-    expect(error.detail).toContain("Local speech recognition is off or busy.");
+    expect(error.detail).toContain("Whisper is off or busy.");
     expect(error.detail).not.toContain("\n");
   }).pipe((effect) =>
     provide(effect, {
@@ -263,7 +362,7 @@ it.effect("reads the hour fromMinutes names and says where the next one starts",
     expect(requests.map((request) => request.startSeconds)).toEqual([3_600]);
   }).pipe((effect) =>
     provide(effect, {
-      speech: heardChunks,
+      speech: speech(nemotronOff, twoParts),
       media: fakeMedia("A long reel", 5_000, 1, requests),
       http: captionsHttp([], {
         player: { ...PLAYER, videoDetails: { ...PLAYER.videoDetails, lengthSeconds: "9000" } },

@@ -186,6 +186,14 @@ it.live("falls back to Whisper while Nemotron is down, and queues when both are"
     // Nemotron is configured but down, so the probe falls through to the Whisper describe event.
     assert.strictEqual(yield* speech.ready(), true);
     assert.deepEqual(remote, [NEMOTRON_STT, NEMOTRON_READY]);
+    // A caller that names Nemotron gets no Whisper behind it.
+    const whisperCalls = whisper.requests.length;
+    assert.strictEqual(yield* speech.ready("nemotron"), false);
+    const only = yield* speech
+      .transcribe({ ...voice, cloud: false, backend: "nemotron" })
+      .pipe(Effect.flip);
+    assert.strictEqual(only.detail, "Nemotron did not answer.");
+    assert.strictEqual(whisper.requests.length, whisperCalls);
 
     yield* settings(1);
     assert.strictEqual(yield* speech.ready(), false);
