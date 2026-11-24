@@ -161,32 +161,9 @@ html[data-theme-id] [data-bots-mode="true"] [data-chat-header],
 }
 
 /* A chat's transcript keeps its full contrast to both edges. The header is a solid bar over its
-   top. The composer's area is the same kind of bar at its bottom: the transcript is cut where
-   that area starts (ChatView measures it), and the area draws the bars' hairline while the
-   transcript is scrolled up under it. */
+   top; the transcript is cut where the composer's area starts (ChatView measures it). */
 :root[data-bots-app] [data-bots-mode="true"] .messages-timeline-scroll {
   clip-path: inset(0 0 var(--bot-composer-height, 0px) 0);
-}
-:root[data-bots-app] [data-bots-mode="true"] [data-chat-composer-overlay]::before {
-  content: "";
-  position: absolute;
-  inset-inline: 0;
-  top: 0;
-  height: 1px;
-  background: var(--bots-bar-edge);
-  opacity: 0;
-  pointer-events: none;
-}
-:root[data-bots-app]
-  [data-bots-mode="true"]
-  :has(> .chat-scroll-to-bottom)
-  ~ [data-chat-composer-overlay]::before {
-  opacity: 1;
-}
-@media (prefers-reduced-motion: no-preference) {
-  :root[data-bots-app] [data-bots-mode="true"] [data-chat-composer-overlay]::before {
-    transition: opacity 180ms ease-out !important;
-  }
 }
 /* The jump-to-latest disc stands in the composer's area, so it never covers the transcript. On a
    wide lane it sits in the gutter after the composer, level with its top edge. */
