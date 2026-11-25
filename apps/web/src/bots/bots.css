@@ -1978,9 +1978,8 @@ html[data-bots-app]:has(
   }
 }
 
-/* The chat header lifts off the page once the transcript is under it; a pushed page's bar keeps
-   its edge. Both live on a pseudo-element behind the bar's content, in one short fade: nothing
-   is painted while the page is still. The list screens' bars have no edge. */
+/* The chat header and a pushed page's bar keep a constant edge and shadow, on a pseudo-element
+   behind the bar's content. The list screens' bars have none. */
 :root[data-bots-app] :is([data-chat-header], [data-bots-top-bar]) {
   isolation: isolate;
 }
@@ -1994,20 +1993,6 @@ html[data-bots-app]:has(
   box-shadow:
     0 1px 0 var(--bots-bar-edge),
     var(--bots-bar-shadow);
-  opacity: 0;
-}
-:root[data-bots-app]
-  :is(
-    [data-chat-header],
-    [data-bots-top-bar]:has([data-bots-bar-title][data-pinned])
-  )[data-scrolled="true"]::after {
-  opacity: 1;
-}
-@media (prefers-reduced-motion: no-preference) {
-  :root[data-bots-app]
-    :is([data-chat-header], [data-bots-top-bar]:has([data-bots-bar-title][data-pinned]))::after {
-    transition: opacity 180ms ease-out !important;
-  }
 }
 @keyframes bots-bar-title-in {
   from {

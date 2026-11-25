@@ -2517,7 +2517,6 @@ export default function ChatView(props: ChatViewProps) {
       entry.enabled &&
       entry.isAvailable,
   );
-  const [botTranscriptScrolled, setBotTranscriptScrolled] = useState(false);
   // A bot's model is a setting, not chat content: bot chats show no handoff marker.
   const pendingHandoff = botChrome
     ? null
@@ -3393,7 +3392,6 @@ export default function ChatView(props: ChatViewProps) {
             ref={threadPanelPopoverAnchorRef}
             data-chat-header
             data-holiday-string
-            data-scrolled={botChrome ? botTranscriptScrolled : undefined}
             className={cn(
               botChrome && "z-10",
               "relative bg-background [[data-panel-animations=true]_&]:motion-safe:transition-[padding-left] [[data-panel-animations=true]_&]:motion-safe:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:motion-safe:ease-out",
@@ -3486,18 +3484,6 @@ export default function ChatView(props: ChatViewProps) {
                 "relative flex min-h-0 flex-1 flex-col bg-background",
                 botChrome && "-mt-(--bot-chat-header-height)",
               )}
-              onScrollCapture={
-                botChrome
-                  ? (event) => {
-                      const target = event.target;
-                      if (
-                        target instanceof HTMLElement &&
-                        target.classList.contains("messages-timeline-scroll")
-                      )
-                        setBotTranscriptScrolled(target.scrollTop > 0);
-                    }
-                  : undefined
-              }
               // Keep the overlay's transparent margins clear of transcript paint and hit targets. A
               // bot chat clips its scroller alone (bots.css reads the height), so its jump disc can
               // stand in the composer's area. Preserve the list's geometry and end inset for
