@@ -2,6 +2,7 @@ import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { XIcon } from "lucide-react";
 import { useRef, useState, type CSSProperties, type ReactNode } from "react";
 
+import { BOT_TAB_TRANSITION } from "../bots/BotTabBar";
 import { useNativeTitlebarHeight } from "../lib/windowControlsOverlay";
 import { useCloseAppModal } from "./sidebar/mainAppLocation";
 import { Button } from "./ui/button";
@@ -37,6 +38,15 @@ export function AppRouteModal({ label, children }: { label: string; children: Re
         // drop what was typed. Blur first so they commit.
         const focused = document.activeElement;
         if (focused instanceof HTMLElement && popupRef.current?.contains(focused)) focused.blur();
+        if (
+          document.documentElement.hasAttribute("data-bots-app") &&
+          window.matchMedia("(width >= 48rem)").matches
+        ) {
+          // Keep the modal mounted until the route transition snapshots it, so closing over You
+          // never flashes the empty backdrop behind the modal before You mounts.
+          void closeAppModal(BOT_TAB_TRANSITION);
+          return;
+        }
         setOpen(false);
       }}
       onOpenChangeComplete={(nextOpen) => {

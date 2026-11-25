@@ -48,6 +48,7 @@ import {
 } from "../panelAnimations";
 import { BackgroundThreadAnnouncer } from "./BackgroundThreadAnnouncer";
 import { BotOverlays } from "../bots/BotOverlays";
+import { BOT_TAB_TRANSITION } from "../bots/BotTabBar";
 import { BotTabHost } from "../bots/BotTabHost";
 import { UiSpotlight } from "../bots/UiSpotlight";
 import { BotsSidebar } from "../bots/BotsSidebar";
@@ -290,8 +291,13 @@ function registerAppShellCommands(router: AnyRouter, shellElement: Element): () 
     registerNavigationHistoryCommands(router),
     registerWorkspaceFocusCommands(router),
     registerMenuAction("open-settings", () => {
-      if (!/^\/settings(\/|$)/.test(router.state.location.pathname))
-        void router.navigate({ to: "/settings" });
+      if (!/^\/settings(\/|$)/.test(router.state.location.pathname)) {
+        const desktop = window.matchMedia("(width >= 48rem)").matches;
+        void router.navigate({
+          to: desktop ? "/settings/general" : "/settings",
+          viewTransition: desktop ? BOT_TAB_TRANSITION : false,
+        });
+      }
     }),
   ];
   return () => {
@@ -306,7 +312,7 @@ function SidebarControl({ showSidebar }: { readonly showSidebar: boolean }) {
   const shown = useRouterState({
     select: ({ resolvedLocation, location }) => {
       const { pathname, searchStr } = resolvedLocation ?? location;
-      if (pathname === "/settings") return "settings";
+      if (isAppModalPage(pathname)) return "settings";
       if (pathname === "/connections") return searchStr === "" ? "you" : "you-detail";
       return null;
     },

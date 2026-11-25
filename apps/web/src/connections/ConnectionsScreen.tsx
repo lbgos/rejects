@@ -126,8 +126,19 @@ export function ConnectionsScreen({
     if (next !== null) rememberBackPage();
     void navigate({
       to: "/connections",
-      viewTransition:
-        animate && isMobile ? { types: [next === null ? "bots-pop" : "bots-push"] } : false,
+      viewTransition: animate
+        ? {
+            types: [
+              isMobile
+                ? next === null
+                  ? "bots-pop"
+                  : "bots-push"
+                : next === null
+                  ? "bots-pane-pop"
+                  : "bots-pane-push",
+            ],
+          }
+        : false,
       search:
         next === null
           ? {}

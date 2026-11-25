@@ -11,6 +11,8 @@ import { useBotsMode } from "./mode";
 
 const TABS: readonly BotTab[] = ["bots", "you", "settings"];
 
+type TabSlideDir = "forward" | "back";
+
 /** True where BotTabHost draws the tab screens, so their routes render nothing. */
 export function useBotTabHostActive() {
   const phone = useMediaQuery("max-md");
@@ -20,8 +22,9 @@ export function useBotTabHostActive() {
 
 /**
  * The phone's three tab screens, kept mounted so each is drawn with its data before it shows, and
- * the tab bar, which sits outside them and never moves. A tab switch fades the incoming screen in
- * over the outgoing one (bots.css); leaving for a chat or a detail page hides them at once.
+ * the tab bar, which sits outside them and never moves. A tab switch slides the outgoing and
+ * incoming screens together in the matching direction (bots.css); leaving for a chat or a detail
+ * page hides them at once so the push or pop view transition owns the move.
  */
 export function BotTabHost() {
   const active = useBotTabHostActive();
@@ -42,19 +45,40 @@ function TabScreens() {
   });
   const pane: BotTab | null = screen === "you-detail" ? "you" : screen;
   const thread = useSearch({ strict: false, select: (search) => search.thread });
-  // Only a switch between two tab screens fades; arriving from a chat or a detail page is instant,
-  // since the push or pop already animates it.
-  const [last, setLast] = useState({ pane, fade: false });
-  if (last.pane !== pane) setLast({ pane, fade: last.pane !== null && pane !== null });
+  // Only a switch between two tab screens slides; arriving from or leaving for a chat or detail
+  // page is instant here, since the push or pop view transition already animates it.
+  const [slide, setSlide] = useState<{
+    readonly pane: BotTab | null;
+    readonly leaving: BotTab | null;
+    readonly dir: TabSlideDir | null;
+    readonly seq: number;
+  }>({ pane, leaving: null, dir: null, seq: 0 });
+  if (slide.pane !== pane) {
+    const switching = slide.pane !== null && pane !== null;
+    setSlide({
+      pane,
+      leaving: switching ? slide.pane : null,
+      dir: switching ? (TABS.indexOf(pane) > TABS.indexOf(slide.pane) ? "forward" : "back") : null,
+      seq: slide.seq + 1,
+    });
+  }
 
   return (
-    <div data-bot-tab-host data-tab={pane ?? "none"} data-fade={last.fade}>
+    <div data-bot-tab-host data-tab={pane ?? "none"} data-dir={slide.dir ?? undefined}>
       {TABS.map((id) => (
         <div
           key={id}
           data-bot-tab-pane={id}
           data-active={pane === id}
+          data-leaving={slide.leaving === id || undefined}
           inert={pane !== id}
+          onAnimationEnd={(event) => {
+            if (event.target !== event.currentTarget || slide.leaving !== id) return;
+            const finishedSeq = slide.seq;
+            setSlide((current) =>
+              current.seq === finishedSeq ? { ...current, leaving: null, dir: null } : current,
+            );
+          }}
           className="fixed inset-0 flex h-dvh min-h-0 flex-col overflow-hidden"
         >
           {id === "bots" ? (

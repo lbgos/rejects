@@ -14,6 +14,7 @@ import {
 import * as Equal from "effect/Equal";
 import * as Schema from "effect/Schema";
 import { AboutVersionTitle } from "./AboutVersionTitle";
+import { useMediaQuery } from "../../hooks/useMediaQuery";
 import {
   readAppearanceModePreference,
   readThemeHalves,
@@ -580,6 +581,7 @@ function PhoneRestoreDefaults() {
 }
 
 export function ChatSettingsPanel() {
+  const phone = useMediaQuery("max-md");
   const modifierLabel = isMacPlatform(navigator.platform) ? "⌘" : "Ctrl";
   const sendShortcutOptions = [
     { value: "enter", label: "Enter" },
@@ -695,7 +697,15 @@ export function ChatSettingsPanel() {
 
       {/* The microphone in a chat's composer: its page has no entry of its own in the list. */}
       <SettingsSection title="Dictation" hideTitle>
-        <SettingsLinkRow title="Voice and dictation" link={<Link to="/settings/voice" />} />
+        <SettingsLinkRow
+          title="Voice and dictation"
+          link={
+            <Link
+              to="/settings/voice"
+              viewTransition={{ types: [phone ? "bots-push" : "bots-settings-push"] }}
+            />
+          }
+        />
       </SettingsSection>
 
       <SettingsSection id="follow-ups" title="Follow-ups">
@@ -1061,6 +1071,7 @@ function ResponseStreamingRow() {
 }
 
 export function MaintenanceSettingsPanel() {
+  const phone = useMediaQuery("max-md");
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   const { environment, connectedEnvironments } = useSettingsScope();
@@ -1177,7 +1188,11 @@ export function MaintenanceSettingsPanel() {
         <SettingsLinkRow
           {...searchableSetting("diagnostics")}
           link={
-            <Link to="/settings/diagnostics" search={{ machine: environmentId ?? undefined }} />
+            <Link
+              to="/settings/diagnostics"
+              search={{ machine: environmentId ?? undefined }}
+              viewTransition={{ types: [phone ? "bots-push" : "bots-settings-push"] }}
+            />
           }
           description="Processes, resource use and logs on this server."
         />
@@ -1187,6 +1202,7 @@ export function MaintenanceSettingsPanel() {
 }
 
 export function AboutSettingsPanel() {
+  const phone = useMediaQuery("max-md");
   const primaryPolicy = usePrimaryManagedPolicy();
   const telemetryOff = managedTelemetryOffMessage(primaryPolicy);
   return (
@@ -1226,7 +1242,12 @@ export function AboutSettingsPanel() {
         />
         <SettingsLinkRow
           {...searchableSetting("open-source-licenses")}
-          link={<Link to="/settings/open-source-licenses" />}
+          link={
+            <Link
+              to="/settings/open-source-licenses"
+              viewTransition={{ types: [phone ? "bots-push" : "bots-settings-push"] }}
+            />
+          }
         />
       </SettingsSection>
     </SettingsPageContainer>

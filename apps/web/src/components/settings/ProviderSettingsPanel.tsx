@@ -38,8 +38,10 @@ import * as Duration from "effect/Duration";
 import * as Result from "effect/Result";
 import { ChevronRightIcon, PlusIcon } from "lucide-react";
 import { use, useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 
+import { runViewTransition } from "../../bots/viewTransition";
 import { isDesktopLocalConnectionTarget } from "../../connection/desktopLocal";
 import {
   useEnvironmentSettings,
@@ -342,6 +344,10 @@ interface ProviderSettingsTarget {
   readonly scoped?: boolean;
   readonly environmentIds?: readonly EnvironmentId[];
   readonly projectIds?: readonly ProjectId[];
+}
+
+function runPhoneProviderTransition(type: "bots-push" | "bots-pop", update: () => void) {
+  runViewTransition([type], () => flushSync(update));
 }
 
 export function ProviderSettingsPanel(target: ProviderSettingsTarget) {
@@ -830,7 +836,12 @@ export function EnvironmentProviderSettings({
         : (providerClients.get(selectedRow.driver)?.label ?? String(selectedRow.driver));
   const publishPhoneProvider = useEffectEvent((title: string | null) => {
     phoneBar?.setDetail(
-      title === null ? null : { title, onBack: () => setPhoneProviderOpen(false) },
+      title === null
+        ? null
+        : {
+            title,
+            onBack: () => runPhoneProviderTransition("bots-pop", () => setPhoneProviderOpen(false)),
+          },
     );
   });
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- names the open provider in the phone settings bar, which the settings layout owns
@@ -979,8 +990,15 @@ export function EnvironmentProviderSettings({
     updateModelPreferences: stableUpdateModelPreferences,
     toggleModelFavorite: stableToggleModelFavorite,
     selectInstance: (instanceId) => {
-      setSelectedInstanceId(instanceId);
       // A phone has room for the list or one provider: the provider opens as its own page.
+      if (phoneBar !== null) {
+        runPhoneProviderTransition("bots-push", () => {
+          setSelectedInstanceId(instanceId);
+          setPhoneProviderOpen(true);
+        });
+        return;
+      }
+      setSelectedInstanceId(instanceId);
       setPhoneProviderOpen(true);
     },
   };

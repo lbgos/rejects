@@ -166,14 +166,14 @@ const isActivePane = (target: EventTarget | null) =>
   target.dataset.botTabPane !== undefined &&
   target.dataset.active === "true";
 
-/** Follows the incoming pane's opacity transition and reports it once it ends or is cancelled. */
-function watchFade(from: string, to: string, bar: BarState, tapped: number) {
+/** Follows the incoming pane's slide animation and reports it once it ends or is cancelled. */
+function watchSlide(from: string, to: string, bar: BarState, tapped: number) {
   let run: { readonly at: number; readonly bar: BarState; readonly animation: string } | null =
     null;
   const stop = () => {
-    document.removeEventListener("transitionrun", onRun, true);
-    document.removeEventListener("transitionend", onEnd, true);
-    document.removeEventListener("transitioncancel", onEnd, true);
+    document.removeEventListener("animationstart", onRun, true);
+    document.removeEventListener("animationend", onEnd, true);
+    document.removeEventListener("animationcancel", onEnd, true);
     window.clearTimeout(timer);
   };
   const report = (finished: string) => {
@@ -183,41 +183,43 @@ function watchFade(from: string, to: string, bar: BarState, tapped: number) {
       ...base(from, to),
       called: false,
       update: "css",
-      ready: run ? "transitionrun" : "none",
+      ready: run ? "animationstart" : "none",
       finished,
       updateMs: -1,
       readyMs: run ? Math.round(run.at - tapped) : -1,
       finishedMs: finished === "none" ? -1 : now,
-      runMs: run && finished === "transitionend" ? Math.round(performance.now() - run.at) : -1,
+      runMs: run && finished === "animationend" ? Math.round(performance.now() - run.at) : -1,
       animations: run?.animation ?? "none",
       bar: barReport(bar, run?.bar ?? barState()),
     });
   };
-  const onRun = (event: TransitionEvent) => {
-    if (event.propertyName !== "opacity" || !isActivePane(event.target) || run) return;
+  const onRun = (event: AnimationEvent) => {
+    if (!isActivePane(event.target) || run) return;
     const pane = event.target instanceof HTMLElement ? event.target : null;
-    const transition = pane?.getAnimations().find((a) => a instanceof CSSTransition);
-    const duration = transition?.effect?.getTiming().duration;
+    const animation = pane
+      ?.getAnimations()
+      .find((a) => a instanceof CSSAnimation && a.animationName === event.animationName);
+    const duration = animation?.effect?.getTiming().duration;
     run = {
       at: performance.now(),
       bar: barState(),
-      animation: token(`opacity:${Math.round(Number(duration ?? 0))}`, 40),
+      animation: token(`${event.animationName}:${Math.round(Number(duration ?? 0))}`, 60),
     };
   };
-  const onEnd = (event: TransitionEvent) => {
-    if (event.propertyName !== "opacity" || !isActivePane(event.target) || !run) return;
+  const onEnd = (event: AnimationEvent) => {
+    if (!isActivePane(event.target) || !run) return;
     report(event.type);
   };
-  document.addEventListener("transitionrun", onRun, true);
-  document.addEventListener("transitionend", onEnd, true);
-  document.addEventListener("transitioncancel", onEnd, true);
+  document.addEventListener("animationstart", onRun, true);
+  document.addEventListener("animationend", onEnd, true);
+  document.addEventListener("animationcancel", onEnd, true);
   const timer = window.setTimeout(() => report("none"), CALL_WINDOW_MS);
 }
 
 /** Call on a tab tap, before navigating. */
 export function noteTabSwitch(from: string, to: string) {
   if (from !== "sidebar") {
-    watchFade(from, to, barState(), performance.now());
+    watchSlide(from, to, barState(), performance.now());
     return;
   }
   if (!installed) install();
