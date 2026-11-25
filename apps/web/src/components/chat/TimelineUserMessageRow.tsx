@@ -867,11 +867,9 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         userMessage.attribution === "guest"
           ? guestBubbleClassName(false)
           : !mediaOnly && !fileCardsOnly && !audioOnly && "bg-message",
-        !folded && !mediaOnly && !fileCardsOnly && !audioOnly && "p-3",
+        !folded && !mediaOnly && !fileCardsOnly && !audioOnly && (bot ? "px-5 py-3.5" : "p-3"),
         folded && expanded && "w-full",
-        bot &&
-          !folded &&
-          "max-w-full max-md:rounded-3xl max-md:px-3.75 max-md:py-2.25 max-md:text-bot-message",
+        bot && !folded && "max-w-full max-md:rounded-3xl max-md:text-bot-message",
       )}
       data-bot-user-bubble={bot || undefined}
       data-user-message-bubble=""
