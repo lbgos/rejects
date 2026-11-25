@@ -669,13 +669,6 @@ export function SettingResetButton({
   );
 }
 
-function markSettingsBarScrolled(scroller: HTMLElement | null) {
-  scroller
-    ?.closest("[data-settings-pane]")
-    ?.querySelector("[data-settings-page-header]")
-    ?.setAttribute("data-scrolled", String(scroller.scrollTop > 0));
-}
-
 export function SettingsPageContainer({
   children,
   className,
@@ -710,9 +703,6 @@ export function SettingsPageContainer({
       onTargetHandled={clearTargetHash}
     >
       <div
-        // A phone page's bar shows its edge while anything is under it (bots.css).
-        ref={markSettingsBarScrolled}
-        onScroll={(event) => markSettingsBarScrolled(event.currentTarget)}
         className="topbar-scroll-fade scrollbar-gutter-both flex-1 overflow-y-auto"
         data-settings-page-scroll
       >
