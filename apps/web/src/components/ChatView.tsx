@@ -439,6 +439,10 @@ type ChatViewProps =
 
 const DismissedFallbackWindowSchema = Schema.NullOr(Schema.String);
 
+// The composer's soft zone (bots.css reads it as `--bots-soft-zone` from the chat column). A bot
+// chat's end inset clears it too.
+const BOT_SOFT_ZONE_PX = 32;
+
 const ignoreComposerFocus = () => {};
 
 export default function ChatView(props: ChatViewProps) {
@@ -2295,9 +2299,10 @@ export default function ChatView(props: ChatViewProps) {
   const publishComposerOverlayHeight = (height: number) => {
     const nextHeight = Math.ceil(height);
     if (nextHeight <= 0) return;
-    if (composerTimelineInsetRef.current !== nextHeight) {
-      composerTimelineInsetRef.current = nextHeight;
-      setComposerTimelineInset(nextHeight);
+    const timelineInset = nextHeight + (botChrome ? BOT_SOFT_ZONE_PX : 0);
+    if (composerTimelineInsetRef.current !== timelineInset) {
+      composerTimelineInsetRef.current = timelineInset;
+      setComposerTimelineInset(timelineInset);
     }
     // Reserve the expanded composer height for the terminal drawer and empty placeholder.
     // Keep it while the mobile strip collapses, but allow growth from approvals or tasks.
@@ -3384,6 +3389,7 @@ export default function ChatView(props: ChatViewProps) {
         )}
         data-chat-column-maximized-away={rightPanelMaximized ? "true" : "false"}
         data-chat-column
+        style={{ "--bots-soft-zone": `${BOT_SOFT_ZONE_PX}px` } as CSSProperties}
         inert={rightPanelMaximized}
         onMouseUp={preventMiddleClickPasteOutsideEditable}
       >
