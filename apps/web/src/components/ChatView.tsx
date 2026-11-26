@@ -37,6 +37,8 @@ import { useThreadLifecycle } from "./chat/useThreadLifecycle";
 import { useRightPanelActions } from "./chat/useRightPanelActions";
 import { type TerminalLaunchContext, useChatTerminalActions } from "./chat/useChatTerminalActions";
 import { useComposerSend } from "./chat/useComposerSend";
+import { useThreadSends } from "./chat/sendOrder";
+import { useUnsentMessageRecovery } from "./chat/useUnsentMessageRecovery";
 import { useComposerResume } from "./chat/useComposerResume";
 import { ThreadFind, ThreadFindCanvas } from "./chat/ThreadFindProvider";
 import { closeThreadFind, openThreadFind, useThreadFindOpen } from "./chat/threadFindStore";
@@ -1524,6 +1526,16 @@ export default function ChatView(props: ChatViewProps) {
   const activeRunPreparing = activeActivityRun?.status === "preparing";
   const sendQueuesBehindSetup =
     isServerThread && (activeRunPreparing || activeActivityRun?.status === "starting");
+  const threadSends = useThreadSends(routeThreadKey);
+  // A send waiting on its uploads takes follow-ups, which queue behind its turn.
+  const sendQueuesBehindSend = isServerThread && threadSends.messageIds.length > 0;
+  useUnsentMessageRecovery({
+    threadKey: routeThreadKey,
+    serverMessages: isServerThread ? (serverProjection?.messages ?? null) : null,
+    draftTarget: baseComposerDraftTarget,
+    promptRef,
+    composerRef,
+  });
   const [setupQueueSendThreadKey, setSetupQueueSendThreadKey] = useState<string | null>(null);
   const downloadFileAttachment = async (attachment: ChatFileAttachment) => {
     const connection = readPreparedConnection(environmentId);
@@ -3114,6 +3126,7 @@ export default function ChatView(props: ChatViewProps) {
           })}
           onEditQueuedRun={queuedRunEdit.beginEdit}
           onCancelEdit={queuedRunEdit.cancelEdit}
+          onEditHeld={focusComposerStable}
           timestampFormat={timestampFormat}
           onOpenThread={onOpenRelatedThreadStable}
         />
@@ -3173,6 +3186,7 @@ export default function ChatView(props: ChatViewProps) {
   // something, by its own rule: an optimistic message stops counting once the server has it.
   const hasQueuedTurns =
     queuedRunCount > 0 ||
+    threadSends.held.length > 0 ||
     optimisticUserMessages.some(
       (message) =>
         message.inputIntent === "queued_turn" &&
@@ -3731,8 +3745,9 @@ export default function ChatView(props: ChatViewProps) {
                                 phase={phase}
                                 canSteer={!compactionBlocksSteer}
                                 canInterrupt={canInterruptRunningThread}
+                                queuesBehindSend={sendQueuesBehindSend}
                                 isSendBusy={
-                                  (isSendBusy && !sendQueuesBehindSetup) ||
+                                  (isSendBusy && !sendQueuesBehindSetup && !sendQueuesBehindSend) ||
                                   (setupQueueSendThreadKey !== null &&
                                     setupQueueSendThreadKey === activeThreadKey) ||
                                   queuedRunEdit.isSaving ||

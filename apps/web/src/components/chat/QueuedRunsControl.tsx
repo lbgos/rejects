@@ -1,5 +1,5 @@
 import { APP_BASE_NAME } from "~/branding";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { deriveThreadQueueWorkflowState } from "@t3tools/client-runtime/state/thread-workflows";
 import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
 import {
@@ -38,6 +38,7 @@ import { Button, InlineButton } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { TimestampFormat } from "@t3tools/contracts/settings";
 import { GuestMessageName } from "./guestMessageStyle";
+import { cancelHeldSend, useThreadSends } from "./sendOrder";
 import { TimelineRowTimestamp } from "./TimelineRowParts";
 import { FoldedMessageHeader, useScheduledTaskTitle } from "./TimelineUserMessageRow";
 
@@ -92,6 +93,8 @@ export function QueuedRunsControl({
   readonly editBlockedReason: string | null;
   readonly onEditQueuedRun: (request: EditQueuedRunRequest) => void;
   readonly onCancelEdit: () => void;
+  /** A held message went back to the composer. */
+  readonly onEditHeld: () => void;
   readonly timestampFormat: TimestampFormat;
   readonly onOpenThread: (threadId: ThreadId, environmentId?: EnvironmentId) => void;
 }) {
@@ -106,7 +109,9 @@ export function QueuedRunsControl({
   const [busyRunId, setBusyRunId] = useState<RunId | null>(null);
   const steerInFlightRef = useRef(false);
   // Run-only acknowledgements can resurrect pending rows after cancellation or startup.
-  const acknowledgedMessageIds = new Set((projection?.messages ?? []).map((message) => message.id));
+  const acknowledgedMessageIds = new Set<string>(
+    (projection?.messages ?? []).map((message) => message.id),
+  );
   const queuedImageAttachmentResources = queuedImageResources(projection);
   const queuedImageAttachmentUrls = useAssetUrls(
     props.environmentId,
@@ -129,6 +134,16 @@ export function QueuedRunsControl({
   const optimisticQueued = props.optimisticMessages.filter(
     (message) => message.inputIntent === "queued_turn" && !acknowledgedMessageIds.has(message.id),
   );
+  // Held behind a send that has not reached the server. They live in this client's send order,
+  // which outlives the view's optimistic rows across a thread switch or remount.
+  const threadKey = scopedThreadKey(scopeThreadRef(props.environmentId, props.threadId));
+  const held = useThreadSends(threadKey).held;
+  const heldIds = new Set(held.map((send) => send.messageId));
+  const heldWithoutRow = held.filter(
+    (send) =>
+      !acknowledgedMessageIds.has(send.messageId) &&
+      !optimisticQueued.some((message) => message.id === send.messageId),
+  );
   const items = [
     ...queued.map(({ run, text, attachments, context, message }, serverIndex) => ({
       key: run.id,
@@ -149,12 +164,14 @@ export function QueuedRunsControl({
           url: queuedImageUrlById.get(attachment.id) ?? null,
         })),
       pending: false,
+      heldMessageId: null,
     })),
     ...optimisticQueued.map((message) => ({
       key: message.id,
       message: undefined,
       runId: null,
       messageId: null,
+      heldMessageId: heldIds.has(message.id) ? message.id : null,
       freshContext: false,
       serverIndex: null,
       text: message.text,
@@ -167,6 +184,20 @@ export function QueuedRunsControl({
           name: attachment.name,
           url: attachment.previewUrl ?? null,
         })),
+      pending: true,
+    })),
+    ...heldWithoutRow.map((send) => ({
+      key: send.messageId,
+      message: undefined,
+      runId: null,
+      messageId: null,
+      heldMessageId: send.messageId,
+      freshContext: false,
+      serverIndex: null,
+      text: send.draftText,
+      editable: true,
+      attachments: [] as ReadonlyArray<ContractChatAttachment>,
+      thumbnails: [] as ReadonlyArray<QueuedRowThumbnail>,
       pending: true,
     })),
   ];
@@ -275,7 +306,7 @@ export function QueuedRunsControl({
                 timestampFormat={props.timestampFormat}
                 onOpenThread={props.onOpenThread}
               >
-                {canSendRun(item.freshContext) && !isEditing ? (
+                {canSendRun(item.freshContext) && !isEditing && item.heldMessageId === null ? (
                   <>
                     <Tooltip>
                       <TooltipTrigger render={<span className="flex shrink-0" />}>
@@ -299,7 +330,7 @@ export function QueuedRunsControl({
                     </Tooltip>
                   </>
                 ) : null}
-                {item.pending ? (
+                {item.pending && item.heldMessageId === null ? (
                   <span className="flex items-center gap-1 px-1">
                     <Clock3Icon aria-hidden className="size-3" />
                     Saving
@@ -327,13 +358,17 @@ export function QueuedRunsControl({
                           variant="ghost-muted"
                           aria-label="Edit queued message"
                           disabled={
-                            item.runId === null ||
-                            !item.editable ||
-                            busyRunId !== null ||
-                            props.editBlockedReason !== null
+                            item.heldMessageId === null &&
+                            (item.runId === null ||
+                              !item.editable ||
+                              busyRunId !== null ||
+                              props.editBlockedReason !== null)
                           }
                           onClick={() => {
-                            if (item.runId !== null && item.messageId !== null) {
+                            if (item.heldMessageId !== null) {
+                              cancelHeldSend(threadKey, item.heldMessageId, "edit");
+                              props.onEditHeld();
+                            } else if (item.runId !== null && item.messageId !== null) {
                               props.onEditQueuedRun({
                                 runId: item.runId,
                                 messageId: item.messageId,
@@ -347,8 +382,10 @@ export function QueuedRunsControl({
                         </Button>
                       </TooltipTrigger>
                       <TooltipPopup>
-                        {props.editBlockedReason ??
-                          `Edit in the composer${item.serverIndex === queued.length - 1 && props.editShortcutLabel ? ` (${props.editShortcutLabel})` : ""}`}
+                        {item.heldMessageId !== null
+                          ? "Move back to the composer"
+                          : (props.editBlockedReason ??
+                            `Edit in the composer${item.serverIndex === queued.length - 1 && props.editShortcutLabel ? ` (${props.editShortcutLabel})` : ""}`)}
                       </TooltipPopup>
                     </Tooltip>
                     <Tooltip>
@@ -358,9 +395,14 @@ export function QueuedRunsControl({
                             size="icon-xs"
                             variant="ghost-muted"
                             aria-label="Remove queued message"
-                            disabled={item.runId === null || busyRunId !== null}
+                            disabled={
+                              item.heldMessageId === null &&
+                              (item.runId === null || busyRunId !== null)
+                            }
                             onClick={() => {
-                              if (item.runId !== null) void remove(item.runId);
+                              if (item.heldMessageId !== null)
+                                cancelHeldSend(threadKey, item.heldMessageId, "remove");
+                              else if (item.runId !== null) void remove(item.runId);
                             }}
                           />
                         }

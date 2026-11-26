@@ -1,4 +1,5 @@
 import { RegistryContext } from "@effect/atom-react";
+import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { EnvironmentThreadState } from "@t3tools/client-runtime/state/threads";
 import { EnvironmentId, MessageId, ThreadId } from "@t3tools/contracts";
 import { serializeAssistantCitation } from "@t3tools/shared/assistantCitations";
@@ -81,6 +82,7 @@ import { EMPTY_ENVIRONMENT_THREAD_STATE } from "@t3tools/client-runtime/state/th
 import { act, render as renderUi } from "../../../test/render";
 import { makeStreamingTimelineFixture, makeThreadProjectionFixture } from "../../test-fixtures";
 import { QueuedRunsControl } from "./QueuedRunsControl";
+import { reserveSend } from "./sendOrder";
 
 function setup() {
   state.workflow = null;
@@ -94,6 +96,7 @@ const baseProps = {
   editBlockedReason: null,
   onEditQueuedRun: () => undefined,
   onCancelEdit: () => undefined,
+  onEditHeld: () => undefined,
   timestampFormat: "locale",
   onOpenThread: () => undefined,
 } satisfies ComponentProps<typeof QueuedRunsControl>;
@@ -101,6 +104,48 @@ const baseProps = {
 async function renderQueue(props: Partial<ComponentProps<typeof QueuedRunsControl>> = {}) {
   return renderUi(<QueuedRunsControl {...baseProps} {...props} />);
 }
+
+it("keeps a held follow-up in the queue after the view remounts", async () => {
+  setup();
+  state.workflow = { activeRun: null, queuedRuns: [] };
+  const threadKey = scopedThreadKey(scopeThreadRef(baseProps.environmentId, baseProps.threadId));
+  const batch = reserveSend({
+    threadKey,
+    messageId: "message:batch",
+    draftText: "Receipts",
+    attachmentCount: 60,
+  });
+  const followUp = reserveSend({
+    threadKey,
+    messageId: "message:follow-up",
+    draftText: "Total them up",
+    attachmentCount: 0,
+  });
+  const cancels: string[] = [];
+  followUp.hold((mode) => {
+    cancels.push(mode);
+    followUp.settle("cancelled");
+  });
+  {
+    await using _sent = await renderQueue({
+      optimisticMessages: [
+        {
+          id: MessageId.make("message:follow-up"),
+          inputIntent: "queued_turn",
+          text: "Total them up",
+        },
+      ],
+    });
+    await expect.element(page.getByText("Total them up")).toBeVisible();
+  }
+  // Leaving the thread drops the view's optimistic rows; the held send is still queued.
+  await using _remounted = await renderQueue();
+  await expect.element(page.getByText("Total them up")).toBeVisible();
+  await page.getByRole("button", { name: "Remove queued message" }).click();
+  expect(cancels).toEqual(["remove"]);
+  await expect.element(page.getByText("Total them up")).not.toBeInTheDocument();
+  batch.settle("sent");
+});
 
 it("previews assistant quotes as readable text and preserves the citation when editing", async () => {
   setup();

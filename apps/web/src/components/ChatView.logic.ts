@@ -1344,9 +1344,13 @@ export function planComposerTurn(input: {
   readonly dispatchMode: ComposerDispatchMode;
   /** The turn starts a new provider session, so it neither compacts first nor steers. */
   readonly freshContext: boolean;
+  /** An earlier send in this thread has not reached the server; this one goes after its turn. */
+  readonly followsEarlierSend: boolean;
 }) {
   const isFirstMessage =
-    !input.sendQueuesBehindSetup && (!input.isServerThread || input.activeMessageCount === 0);
+    !input.sendQueuesBehindSetup &&
+    !input.followsEarlierSend &&
+    (!input.isServerThread || input.activeMessageCount === 0);
   const shouldCreateWorktree =
     isFirstMessage && input.sendEnvMode === "worktree" && !input.worktreePath;
   // A stale Claude session compacts before this message so the turn does not re-read the
@@ -1354,6 +1358,7 @@ export function planComposerTurn(input: {
   // rejected.
   const compactBeforeSend =
     !input.freshContext &&
+    !input.followsEarlierSend &&
     input.resumeCompactionTokens !== null &&
     !input.keepFullHistory &&
     !COMPACT_COMMAND_PATTERN.test(input.messageText);
@@ -1368,11 +1373,14 @@ export function planComposerTurn(input: {
     baseBranchForWorktree: shouldCreateWorktree ? input.activeThreadBranch : null,
     compactBeforeSend,
     turnDispatchMode:
-      compactBeforeSend || (input.sendQueuesBehindSetup && dispatchMode !== "steer")
+      compactBeforeSend ||
+      input.followsEarlierSend ||
+      (input.sendQueuesBehindSetup && dispatchMode !== "steer")
         ? ("queue" as const)
         : dispatchMode,
     shouldQueueBehindActiveRun:
       compactBeforeSend ||
+      input.followsEarlierSend ||
       input.sendQueuesBehindSetup ||
       (input.phase === "running" && dispatchMode === "queue"),
   };

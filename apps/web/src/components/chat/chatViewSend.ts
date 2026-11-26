@@ -272,6 +272,52 @@ export function restoreComposerDraft(
   return images;
 }
 
+/**
+ * Adds a send that came back after what the draft already holds, so messages that come back
+ * together keep their order and none replaces another. Returns the draft as written.
+ */
+export function appendComposerDraft(
+  draftTarget: ScopedThreadRef | DraftId,
+  snapshot: ComposerSendSnapshot,
+) {
+  const store = useComposerDraftStore.getState();
+  const before = store.getComposerDraft(draftTarget);
+  const prompt = [before?.prompt ?? "", snapshot.draftText]
+    .filter((text) => text.trim().length > 0)
+    .join("\n\n");
+  store.setPrompt(draftTarget, prompt);
+  if (!before?.replyTo) store.setReplyTo(draftTarget, snapshot.replyTo);
+  store.addImages(draftTarget, snapshot.images.map(cloneComposerImageForRetry));
+  store.addFiles(draftTarget, snapshot.files);
+  store.setTerminalContexts(draftTarget, [
+    ...(before?.terminalContexts ?? []),
+    ...snapshot.terminalContexts,
+  ]);
+  store.setPreviewAnnotations(draftTarget, [
+    ...(before?.previewAnnotations ?? []),
+    ...snapshot.previewAnnotations,
+  ]);
+  store.setReviewComments(draftTarget, [
+    ...(before?.reviewComments ?? []),
+    ...snapshot.reviewComments,
+  ]);
+  store.setThreadContexts(draftTarget, [
+    ...(before?.threadContexts ?? []),
+    ...snapshot.threadContexts,
+  ]);
+  store.setEnvironmentContexts(draftTarget, [
+    ...(before?.environmentContexts ?? []),
+    ...snapshot.environmentContexts,
+  ]);
+  const after = store.getComposerDraft(draftTarget);
+  return {
+    prompt,
+    images: after?.images ?? [],
+    files: after?.files ?? [],
+    terminalContexts: after?.terminalContexts ?? [],
+  };
+}
+
 export interface MultipleModelTarget {
   readonly selection: ModelSelection;
   readonly text: string;

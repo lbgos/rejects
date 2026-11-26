@@ -39,7 +39,7 @@ export function composerCommandKeyHandler(input: {
   readonly routeKind: ChatComposerProps["routeKind"];
   readonly phase: ChatComposerProps["phase"];
   readonly canSteer: boolean;
-  readonly followUpBehavior: ChatComposerProps["settings"]["followUpBehavior"];
+  readonly followUpBehavior: ChatComposerProps["settings"]["followUps"];
   readonly isSoftwareKeyboardOpen: boolean;
   readonly isLiteralPendingAnswer: boolean;
   readonly pendingUserInputs: ReadonlyArray<PendingUserInput>;

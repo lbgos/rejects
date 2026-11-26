@@ -184,9 +184,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       ? ["Rich text composer"]
       : []),
     ...(settings.sendShortcut !== DEFAULT_UNIFIED_SETTINGS.sendShortcut ? ["Send shortcut"] : []),
-    ...(settings.followUpBehavior !== DEFAULT_UNIFIED_SETTINGS.followUpBehavior
-      ? ["Follow-up behavior"]
-      : []),
+    ...(settings.followUps !== DEFAULT_UNIFIED_SETTINGS.followUps ? ["Follow-up behavior"] : []),
     ...(settings.toolCallVisibility !== DEFAULT_UNIFIED_SETTINGS.toolCallVisibility
       ? ["Tool calls in chat"]
       : []),
@@ -312,7 +310,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       showSkillsInSlashMenu: DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu,
       composerRichTextEnabled: DEFAULT_UNIFIED_SETTINGS.composerRichTextEnabled,
       sendShortcut: DEFAULT_UNIFIED_SETTINGS.sendShortcut,
-      followUpBehavior: DEFAULT_UNIFIED_SETTINGS.followUpBehavior,
+      followUps: DEFAULT_UNIFIED_SETTINGS.followUps,
       toolCallVisibility: DEFAULT_UNIFIED_SETTINGS.toolCallVisibility,
       screenReaderAnnouncements: DEFAULT_UNIFIED_SETTINGS.screenReaderAnnouncements,
       screenReaderWindowTitle: DEFAULT_UNIFIED_SETTINGS.screenReaderWindowTitle,
@@ -718,12 +716,12 @@ export function ChatSettingsPanel() {
               : `Press ${modifierLabel}${settings.sendShortcut === "mod-enter" ? " + Shift" : ""} + Enter to do the opposite for one message.`)
           }
           resetAction={
-            settings.followUpBehavior !== DEFAULT_UNIFIED_SETTINGS.followUpBehavior ? (
+            settings.followUps !== DEFAULT_UNIFIED_SETTINGS.followUps ? (
               <SettingResetButton
                 label="follow-up behavior"
                 onClick={() =>
                   updateSettings({
-                    followUpBehavior: DEFAULT_UNIFIED_SETTINGS.followUpBehavior,
+                    followUps: DEFAULT_UNIFIED_SETTINGS.followUps,
                   })
                 }
               />
@@ -731,17 +729,15 @@ export function ChatSettingsPanel() {
           }
           control={
             <Select
-              value={settings.followUpBehavior}
+              value={settings.followUps}
               onValueChange={(value) => {
                 if (value === "queue" || value === "steer") {
-                  updateSettings({ followUpBehavior: value });
+                  updateSettings({ followUps: value });
                 }
               }}
             >
               <SelectTrigger size="sm" className="w-auto min-w-0" aria-label="Follow-up behavior">
-                <SelectValue>
-                  {settings.followUpBehavior === "queue" ? "Queue" : "Steer"}
-                </SelectValue>
+                <SelectValue>{settings.followUps === "queue" ? "Queue" : "Steer"}</SelectValue>
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>
                 <SelectItem value="queue">Queue</SelectItem>

@@ -128,7 +128,9 @@ import {
   resolveMultipleModelTargets,
   prepareTurnAttachments,
   restoreComposerDraft,
+  appendComposerDraft,
 } from "./chatViewSend";
+import { hasOpenSends, openSendCount, reserveSend, type SendOutcome } from "./sendOrder";
 import type {
   EnvironmentProject,
   EnvironmentThreadShell,
@@ -444,7 +446,18 @@ export function useComposerSend(input: ComposerSendInput) {
       notifyDirectAnnotationAttached();
       return;
     }
-    if ((isSendBusy && !sendQueuesBehindSetup) || sendInFlightRef.current) {
+    // While an earlier send waits on its uploads, this one queues behind it. Approvals shown now
+    // would be declined out of order and a multiple-model send cannot wait, so both are refused.
+    const followsEarlierSend =
+      isServerThread &&
+      hasOpenSends(routeThreadKey) &&
+      !directAnnotation &&
+      (sendCtx?.multipleModelSelections ?? null) === null &&
+      (sendCtx?.shownPendingApprovalIds.length ?? 0) === 0;
+    if (
+      ((isSendBusy && !sendQueuesBehindSetup) || sendInFlightRef.current) &&
+      !followsEarlierSend
+    ) {
       if (directAnnotation) {
         notifyDirectAnnotationAttached();
       } else {
@@ -806,6 +819,7 @@ export function useComposerSend(input: ComposerSendInput) {
       phase,
       dispatchMode,
       freshContext: freshArm !== undefined,
+      followsEarlierSend,
     });
     if (missingWorktreeBaseBranch) {
       setThreadError(threadIdForSend, "Select a base branch before sending in New worktree mode.");
@@ -873,10 +887,26 @@ export function useComposerSend(input: ComposerSendInput) {
     }
 
     sendInFlightRef.current = true;
+    const ticket =
+      isServerThread &&
+      multipleModelSelections === null &&
+      approvalFeedbackTarget === undefined &&
+      sendCtx.shownPendingApprovalIds.length === 0
+        ? reserveSend({
+            threadKey: routeThreadKey,
+            messageId: messageIdForSend,
+            draftText: sendSnapshot.draftText,
+            attachmentCount: composerAttachmentsSnapshot.length,
+          })
+        : null;
+    const finishSend = (outcome: SendOutcome) => {
+      ticket?.settle(outcome);
+      sendInFlightRef.current = hasOpenSends(routeThreadKey);
+    };
     const sendGeneration = ++composerSendGenerationRef.current;
     const attachmentCapabilitiesBeforeUpload = readLiveAttachmentCapabilities();
     if (attachmentCapabilitiesBeforeUpload.fileBlockReason !== null) {
-      sendInFlightRef.current = false;
+      finishSend("failed");
       setThreadError(threadIdForSend, attachmentCapabilitiesBeforeUpload.fileBlockReason);
       return;
     }
@@ -923,7 +953,7 @@ export function useComposerSend(input: ComposerSendInput) {
       !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope) ||
       attachmentCapabilitiesBeforeDispatch.fileBlockReason !== null
     ) {
-      sendInFlightRef.current = false;
+      finishSend("failed");
       setThreadError(
         threadIdForSend,
         attachmentCapabilitiesBeforeDispatch.fileBlockReason ??
@@ -947,7 +977,7 @@ export function useComposerSend(input: ComposerSendInput) {
           ? "Retry or remove failed uploads before sending."
           : null);
       if (uploadBlockReason !== null) {
-        sendInFlightRef.current = false;
+        finishSend("cancelled");
         setThreadError(threadIdForSend, uploadBlockReason);
         setDockedDraftHeroThreadKey((currentThreadKey) =>
           currentThreadKey === activeThreadKey ? null : currentThreadKey,
@@ -1010,7 +1040,7 @@ export function useComposerSend(input: ComposerSendInput) {
             threadIdForSend,
             "Send approval feedback without attachments or added context.",
           );
-          sendInFlightRef.current = false;
+          finishSend("cancelled");
           return;
         }
         if (
@@ -1018,7 +1048,7 @@ export function useComposerSend(input: ComposerSendInput) {
           approvalResponding ||
           currentRouteThreadKeyRef.current !== routeThreadKey
         ) {
-          sendInFlightRef.current = false;
+          finishSend("cancelled");
           return;
         }
         const sent = await sendApprovalFeedback(
@@ -1026,7 +1056,7 @@ export function useComposerSend(input: ComposerSendInput) {
           messageTextForSend,
           onRespondToApprovalStable,
         ).catch(() => false);
-        sendInFlightRef.current = false;
+        finishSend("cancelled");
         if (
           sent &&
           !draftChangedSinceSend() &&
@@ -1062,7 +1092,7 @@ export function useComposerSend(input: ComposerSendInput) {
         approvalArrived ||
         currentRouteThreadKeyRef.current !== routeThreadKey
       ) {
-        sendInFlightRef.current = false;
+        finishSend("cancelled");
         setDockedDraftHeroThreadKey((currentThreadKey) =>
           currentThreadKey === activeThreadKey ? null : currentThreadKey,
         );
@@ -1084,7 +1114,7 @@ export function useComposerSend(input: ComposerSendInput) {
     }
     if (sendQueuesBehindSetup) {
       setSetupQueueSendThreadKey(activeThreadKey);
-    } else {
+    } else if (!followsEarlierSend) {
       beginLocalDispatch({
         preparingWorktree: multipleModelSelections !== null || Boolean(baseBranchForWorktree),
         submissionIntent:
@@ -1174,6 +1204,35 @@ export function useComposerSend(input: ComposerSendInput) {
     promptRef.current = "";
     clearComposerDraftContent(composerDraftTarget);
     composerRef.current?.resetCursorState();
+    const dropOptimisticMessage = () => {
+      setOptimisticUserMessages((existing) => {
+        const next = existing.filter((message) => message.id !== messageIdForSend);
+        return next.length === existing.length ? existing : next;
+      });
+      optimisticBlobPreviews.release(optimisticMessage);
+    };
+    // Messages that come back together append in send order, so none replaces another.
+    const appendToComposer = () => {
+      const draft = appendComposerDraft(composerDraftTarget, sendSnapshot);
+      if (currentRouteThreadKeyRef.current !== routeThreadKey) return;
+      promptRef.current = draft.prompt;
+      composerImagesRef.current = draft.images;
+      composerFilesRef.current = draft.files;
+      composerTerminalContextsRef.current = draft.terminalContexts;
+      composerRef.current?.resetCursorState({
+        cursor: collapseExpandedComposerCursor(draft.prompt, draft.prompt.length),
+        prompt: draft.prompt,
+        detectTrigger: true,
+      });
+    };
+    if (ticket?.followsEarlierSend) {
+      ticket.hold((mode) => {
+        dropOptimisticMessage();
+        if (mode === "edit") appendToComposer();
+        else if (turnUsesAttachmentUploads) releaseDraftAttachments(composerAttachmentsSnapshot);
+        finishSend("cancelled");
+      });
+    }
 
     const title = deriveThreadTitleSeed({
       text: messageTextForSend,
@@ -1203,6 +1262,14 @@ export function useComposerSend(input: ComposerSendInput) {
       }
     }
 
+    // A follow-up waits for the send before it; when that one failed, this one comes back too.
+    if (ticket?.followsEarlierSend && !(await ticket.earlierSendsSent)) {
+      if (!ticket.beginDispatch()) return;
+      dropOptimisticMessage();
+      appendToComposer();
+      finishSend("failed");
+      return;
+    }
     const turnAttachmentsResult = await settlePromise(async () => {
       const turnAttachments = await turnAttachmentsPromise;
       const liveFileBlockReason = readLiveAttachmentCapabilities().fileBlockReason;
@@ -1214,6 +1281,8 @@ export function useComposerSend(input: ComposerSendInput) {
     if (failure === null && turnAttachmentsResult._tag === "Failure") {
       failure = turnAttachmentsResult;
     }
+    // Removed or taken back to edit while it waited.
+    if (ticket !== null && !ticket.beginDispatch()) return;
 
     if (failure === null && compactBeforeSend) {
       const compactResult = await startThreadTurn({
@@ -1394,13 +1463,11 @@ export function useComposerSend(input: ComposerSendInput) {
         clearBackgroundDraftSubmissionByRef(scopeThreadRef(environmentId, threadIdForSend));
       }
       // Only an acknowledged send replaces its optimistic row, so a failed one leaves here.
-      setOptimisticUserMessages((existing) => {
-        const next = existing.filter((message) => message.id !== messageIdForSend);
-        return next.length === existing.length ? existing : next;
-      });
       // A restored draft clones its images, so the sent copies are no longer used.
-      optimisticBlobPreviews.release(optimisticMessage);
-      if (
+      dropOptimisticMessage();
+      if (ticket !== null && (ticket.followsEarlierSend || openSendCount(routeThreadKey) > 1)) {
+        appendToComposer();
+      } else if (
         composerDraftHasUserContent(
           useComposerDraftStore.getState().getComposerDraft(composerDraftTarget),
         )
@@ -1473,13 +1540,13 @@ export function useComposerSend(input: ComposerSendInput) {
         }
       }
     }
-    sendInFlightRef.current = false;
+    finishSend(turnStartSucceeded ? "sent" : "failed");
     setSetupQueueSendThreadKey((current) => (current === activeThreadKey ? null : current));
     if (!turnStartSucceeded) {
       setDockedDraftHeroThreadKey((currentThreadKey) =>
         currentThreadKey === activeThreadKey ? null : currentThreadKey,
       );
-      if (!sendQueuesBehindSetup) resetLocalDispatch();
+      if (!sendQueuesBehindSetup && !followsEarlierSend) resetLocalDispatch();
     }
   };
 
