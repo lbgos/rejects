@@ -131,10 +131,9 @@ html[data-theme-id] [data-bots-mode="true"] [data-chat-header],
 }
 
 /* Scroll edges of the list screens: one rule for every list under chrome. A top bar is opaque and
-   spans the page, so content is cut at its edge, and the bar draws a hairline while anything is
-   under it. The tab bar floats and spans nothing, so rows fade to the page over
-   `--bots-edge-fade` and are gone `--bots-edge-gap` before its top edge: nothing reads under or
-   beside it. `--bots-fade-end` is how much of the scroller's bottom the chrome covers. A static
+   spans the page, so content is cut at its edge. The tab bar floats and spans nothing, so rows
+   fade to the page over `--bots-edge-fade` and are gone `--bots-edge-gap` before its top edge:
+   nothing reads under or beside it. `--bots-fade-end` is how much of the scroller's bottom the chrome covers. A static
    mask; scrolling repaints nothing extra. */
 :root[data-bots-app] {
   --bots-edge-fade: 1.5rem;
@@ -2162,26 +2161,13 @@ html[data-bots-app]:has(
   }
 }
 
-/* The top bars lift off the page only once something is under them. Their edge and shadow live
-   on a pseudo-element behind the bar's content and follow the bar's scrolled state (set by its
-   scroller), in one short fade: nothing is painted while the page is still, and the edge is the
-   same in a still frame as it is on screen. */
-:root[data-bots-app]
-  :is(
-    [data-chat-header],
-    [data-bots-top-bar],
-    [data-settings-page-header],
-    [data-bots-page] > header
-  ) {
+/* The chat header and a pushed page's bar keep a constant edge and shadow, on a pseudo-element
+   behind the bar's content. The list screens' bars have none. */
+:root[data-bots-app] :is([data-chat-header], [data-bots-top-bar]) {
   isolation: isolate;
 }
 :root[data-bots-app]
-  :is(
-    [data-chat-header],
-    [data-bots-top-bar],
-    [data-settings-page-header],
-    [data-bots-page] > header
-  )::after {
+  :is([data-chat-header], [data-bots-top-bar]:has([data-bots-bar-title][data-pinned]))::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -2190,33 +2176,6 @@ html[data-bots-app]:has(
   box-shadow:
     0 1px 0 var(--bots-bar-edge),
     var(--bots-bar-shadow);
-  opacity: 0;
-}
-:root[data-bots-app]
-  :is(
-    [data-chat-header],
-    [data-bots-top-bar],
-    [data-settings-page-header],
-    [data-bots-page] > header
-  )[data-scrolled="true"]::after {
-  opacity: 1;
-}
-@media (prefers-reduced-motion: no-preference) {
-  :root[data-bots-app]
-    :is(
-      [data-chat-header],
-      [data-bots-top-bar],
-      [data-settings-page-header],
-      [data-bots-page] > header
-    )::after {
-    transition: opacity 180ms ease-out !important;
-  }
-}
-/* A wide Settings page keeps the constant rule under its breadcrumb. */
-@media (min-width: 768px) {
-  :root[data-bots-app] [data-settings-page-header]::after {
-    content: none;
-  }
 }
 @keyframes bots-bar-title-in {
   from {

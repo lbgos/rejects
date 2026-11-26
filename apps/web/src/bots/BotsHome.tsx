@@ -28,7 +28,6 @@ export function BotsHome({ thread }: { thread?: string | undefined }) {
   const online = useOnline();
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
-  const [listScrolled, setListScrolled] = useState(false);
   // While searching, the page fits above the keyboard so the last results can scroll into view.
   useVisualViewportHeight(phone && searching);
   const shells = useThreadShells();
@@ -64,11 +63,6 @@ export function BotsHome({ thread }: { thread?: string | undefined }) {
       data-bots-page
       data-bot-searching={searching || undefined}
       className="relative flex h-full max-h-[var(--app-height,100dvh)] min-h-0 flex-col bg-background pt-safe text-foreground"
-      onScrollCapture={(event) => {
-        const target = event.target;
-        if (target instanceof HTMLElement && target.dataset.botList !== undefined)
-          setListScrolled(target.scrollTop > 0);
-      }}
     >
       {searching ? (
         <BotSearchBar
@@ -81,10 +75,7 @@ export function BotsHome({ thread }: { thread?: string | undefined }) {
         />
       ) : (
         // The title shares the bar with New bot, right under the status bar; rows scroll under it.
-        <header
-          data-scrolled={listScrolled}
-          className="relative z-10 flex h-(--workspace-topbar-height) shrink-0 items-center justify-between gap-3 bg-background ps-5 pe-4"
-        >
+        <header className="relative z-10 flex h-(--workspace-topbar-height) shrink-0 items-center justify-between gap-3 bg-background ps-5 pe-4">
           {/* Offline shares the title's line, so losing the network never moves the list. */}
           <div className="flex min-w-0 items-baseline gap-3">
             <h1 className="text-bot-title font-bold">{t("Bots")}</h1>
