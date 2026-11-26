@@ -42,10 +42,10 @@ it. Very large code blocks are shown without syntax highlighting.
 Attach up to 500 files per message, up to 4 GiB in all. Each image can be up to
 10 MiB, with at most 80 MiB of images in one message. Other files, including
 videos, can be up to 300 MiB each, subject to the environment's upload support
-and limit. The agent receives them on the environment's machine. Claude sees
-images and PDFs directly up to its size and page limits; in a message with more
-than 20 images, images over 2000 px go as file paths, and models other than
-Claude get every PDF that way. Other providers see images from the first 20
+and limit. The agent receives them on the environment's machine. Claude sees up
+to 100 images and PDFs directly within its size and page limits; in a message
+with more than 20 images, images over 2000 px go as file paths, and models other
+than Claude get every PDF that way. Other providers see images from the first 20
 attachments. The agent opens the rest from their paths when needed. Provider and
 model limits still apply, including images already in the conversation. A video
 attachment gives the agent a file path; only

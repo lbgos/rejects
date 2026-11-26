@@ -2268,6 +2268,7 @@ describe("ClaudeAdapterV2 attachments", () => {
       "cancelled-send",
       "cancelled-steer",
       "embed-cap",
+      "image-ceiling",
       "non-anthropic-documents",
     ].map((budget) => ({
       name: budget,
@@ -2465,7 +2466,11 @@ describe("ClaudeAdapterV2 attachments", () => {
           }),
           nativeThreadHasTurns: resumed,
         };
-        if (budget === "embed-cap" || budget === "non-anthropic-documents") {
+        if (
+          budget === "embed-cap" ||
+          budget === "image-ceiling" ||
+          budget === "non-anthropic-documents"
+        ) {
           // A PNG header is all the many-image rule reads; the bytes are never decoded.
           const pngHeader = (width: number, height: number) => {
             const header = Buffer.alloc(24);
@@ -2489,15 +2494,20 @@ describe("ClaudeAdapterV2 attachments", () => {
           );
           yield* fileSystem.writeFile(largePath, pngHeader(4032, 3024));
           // Past Anthropic's many-image threshold small images still embed; the large one goes by path.
+          // Past its 100-image request ceiling the rest go by path too.
           const small =
-            budget === "embed-cap" ? PROVIDER_SEND_TURN_MAX_EMBEDDED_ATTACHMENTS + 4 : 0;
+            budget === "embed-cap"
+              ? PROVIDER_SEND_TURN_MAX_EMBEDDED_ATTACHMENTS + 4
+              : budget === "image-ceiling"
+                ? 101
+                : 0;
           yield* runtime.startTurn({
             ...turnInput,
             message: {
               ...turnInput.message,
               attachments: [
                 ...Array.from({ length: small }, () => attachment),
-                ...(small > 0 ? [large] : []),
+                ...(budget === "embed-cap" ? [large] : []),
                 document,
               ],
             },
@@ -2507,15 +2517,15 @@ describe("ClaudeAdapterV2 attachments", () => {
           const blocks = typeof sent === "string" ? [] : sent;
           assert.lengthOf(
             blocks.filter((block) => block.type === "image"),
-            small,
+            Math.min(small, 100),
           );
           assert.lengthOf(
             blocks.filter((block) => block.type === "document"),
-            budget === "embed-cap" ? 1 : 0,
+            budget === "non-anthropic-documents" ? 0 : 1,
           );
           const documentPath = path.join(attachmentsDir, attachmentRelativePath(document)!);
           assert.include(JSON.stringify(sent), JSON.stringify(documentPath).slice(1, -1));
-          if (small > 0) {
+          if (budget === "embed-cap") {
             assert.include(JSON.stringify(sent), JSON.stringify(largePath).slice(1, -1));
           }
           return;
