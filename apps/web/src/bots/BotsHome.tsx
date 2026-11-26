@@ -123,7 +123,10 @@ function BotSearchBar({
   onClose: () => void;
 }) {
   return (
-    <div className="flex h-(--workspace-topbar-height) shrink-0 items-center gap-1 ps-4 pe-2">
+    <div
+      data-bots-search-bar
+      className="relative z-10 flex h-(--workspace-topbar-height) shrink-0 items-center gap-1 ps-4 pe-2"
+    >
       <InputGroup className="flex-1">
         <InputGroupAddon>
           <SearchIcon aria-hidden />
