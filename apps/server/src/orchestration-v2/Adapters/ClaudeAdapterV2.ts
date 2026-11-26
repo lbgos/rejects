@@ -2945,6 +2945,8 @@ const makeClaudeUserMessageWithAttachments = Effect.fnUntraced(function* (input:
   readonly attachmentsDir: string;
   readonly fileSystem: FileSystem.FileSystem;
   readonly pdfReservation: Effect.Success<ReturnType<typeof reserveClaudePdfBudget>>;
+  /** The model takes PDF document blocks; gateways for other models reject the whole request. */
+  readonly documents: boolean;
   readonly skills?: ReadonlyMap<string, ClaudeSkillTarget>;
   readonly skillMentionsFrom?: number;
 }) {
@@ -3052,6 +3054,7 @@ const makeClaudeUserMessageWithAttachments = Effect.fnUntraced(function* (input:
   for (const [index, attachment] of embeddable.entries()) {
     if (attachment.type === "file") {
       if (
+        !input.documents ||
         input.pdfReservation.budget.remainingPages <= 0 ||
         attachment.mimeType.toLowerCase().split(";", 1)[0]?.trim() !== "application/pdf" ||
         ("source" in attachment && attachment.source?._tag === "pasted-text")
@@ -12899,6 +12902,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                       attachmentsDir,
                       fileSystem,
                       pdfReservation,
+                      documents: isAnthropicModel(
+                        compileClaudeModelSelection(turnInput.modelSelection, modelCatalog)
+                          .apiModelId,
+                      ),
                       ...(skills === undefined ? {} : { skills }),
                       uuid: promptUuid,
                     }).pipe(
@@ -13596,13 +13603,13 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 existing.openedPermissionMode === currentTurn.queryPolicy.permissionMode)
                 ? steerSelection
                 : undefined;
+            const steeredSelection =
+              liveSteerSelection ??
+              compileClaudeModelSelection(currentTurn.input.modelSelection, modelCatalog);
             const userMessage = yield* makeClaudeUserMessageWithAttachments({
               text: applyClaudePromptEffortPrefix(
                 turnInput.message.text,
-                (
-                  liveSteerSelection ??
-                  compileClaudeModelSelection(currentTurn.input.modelSelection, modelCatalog)
-                ).promptEffort,
+                steeredSelection.promptEffort,
               ),
               attachments: turnInput.message.attachments,
               priority: "now",
@@ -13610,6 +13617,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               attachmentsDir,
               fileSystem,
               pdfReservation,
+              documents: isAnthropicModel(steeredSelection.apiModelId),
               skills: yield* userInvocableSkills(currentTurn.input.runtimePolicy.cwd),
             }).pipe(
               Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),

@@ -2268,6 +2268,7 @@ describe("ClaudeAdapterV2 attachments", () => {
       "cancelled-send",
       "cancelled-steer",
       "embed-cap",
+      "non-anthropic-documents",
     ].map((budget) => ({
       name: budget,
       prompt: "Read this PDF.",
@@ -2332,6 +2333,7 @@ describe("ClaudeAdapterV2 attachments", () => {
         );
         const modelSelection = {
           ...CLAUDE_TEST_MODEL_SELECTION,
+          ...(budget === "non-anthropic-documents" ? { model: "deepseek-v4.1-flash" } : {}),
           options: ultrathink ? CLAUDE_TEST_MODEL_SELECTION.options : [],
         };
         const attachmentsDir = yield* fileSystem.makeTempDirectoryScoped({
@@ -2463,18 +2465,13 @@ describe("ClaudeAdapterV2 attachments", () => {
           }),
           nativeThreadHasTurns: resumed,
         };
-        if (budget === "embed-cap") {
+        if (budget === "embed-cap" || budget === "non-anthropic-documents") {
+          const images = budget === "embed-cap" ? PROVIDER_SEND_TURN_MAX_EMBEDDED_ATTACHMENTS : 0;
           yield* runtime.startTurn({
             ...turnInput,
             message: {
               ...turnInput.message,
-              attachments: [
-                ...Array.from(
-                  { length: PROVIDER_SEND_TURN_MAX_EMBEDDED_ATTACHMENTS },
-                  () => attachment,
-                ),
-                document,
-              ],
+              attachments: [...Array.from({ length: images }, () => attachment), document],
             },
           });
           const sent = offeredMessages.at(-1)!.message.content;
@@ -2482,7 +2479,7 @@ describe("ClaudeAdapterV2 attachments", () => {
           const blocks = typeof sent === "string" ? [] : sent;
           assert.lengthOf(
             blocks.filter((block) => block.type === "image"),
-            PROVIDER_SEND_TURN_MAX_EMBEDDED_ATTACHMENTS,
+            images,
           );
           assert.lengthOf(
             blocks.filter((block) => block.type === "document"),
