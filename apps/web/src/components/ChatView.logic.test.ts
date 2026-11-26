@@ -1248,6 +1248,7 @@ describe("planComposerTurn", () => {
     phase: "ready" as const,
     dispatchMode: "auto" as const,
     freshContext: false,
+    followsEarlierSend: false,
   };
 
   it("prepares a worktree from the selected branch on a new thread", () => {
@@ -1312,6 +1313,24 @@ describe("planComposerTurn", () => {
         resumeCompactionTokens: 120_000,
       }),
     ).toMatchObject({
+      compactBeforeSend: false,
+      turnDispatchMode: "queue",
+      shouldQueueBehindActiveRun: true,
+    });
+  });
+
+  it("queues a follow-up behind a send that has not reached the server", () => {
+    // The first message of a new chat is still uploading; the server thread has no messages yet.
+    expect(
+      planComposerTurn({
+        ...base,
+        isServerThread: true,
+        dispatchMode: "steer",
+        resumeCompactionTokens: 120_000,
+        followsEarlierSend: true,
+      }),
+    ).toMatchObject({
+      baseBranchForWorktree: null,
       compactBeforeSend: false,
       turnDispatchMode: "queue",
       shouldQueueBehindActiveRun: true,
