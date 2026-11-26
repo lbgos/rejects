@@ -83,6 +83,7 @@ import type { ManagedServerProvider } from "@t3tools/provider-core/server/snapsh
 import {
   providerMessageTextWithAttachmentPaths,
   isProviderNativeImageAttachment,
+  providerEmbeddableAttachments,
 } from "@t3tools/provider-core/server/attachmentPrompt";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
@@ -2039,7 +2040,7 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
           resolveExtractedTextPath: providerHost.resolveExtractedTextPath,
         });
         if (text) parts.push({ type: "text", text });
-        for (const attachment of message.attachments)
+        for (const attachment of providerEmbeddableAttachments(message.attachments))
           if (isProviderNativeImageAttachment(attachment)) {
             const path = providerHost.resolveAttachmentPath(attachment);
             if (!path) return yield* protocolError("Muse image attachment is missing");

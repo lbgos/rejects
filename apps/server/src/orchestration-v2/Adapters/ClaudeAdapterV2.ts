@@ -231,7 +231,10 @@ import {
   makeProviderRetryTurnItem,
 } from "@t3tools/provider-core/server/failure";
 import { turnScopedSelectionTransition } from "@t3tools/provider-core/server/selectionTransition";
-import { providerMessageTextWithAttachmentPaths } from "@t3tools/provider-core/server/attachmentPrompt";
+import {
+  providerEmbeddableAttachments,
+  providerMessageTextWithAttachmentPaths,
+} from "@t3tools/provider-core/server/attachmentPrompt";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import {
   ProviderAdapterDriverCreateError,
@@ -3002,7 +3005,8 @@ const makeClaudeUserMessageWithAttachments = Effect.fnUntraced(function* (input:
   );
   input.pdfReservation.budget.pending.bytes += textBytes;
   input.pdfReservation.bytes += textBytes;
-  for (const [index, attachment] of input.attachments.entries()) {
+  const embeddable = providerEmbeddableAttachments(input.attachments);
+  for (const [index, attachment] of embeddable.entries()) {
     if (attachment.type !== "image") continue;
     if (!isSupportedClaudeImageMimeType(attachment.mimeType)) {
       return yield* new ProviderAdapter.ProviderAdapterProtocolError({
@@ -3045,7 +3049,7 @@ const makeClaudeUserMessageWithAttachments = Effect.fnUntraced(function* (input:
     };
     images.set(index, block);
   }
-  for (const [index, attachment] of input.attachments.entries()) {
+  for (const [index, attachment] of embeddable.entries()) {
     if (attachment.type === "file") {
       if (
         input.pdfReservation.budget.remainingPages <= 0 ||

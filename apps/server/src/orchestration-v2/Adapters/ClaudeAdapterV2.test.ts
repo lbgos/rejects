@@ -43,6 +43,7 @@ import {
   type OrchestrationV2PendingBackgroundTask,
   OrchestrationV2ProviderThread,
   ProjectId,
+  PROVIDER_SEND_TURN_MAX_EMBEDDED_ATTACHMENTS,
   ProviderInstanceId,
   type ResolvedProviderInstanceEnvironment,
   ProviderDriverKind,
@@ -2266,6 +2267,7 @@ describe("ClaudeAdapterV2 attachments", () => {
       "partial-images",
       "cancelled-send",
       "cancelled-steer",
+      "embed-cap",
     ].map((budget) => ({
       name: budget,
       prompt: "Read this PDF.",
@@ -2461,6 +2463,35 @@ describe("ClaudeAdapterV2 attachments", () => {
           }),
           nativeThreadHasTurns: resumed,
         };
+        if (budget === "embed-cap") {
+          yield* runtime.startTurn({
+            ...turnInput,
+            message: {
+              ...turnInput.message,
+              attachments: [
+                ...Array.from(
+                  { length: PROVIDER_SEND_TURN_MAX_EMBEDDED_ATTACHMENTS },
+                  () => attachment,
+                ),
+                document,
+              ],
+            },
+          });
+          const sent = offeredMessages.at(-1)!.message.content;
+          assert.isArray(sent);
+          const blocks = typeof sent === "string" ? [] : sent;
+          assert.lengthOf(
+            blocks.filter((block) => block.type === "image"),
+            PROVIDER_SEND_TURN_MAX_EMBEDDED_ATTACHMENTS,
+          );
+          assert.lengthOf(
+            blocks.filter((block) => block.type === "document"),
+            0,
+          );
+          const documentPath = path.join(attachmentsDir, attachmentRelativePath(document)!);
+          assert.include(JSON.stringify(sent), JSON.stringify(documentPath).slice(1, -1));
+          return;
+        }
         if (budget === "cancelled-send" || budget === "cancelled-steer") {
           const documentPath = path.join(attachmentsDir, attachmentRelativePath(document)!);
           const pages = Buffer.from(

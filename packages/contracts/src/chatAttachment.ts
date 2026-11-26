@@ -11,7 +11,12 @@ import {
 } from "./baseSchemas.ts";
 
 export const PROVIDER_SEND_TURN_MAX_INPUT_CHARS = 120_000;
-export const PROVIDER_SEND_TURN_MAX_ATTACHMENTS = 100;
+export const PROVIDER_SEND_TURN_MAX_ATTACHMENTS = 500;
+/**
+ * Adapters embed content (images, PDFs, text) only from a message's first attachments; the rest
+ * reach agents by path. Anthropic rejects images over 2000 px once a request holds more than 20.
+ */
+export const PROVIDER_SEND_TURN_MAX_EMBEDDED_ATTACHMENTS = 20;
 export const PROVIDER_SEND_TURN_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const PROVIDER_SEND_TURN_MAX_TOTAL_IMAGE_BYTES = 80 * 1024 * 1024;
 /** Files the server or a bot handles in memory: transcripts, bot-made files, files passed between bots. */
