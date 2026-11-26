@@ -130,6 +130,7 @@ import {
 import { acpSelectionTransition } from "@t3tools/provider-core/server/selectionTransition";
 import {
   isProviderNativeImageAttachment,
+  providerEmbeddableAttachments,
   providerMessageTextWithAttachmentPaths,
 } from "@t3tools/provider-core/server/attachmentPrompt";
 import {
@@ -8179,9 +8180,9 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             resolveExtractedTextPath: host.resolveExtractedTextPath,
           });
           const isNativeSlashCommand = userText.trimStart().startsWith("/");
-          const imageAttachments = turnInput.message.attachments.filter(
-            isProviderNativeImageAttachment,
-          );
+          const imageAttachments = providerEmbeddableAttachments(
+            turnInput.message.attachments,
+          ).filter(isProviderNativeImageAttachment);
           if (imageAttachments.length > 0 && !supportsImagePrompts) {
             return yield* new ProviderAdapter.ProviderAdapterProtocolError({
               driver,

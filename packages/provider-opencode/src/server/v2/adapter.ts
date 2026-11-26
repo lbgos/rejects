@@ -77,6 +77,7 @@ import { causeErrorTag } from "@t3tools/shared/observability";
 
 import {
   isProviderNativeImageAttachment,
+  providerEmbeddableAttachments,
   providerMessageTextWithAttachmentPaths,
 } from "@t3tools/provider-core/server/attachmentPrompt";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
@@ -4157,7 +4158,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       const files: Array<{ uri: string; name: string }> = [];
       // An external server may not share T3's attachment directory.
       if (connection.external) return files;
-      for (const attachment of attachments) {
+      for (const attachment of providerEmbeddableAttachments(attachments)) {
         if (!isProviderNativeImageAttachment(attachment)) continue;
         const path = host.resolveAttachmentPath(attachment);
         if (path === null) continue;

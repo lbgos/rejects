@@ -6,6 +6,7 @@ import * as Schema from "effect/Schema";
 import {
   CHAT_FILE_ATTACHMENT_MAX_BYTES,
   ChatAttachment,
+  getProviderAttachmentLimitError,
   SnapShotAccessibility,
 } from "./chatAttachment.ts";
 
@@ -48,6 +49,16 @@ it.effect("rejects malformed known attachment types instead of tolerating them",
     assert.strictEqual(Exit.isFailure(badMimeImage), true);
   }),
 );
+
+it("accepts up to 500 attachments in one message", () => {
+  const files = Array.from({ length: 501 }, () => ({
+    type: "file" as const,
+    mimeType: "application/pdf",
+    sizeBytes: 1024,
+  }));
+  assert.isUndefined(getProviderAttachmentLimitError(files.slice(0, 500)));
+  assert.include(getProviderAttachmentLimitError(files), "up to 500 files");
+});
 
 it.effect("rejects accessibility trees above the serialized payload limit", () =>
   Effect.gen(function* () {

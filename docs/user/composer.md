@@ -39,13 +39,15 @@ it. Very large code blocks are shown without syntax highlighting.
 
 ## Attach files
 
-Attach up to 100 files per message. Each image can be up to 10 MiB, with at most
-80 MiB of images in one message. Other files, including videos, can be up to
-50 MiB each, subject to the environment's upload support and limit. The agent
-receives them on the environment's machine. Provider and model limits still
-apply, including images already in the conversation. A video attachment gives
-the agent a file path; only [Antigravity](./providers-antigravity.md#skills-and-attachments)
-sends supported videos to Gemini models as video.
+Attach up to 500 files per message. Each image can be up to 10 MiB, with at most
+80 MiB of images in one message. Other files, including videos, can be up to 300
+MiB each, subject to the environment's upload support and limit. The agent
+receives them on the environment's machine. Images and PDFs past the first 20
+attachments of a message reach the agent as file paths it opens when needed.
+Provider and model limits still apply, including images already in the
+conversation. A video attachment gives the agent a file path; only
+[Antigravity](./providers-antigravity.md#skills-and-attachments) sends supported
+videos to Gemini models as video.
 
 Uploads begin when you add an attachment. All uploads must finish before the
 message can send. Retry or remove a failed upload. On web and desktop, reloading
