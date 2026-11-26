@@ -1,6 +1,7 @@
 import * as Schema from "effect/Schema";
 
 import { AssistantCitation } from "./assistantCitations.ts";
+import { PROVIDER_SEND_TURN_MAX_ATTACHMENTS } from "./chatAttachment.ts";
 import {
   EnvironmentId,
   ForwardCompatibleArray,
@@ -292,7 +293,8 @@ export const ComposerContextRecord = Schema.Union([
 ]);
 export type ComposerContextRecord = typeof ComposerContextRecord.Type;
 
-export const COMPOSER_CONTEXT_MAX_RECORDS = 200;
+/** Each attachment holds a record; the rest leaves room for other context. */
+export const COMPOSER_CONTEXT_MAX_RECORDS = PROVIDER_SEND_TURN_MAX_ATTACHMENTS + 100;
 const COMPOSER_CONTEXT_MAX_SERIALIZED_CHARS = 16_000_000;
 
 /**
