@@ -259,7 +259,10 @@ function BotHeaderSubtitle({ target }: { target: ScopedThreadRef }) {
   const shown = state === "idle" ? null : state;
   if (!shown && !next) return null;
   return (
-    <span className="flex max-w-full items-center gap-1 truncate text-xs leading-4 text-muted-foreground tabular-nums">
+    <span
+      data-bot-header-subtitle
+      className="flex max-w-full items-center gap-1 truncate text-xs leading-4 text-muted-foreground tabular-nums"
+    >
       {shown ? <BotStateLabel state={shown} /> : null}
       {shown && next ? <span aria-hidden>·</span> : null}
       {next ? <span>{t("next {time}", { time: formatWakeIn(next) })}</span> : null}
