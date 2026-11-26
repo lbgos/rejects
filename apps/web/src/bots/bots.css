@@ -18,7 +18,8 @@
 }
 
 /* A backdrop filter recomposites on every scroll frame, so bots mode stills them all; only the
-   phone's few floating pills opt back in (Floating controls, below). */
+   chat's two frosted bars and the phone's few floating pills opt back in (Floating controls,
+   below). */
 :root[data-bots-app] *,
 :root[data-bots-app] *::before,
 :root[data-bots-app] *::after {
@@ -97,14 +98,22 @@
   }
 }
 
-/* The chat header runs from the top edge over the transcript (ChatView). It is solid: what
-   scrolls under it is cut at its edge, never read through it. */
+/* A chat's header and its composer's area are frosted bars over the transcript: text scrolls
+   under them and shows through a static backdrop blur. */
+:root[data-bots-app] {
+  --bots-chat-bar-fill: color-mix(in srgb, var(--bots-page) 60%, transparent);
+  --bots-chat-bar-blur: blur(14px);
+}
+
+/* The chat header runs from the top edge over the transcript (ChatView). */
 html[data-theme-id] [data-bots-mode="true"] [data-chat-header],
 :root[data-bots-app] [data-chat-header] {
   height: var(--bot-chat-header-height);
   min-height: var(--bot-chat-header-height);
   padding-top: env(safe-area-inset-top);
-  background-color: var(--background);
+  background-color: var(--bots-chat-bar-fill);
+  -webkit-backdrop-filter: var(--bots-chat-bar-blur) !important;
+  backdrop-filter: var(--bots-chat-bar-blur) !important;
 }
 
 /* You and the Settings index: the same solid bar, over a page that scrolls from the top edge
@@ -160,10 +169,25 @@ html[data-theme-id] [data-bots-mode="true"] [data-chat-header],
   mask-image: none;
 }
 
-/* A chat's transcript keeps its full contrast to both edges. The header is a solid bar over its
-   top; the transcript is cut where the composer's area starts (ChatView measures it). */
-:root[data-bots-app] [data-bots-mode="true"] .messages-timeline-scroll {
-  clip-path: inset(0 0 var(--bot-composer-height, 0px) 0);
+/* A chat's transcript keeps its full contrast down to the composer's area, which is a frosted bar
+   like the header: the transcript runs under it to the bottom edge. */
+:root[data-bots-app] [data-bots-mode="true"] [data-chat-composer-overlay]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-color: var(--bots-chat-bar-fill);
+  -webkit-backdrop-filter: var(--bots-chat-bar-blur) !important;
+  backdrop-filter: var(--bots-chat-bar-blur) !important;
+}
+/* WebKit drops backdrop filters from view-transition snapshots: the bars are opaque through one. */
+html:active-view-transition[data-bots-app] [data-bots-mode="true"] [data-chat-header] {
+  background-color: var(--bots-page) !important;
+}
+html:active-view-transition[data-bots-app]
+  [data-bots-mode="true"]
+  [data-chat-composer-overlay]::before {
+  background-color: var(--bots-page) !important;
 }
 /* The jump-to-latest disc stands in the composer's area, so it never covers the transcript. On a
    wide lane it sits in the gutter after the composer, level with its top edge. */
