@@ -2466,12 +2466,40 @@ describe("ClaudeAdapterV2 attachments", () => {
           nativeThreadHasTurns: resumed,
         };
         if (budget === "embed-cap" || budget === "non-anthropic-documents") {
-          const images = budget === "embed-cap" ? PROVIDER_SEND_TURN_MAX_EMBEDDED_ATTACHMENTS : 0;
+          // A PNG header is all the many-image rule reads; the bytes are never decoded.
+          const pngHeader = (width: number, height: number) => {
+            const header = Buffer.alloc(24);
+            Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(header);
+            header.write("IHDR", 12, "latin1");
+            header.writeUInt32BE(width, 16);
+            header.writeUInt32BE(height, 20);
+            return header;
+          };
+          const large = ChatImageAttachment.make({
+            ...attachment,
+            id: ChatAttachmentId.make(
+              "thread-claude-attachments-22345678-1234-1234-1234-123456789abc",
+            ),
+            name: "photo.png",
+          });
+          const largePath = path.join(attachmentsDir, attachmentRelativePath(large)!);
+          yield* fileSystem.writeFile(
+            path.join(attachmentsDir, attachmentRelativePath(attachment)!),
+            pngHeader(1200, 800),
+          );
+          yield* fileSystem.writeFile(largePath, pngHeader(4032, 3024));
+          // Past Anthropic's many-image threshold small images still embed; the large one goes by path.
+          const small =
+            budget === "embed-cap" ? PROVIDER_SEND_TURN_MAX_EMBEDDED_ATTACHMENTS + 4 : 0;
           yield* runtime.startTurn({
             ...turnInput,
             message: {
               ...turnInput.message,
-              attachments: [...Array.from({ length: images }, () => attachment), document],
+              attachments: [
+                ...Array.from({ length: small }, () => attachment),
+                ...(small > 0 ? [large] : []),
+                document,
+              ],
             },
           });
           const sent = offeredMessages.at(-1)!.message.content;
@@ -2479,14 +2507,17 @@ describe("ClaudeAdapterV2 attachments", () => {
           const blocks = typeof sent === "string" ? [] : sent;
           assert.lengthOf(
             blocks.filter((block) => block.type === "image"),
-            images,
+            small,
           );
           assert.lengthOf(
             blocks.filter((block) => block.type === "document"),
-            0,
+            budget === "embed-cap" ? 1 : 0,
           );
           const documentPath = path.join(attachmentsDir, attachmentRelativePath(document)!);
           assert.include(JSON.stringify(sent), JSON.stringify(documentPath).slice(1, -1));
+          if (small > 0) {
+            assert.include(JSON.stringify(sent), JSON.stringify(largePath).slice(1, -1));
+          }
           return;
         }
         if (budget === "cancelled-send" || budget === "cancelled-steer") {
