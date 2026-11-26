@@ -281,7 +281,7 @@ export function QueuedRunsControl({
                 timestampFormat={props.timestampFormat}
                 onOpenThread={props.onOpenThread}
               >
-                {canSendRun(item.freshContext) && !isEditing ? (
+                {canSendRun(item.freshContext) && !isEditing && item.heldMessageId === null ? (
                   <>
                     <Tooltip>
                       <TooltipTrigger render={<span className="flex shrink-0" />}>

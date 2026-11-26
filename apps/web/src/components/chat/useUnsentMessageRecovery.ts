@@ -4,6 +4,7 @@ import { collapseExpandedComposerCursor } from "../../composer-logic";
 import { useComposerDraftStore, type ComposerThreadTarget } from "../../composerDraftStore";
 import type { ComposerHandleRef } from "../../composerHandleContext";
 import { useStableCallback } from "../../hooks/useStableCallback";
+import { stripInlineContextReferences } from "../../lib/composerContextReferences";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { takeUnsentFromClosedPages } from "./sendOrder";
 
@@ -28,7 +29,12 @@ export function useUnsentMessageRecovery(input: {
     if (unsent.length === 0) return;
     const store = useComposerDraftStore.getState();
     const prompt = [
-      ...unsent.map((entry) => entry.draftText),
+      // Chips for attachments and contexts would point at records the page took with it.
+      ...unsent.map((entry) =>
+        stripInlineContextReferences(entry.draftText)
+          .replace(/[ \t]{2,}/g, " ")
+          .trim(),
+      ),
       store.getComposerDraft(draftTarget)?.prompt ?? "",
     ]
       .filter((text) => text.trim().length > 0)
