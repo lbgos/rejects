@@ -447,11 +447,12 @@ export function useComposerSend(input: ComposerSendInput) {
       return;
     }
     // While an earlier send waits on its uploads, this one queues behind it. Approvals shown now
-    // would be declined out of order, so a redirect still waits for the earlier send.
+    // would be declined out of order and a multiple-model send cannot wait, so both are refused.
     const followsEarlierSend =
       isServerThread &&
       hasOpenSends(routeThreadKey) &&
       !directAnnotation &&
+      (sendCtx?.multipleModelSelections ?? null) === null &&
       (sendCtx?.shownPendingApprovalIds.length ?? 0) === 0;
     if (
       ((isSendBusy && !sendQueuesBehindSetup) || sendInFlightRef.current) &&

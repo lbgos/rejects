@@ -1191,9 +1191,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     (approval) => !heldRequestIds.has(approval.requestId),
   )
     ? "steer"
-    : isBotThread
-      ? "queue"
-      : settings.followUpBehavior;
+    : settings.followUps;
   const composerSuggestionsVisible = composerMenuOpen;
   const composerSuggestionListVisible = composerSuggestionsVisible && composerMenuItems.length > 0;
   const activePendingUserInput = pendingUserInputs[0] ?? null;

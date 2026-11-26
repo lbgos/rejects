@@ -37,7 +37,7 @@ import { useThreadLifecycle } from "./chat/useThreadLifecycle";
 import { useRightPanelActions } from "./chat/useRightPanelActions";
 import { type TerminalLaunchContext, useChatTerminalActions } from "./chat/useChatTerminalActions";
 import { useComposerSend } from "./chat/useComposerSend";
-import { cancelHeldSend, useThreadSends } from "./chat/sendOrder";
+import { useThreadSends } from "./chat/sendOrder";
 import { useUnsentMessageRecovery } from "./chat/useUnsentMessageRecovery";
 import { useComposerResume } from "./chat/useComposerResume";
 import { ThreadFind, ThreadFindCanvas } from "./chat/ThreadFindProvider";
@@ -3126,12 +3126,7 @@ export default function ChatView(props: ChatViewProps) {
           })}
           onEditQueuedRun={queuedRunEdit.beginEdit}
           onCancelEdit={queuedRunEdit.cancelEdit}
-          heldMessageIds={threadSends.heldMessageIds}
-          onRemoveHeld={(messageId) => cancelHeldSend(routeThreadKey, messageId, "remove")}
-          onEditHeld={(messageId) => {
-            cancelHeldSend(routeThreadKey, messageId, "edit");
-            focusComposerStable();
-          }}
+          onEditHeld={focusComposerStable}
           timestampFormat={timestampFormat}
           onOpenThread={onOpenRelatedThreadStable}
         />
@@ -3191,6 +3186,7 @@ export default function ChatView(props: ChatViewProps) {
   // something, by its own rule: an optimistic message stops counting once the server has it.
   const hasQueuedTurns =
     queuedRunCount > 0 ||
+    threadSends.held.length > 0 ||
     optimisticUserMessages.some(
       (message) =>
         message.inputIntent === "queued_turn" &&

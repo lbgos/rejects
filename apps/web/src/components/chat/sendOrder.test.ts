@@ -76,11 +76,11 @@ describe("sendOrder", () => {
         ticket.settle("cancelled");
       });
     }
-    expect(sendOrder.useSendOrderStore.getState().threads["env:thread"]?.heldMessageIds).toEqual([
-      "removed",
-      "edited",
-      "last",
-    ]);
+    expect(
+      sendOrder.useSendOrderStore
+        .getState()
+        .threads["env:thread"]?.held.map((send) => send.messageId),
+    ).toEqual(["removed", "edited", "last"]);
 
     sendOrder.cancelHeldSend("env:thread", "removed", "remove");
     sendOrder.cancelHeldSend("env:thread", "edited", "edit");
@@ -96,6 +96,8 @@ describe("sendOrder", () => {
 
   it("returns a closed page's unsent messages once and drops those the server has", async () => {
     stubStorage();
+    const now = Date.UTC(2026, 10, 26, 12);
+    vi.setSystemTime(now);
     const closedPage = await loadPage();
     reserve(closedPage, "reached-server");
     reserve(closedPage, "lost-batch");
@@ -105,6 +107,10 @@ describe("sendOrder", () => {
     const page = await loadPage();
     reserve(page, "this-page");
     const serverHas = (messageId: string) => messageId === "reached-server";
+    // Another tab that still beats keeps its sends.
+    expect(page.takeUnsentFromClosedPages("env:thread", serverHas)).toEqual([]);
+
+    vi.setSystemTime(now + 4 * 60_000);
     expect(page.takeUnsentFromClosedPages("env:thread", serverHas)).toEqual([
       { draftText: "text lost-batch", attachmentCount: 0 },
       { draftText: "text lost-follow-up", attachmentCount: 0 },
@@ -116,6 +122,10 @@ describe("sendOrder", () => {
     expect(nextPage.takeUnsentFromClosedPages("env:thread", () => false)).toEqual([
       { draftText: "text this-page", attachmentCount: 0 },
     ]);
-    expect(nextPage.takeUnsentFromClosedPages("env:other", () => false)).toHaveLength(1);
+
+    // A send more than a week old is not brought back.
+    vi.setSystemTime(now + 8 * 24 * 60 * 60_000);
+    expect(nextPage.takeUnsentFromClosedPages("env:other", () => false)).toEqual([]);
+    vi.useRealTimers();
   });
 });

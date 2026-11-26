@@ -27,20 +27,26 @@ export interface SendTicket {
 
 interface Slot {
   readonly messageId: string;
+  readonly draftText: string;
   readonly settled: Promise<SendOutcome>;
   readonly resolve: (outcome: SendOutcome) => void;
   state: "open" | "dispatching" | "cancelled" | "settled";
   onCancel: ((mode: HeldSendCancel) => void) | null;
 }
 
+export interface HeldSend {
+  readonly messageId: string;
+  readonly draftText: string;
+}
+
 interface ThreadSends {
   /** Every open send, oldest first. */
   readonly messageIds: ReadonlyArray<string>;
-  /** Open sends the user can still remove or edit. */
-  readonly heldMessageIds: ReadonlyArray<string>;
+  /** Open sends the user can still remove or edit. They outlive the view that sent them. */
+  readonly held: ReadonlyArray<HeldSend>;
 }
 
-const EMPTY_THREAD_SENDS: ThreadSends = { messageIds: [], heldMessageIds: [] };
+const EMPTY_THREAD_SENDS: ThreadSends = { messageIds: [], held: [] };
 
 export const useSendOrderStore = create<{
   readonly threads: Readonly<Record<string, ThreadSends>>;
@@ -56,9 +62,9 @@ function publish(threadKey: string): void {
     else
       threads[threadKey] = {
         messageIds: chain.map((slot) => slot.messageId),
-        heldMessageIds: chain
+        held: chain
           .filter((slot) => slot.state === "open" && slot.onCancel !== null)
-          .map((slot) => slot.messageId),
+          .map(({ messageId, draftText }) => ({ messageId, draftText })),
       };
     return { threads };
   });
@@ -90,8 +96,16 @@ export function reserveSend(input: {
   const settled = new Promise<SendOutcome>((done) => {
     resolve = done;
   });
-  const slot: Slot = { messageId, settled, resolve, state: "open", onCancel: null };
+  const slot: Slot = {
+    messageId,
+    draftText: input.draftText,
+    settled,
+    resolve,
+    state: "open",
+    onCancel: null,
+  };
   chains.set(threadKey, [...chain, slot]);
+  startHeartbeat();
   writeJournal([
     ...readJournal(),
     {
@@ -127,6 +141,7 @@ export function reserveSend(input: {
       const remaining = (chains.get(threadKey) ?? []).filter((other) => other !== slot);
       if (remaining.length === 0) chains.delete(threadKey);
       else chains.set(threadKey, remaining);
+      if (chains.size === 0) stopHeartbeat();
       writeJournal(readJournal().filter((entry) => entry.messageId !== messageId));
       publish(threadKey);
       slot.resolve(outcome);
@@ -158,38 +173,95 @@ type JournalEntry = typeof JournalEntry.Type;
 const Journal = Schema.Array(JournalEntry);
 
 function readJournal(): ReadonlyArray<JournalEntry> {
+  const cutoff = Date.now() - JOURNAL_MAX_AGE_MS;
   try {
-    return getLocalStorageItem(JOURNAL_KEY, Journal) ?? [];
+    return (getLocalStorageItem(JOURNAL_KEY, Journal) ?? []).filter(
+      (entry) => Date.parse(entry.createdAt) >= cutoff,
+    );
   } catch {
     return [];
   }
 }
 
 function writeJournal(entries: ReadonlyArray<JournalEntry>): void {
-  const cutoff = Date.now() - JOURNAL_MAX_AGE_MS;
   try {
-    setLocalStorageItem(
-      JOURNAL_KEY,
-      entries.filter((entry) => Date.parse(entry.createdAt) >= cutoff),
-      Journal,
-    );
+    setLocalStorageItem(JOURNAL_KEY, entries, Journal);
   } catch {
     // Storage full or blocked: the send itself still goes out.
   }
 }
 
+// A page with open sends beats every 30 s and clears its beat on pagehide. Another page claims its
+// entries only once the beat is gone or older than 3 min, which background timer throttling stays
+// under.
+const PAGES_KEY = "t3code:unsent-message-pages:v1";
+const HEARTBEAT_MS = 30_000;
+const PAGE_GONE_MS = 3 * 60_000;
+const Pages = Schema.Record(Schema.String, Schema.Number);
+let heartbeat: ReturnType<typeof setInterval> | null = null;
+
+function readPages(): Readonly<Record<string, number>> {
+  try {
+    return getLocalStorageItem(PAGES_KEY, Pages) ?? {};
+  } catch {
+    return {};
+  }
+}
+
+function writePageBeat(alive: boolean): void {
+  const now = Date.now();
+  const pages = Object.fromEntries(
+    Object.entries(readPages()).filter(
+      ([pageId, seenAt]) => pageId !== PAGE_ID && seenAt >= now - PAGE_GONE_MS,
+    ),
+  );
+  if (alive) pages[PAGE_ID] = now;
+  try {
+    setLocalStorageItem(PAGES_KEY, pages, Pages);
+  } catch {
+    // Without the beat, another page may claim these sends early; they still go out here.
+  }
+}
+
+function startHeartbeat(): void {
+  if (heartbeat !== null) return;
+  writePageBeat(true);
+  heartbeat = setInterval(() => writePageBeat(true), HEARTBEAT_MS);
+}
+
+function stopHeartbeat(): void {
+  if (heartbeat === null) return;
+  clearInterval(heartbeat);
+  heartbeat = null;
+  writePageBeat(false);
+}
+
+if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+  window.addEventListener("pagehide", () => {
+    if (heartbeat !== null) writePageBeat(false);
+  });
+  // A page restored from the back-forward cache still owns its sends.
+  window.addEventListener("pageshow", () => {
+    if (heartbeat !== null) writePageBeat(true);
+  });
+}
+
 /**
- * Takes this thread's sends that an earlier page left open. Those the server never got are
- * returned, oldest first; the rest are dropped. Another tab's open sends look the same and are
- * taken too.
+ * Takes this thread's sends that a closed page left open. Those the server never got are returned,
+ * oldest first; the rest are dropped. A page that still beats keeps its entries.
  */
 export function takeUnsentFromClosedPages(
   threadKey: string,
   serverHasMessage: (messageId: string) => boolean,
 ): ReadonlyArray<Pick<JournalEntry, "draftText" | "attachmentCount">> {
   const journal = readJournal();
+  const pages = readPages();
+  const goneBefore = Date.now() - PAGE_GONE_MS;
   const orphaned = journal.filter(
-    (entry) => entry.threadKey === threadKey && entry.pageId !== PAGE_ID,
+    (entry) =>
+      entry.threadKey === threadKey &&
+      entry.pageId !== PAGE_ID &&
+      (pages[entry.pageId] ?? 0) < goneBefore,
   );
   if (orphaned.length === 0) return [];
   writeJournal(journal.filter((entry) => !orphaned.includes(entry)));
