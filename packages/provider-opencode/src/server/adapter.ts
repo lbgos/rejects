@@ -70,7 +70,10 @@ import { readableProviderErrorMessage } from "./providerErrorMessage.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
 import { turnScopedSelectionTransition } from "@t3tools/provider-core/server/selectionTransition";
-import { providerMessageTextWithAttachmentPaths } from "@t3tools/provider-core/server/attachmentPrompt";
+import {
+  providerEmbeddableAttachments,
+  providerMessageTextWithAttachmentPaths,
+} from "@t3tools/provider-core/server/attachmentPrompt";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import {
   ProviderAdapterDriverCreateError,
@@ -3157,7 +3160,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
             resolveExtractedTextPath: host.resolveExtractedTextPath,
           })).trim();
           const files = OpenCodeRuntime.toOpenCodeFileParts({
-            attachments: turnInput.message.attachments,
+            attachments: providerEmbeddableAttachments(turnInput.message.attachments),
             resolveAttachmentPath: host.resolveAttachmentPath,
           });
           if (text.length === 0 && files.length === 0) {
@@ -3689,7 +3692,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
                 );
               }
               const files = OpenCodeRuntime.toOpenCodeFileParts({
-                attachments: steerInput.message.attachments,
+                attachments: providerEmbeddableAttachments(steerInput.message.attachments),
                 resolveAttachmentPath: host.resolveAttachmentPath,
               });
               if (text.length === 0 && files.length === 0) {

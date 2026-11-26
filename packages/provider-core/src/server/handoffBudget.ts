@@ -1,13 +1,12 @@
-import {
-  type ChatAttachment,
-  type ModelSelection,
-  type OrchestrationV2ThreadProjection,
-  type ThreadTokenUsageSnapshot,
-  type OrchestrationV2ContextHandoff,
-  type OrchestrationV2HistoricalMessage,
-  type OrchestrationV2ProviderThread,
-  type OrchestrationV2TurnItem,
-  PROVIDER_SEND_TURN_MAX_EMBEDDED_ATTACHMENTS,
+import type {
+  ChatAttachment,
+  ModelSelection,
+  OrchestrationV2ThreadProjection,
+  ThreadTokenUsageSnapshot,
+  OrchestrationV2ContextHandoff,
+  OrchestrationV2HistoricalMessage,
+  OrchestrationV2ProviderThread,
+  OrchestrationV2TurnItem,
 } from "@t3tools/contracts";
 
 import * as Config from "effect/Config";
@@ -91,11 +90,7 @@ export function attachmentTokenAllowance(attachments: ReadonlyArray<ChatAttachme
   // https://developers.openai.com/api/docs/guides/image-cost-calculator
   // https://platform.claude.com/docs/en/build-with-claude/vision
   return attachments.reduce(
-    (sum, attachment, index) =>
-      sum +
-      (attachment.type === "image" && index < PROVIDER_SEND_TURN_MAX_EMBEDDED_ATTACHMENTS
-        ? 8_192
-        : 4_096),
+    (sum, attachment) => sum + (attachment.type === "image" ? 8_192 : 4_096),
     0,
   );
 }

@@ -95,6 +95,7 @@ import {
 } from "@t3tools/shared/claudeCompaction";
 import {
   type ChatAttachment,
+  PROVIDER_SEND_TURN_MAX_EMBEDDED_ATTACHMENTS,
   PROVIDER_SEND_TURN_MAX_FILE_BYTES,
   ClaudeSettings,
   TrimmedNonEmptyString,
@@ -231,10 +232,8 @@ import {
   makeProviderRetryTurnItem,
 } from "@t3tools/provider-core/server/failure";
 import { turnScopedSelectionTransition } from "@t3tools/provider-core/server/selectionTransition";
-import {
-  providerEmbeddableAttachments,
-  providerMessageTextWithAttachmentPaths,
-} from "@t3tools/provider-core/server/attachmentPrompt";
+import { providerMessageTextWithAttachmentPaths } from "@t3tools/provider-core/server/attachmentPrompt";
+import { readImageDimensions } from "@t3tools/shared/imageDimensions";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import {
   ProviderAdapterDriverCreateError,
@@ -2897,6 +2896,12 @@ const estimateClaudePdfPages = (bytes: Buffer): number | null => {
 
 const CLAUDE_ATTACHMENT_MAX_BYTES = 28 * 1024 * 1024;
 const CLAUDE_ATTACHMENT_MAX_PAGES = 100;
+// Anthropic rejects a request holding more than 20 images if any is over 2000 px on its long edge.
+const CLAUDE_MANY_IMAGES_MAX_EDGE = 2000;
+const fitsManyImageRequest = (bytes: Uint8Array) => {
+  const size = readImageDimensions(bytes);
+  return size !== null && Math.max(size.width, size.height) <= CLAUDE_MANY_IMAGES_MAX_EDGE;
+};
 
 const makeClaudeAttachmentBudget = (used?: { pagesUsed: number; bytesUsed: number }) => ({
   committed: { pages: used?.pagesUsed ?? 0, bytes: used?.bytesUsed ?? 0 },
@@ -3007,8 +3012,10 @@ const makeClaudeUserMessageWithAttachments = Effect.fnUntraced(function* (input:
   );
   input.pdfReservation.budget.pending.bytes += textBytes;
   input.pdfReservation.bytes += textBytes;
-  const embeddable = providerEmbeddableAttachments(input.attachments);
-  for (const [index, attachment] of embeddable.entries()) {
+  const manyImages =
+    input.attachments.filter((attachment) => attachment.type === "image").length >
+    PROVIDER_SEND_TURN_MAX_EMBEDDED_ATTACHMENTS;
+  for (const [index, attachment] of input.attachments.entries()) {
     if (attachment.type !== "image") continue;
     if (!isSupportedClaudeImageMimeType(attachment.mimeType)) {
       return yield* new ProviderAdapter.ProviderAdapterProtocolError({
@@ -3039,6 +3046,7 @@ const makeClaudeUserMessageWithAttachments = Effect.fnUntraced(function* (input:
     );
     const retainedBytes = 4 * Math.ceil(bytes.length / 3) + 128;
     if (retainedBytes > input.pdfReservation.budget.remainingBytes) continue;
+    if (manyImages && !fitsManyImageRequest(bytes)) continue;
     input.pdfReservation.budget.pending.bytes += retainedBytes;
     input.pdfReservation.bytes += retainedBytes;
     const block: ClaudeUserContentBlock = {
@@ -3051,7 +3059,7 @@ const makeClaudeUserMessageWithAttachments = Effect.fnUntraced(function* (input:
     };
     images.set(index, block);
   }
-  for (const [index, attachment] of embeddable.entries()) {
+  for (const [index, attachment] of input.attachments.entries()) {
     if (attachment.type === "file") {
       if (
         !input.documents ||
