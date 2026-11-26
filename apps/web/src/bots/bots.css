@@ -18,7 +18,7 @@
 }
 
 /* A backdrop filter recomposites on every scroll frame, so bots mode stills them all; only the
-   chat's two frosted bars and the phone's few floating pills opt back in (Floating controls,
+   chat composer's frosted bar and the phone's few floating pills opt back in (Floating controls,
    below). */
 :root[data-bots-app] *,
 :root[data-bots-app] *::before,
@@ -98,17 +98,30 @@
   }
 }
 
-/* A chat's header and its composer's area are soft frosted bars over the transcript: text scrolls
-   under them, softens over a short ramp at their inner edge, and is frosted behind them. */
+/* The chat header is opaque in the page colour (matching the iOS standalone status bar and
+   data-top-edge with no seam), with an eased colour-gradient skirt below it. The composer area
+   uses one plain unmasked frosted rectangle plus a short colour-gradient skirt (no mask-image on a
+   backdrop-filter layer, which clips and cuts text in iOS Safari). */
 :root[data-bots-app] {
-  --bots-soft-fill: color-mix(in srgb, var(--bots-page) 40%, transparent);
-  --bots-soft-blur: blur(6px);
+  --bots-bar-outer-alpha: 82%;
+  --bots-bar-inner-alpha: 76%;
+  --bots-bar-blur: blur(7px) saturate(140%);
+  --bots-top-skirt: 1.5rem;
+}
+:root:not(.dark)[data-bots-app] {
+  --bots-bar-outer-alpha: 87%;
+  --bots-bar-inner-alpha: 81%;
+}
+:root[data-bots-app] [data-chat-column] {
+  --bots-bar-outer: color-mix(in srgb, var(--bots-page) var(--bots-bar-outer-alpha), transparent);
+  --bots-bar-inner: color-mix(in srgb, var(--bots-page) var(--bots-bar-inner-alpha), transparent);
 }
 
-/* The chat header runs from the top edge over the transcript (ChatView). Its frost is the
-   ::after layer below, which reaches past its bottom edge. */
+/* The chat header runs from the top edge over the transcript (ChatView). Its opaque fill sits at
+   z-index -2 on ::after so ::before decorations at z-index -1 stay above it. */
 html[data-theme-id] [data-bots-mode="true"] [data-chat-header],
 :root[data-bots-app] [data-chat-header] {
+  isolation: isolate;
   height: var(--bot-chat-header-height);
   min-height: var(--bot-chat-header-height);
   padding-top: env(safe-area-inset-top);
@@ -167,70 +180,80 @@ html[data-theme-id] [data-bots-mode="true"] [data-chat-header],
   mask-image: none;
 }
 
-/* Both bars of a chat blur the transcript gently and with no line to cut against. Each is static
-   backdrop layers masked from clear to opaque over their own height `--z`, past the bar's inner
-   edge: the composer's area has two (a light blur over all of the zone, and the frosted fill and
-   blur over its lower part), the header one. The transcript's end inset (ChatView) leaves its last
-   message clear of the composer's zone. */
-:root[data-bots-app] [data-bots-mode="true"] [data-chat-composer-overlay]::before,
-:root[data-bots-app] [data-bots-mode="true"] [data-chat-composer-overlay]::after,
+/* The chat header is opaque (no backdrop-filter) so it merges seamlessly into the iOS standalone
+   status bar; the composer area uses one plain unmasked frosted layer. Short colour-gradient
+   skirts soften both inner edges without masking a blur layer. */
 :root[data-bots-app] [data-chat-header]::after {
   content: "";
   position: absolute;
+  inset: 0;
+  z-index: -2;
+  background: var(--bots-page);
   pointer-events: none;
-  -webkit-mask-image: linear-gradient(
-    var(--soft-dir),
-    transparent,
-    rgb(0 0 0 / 0.04) calc(var(--z) * 0.2),
-    rgb(0 0 0 / 0.2) calc(var(--z) * 0.4),
-    rgb(0 0 0 / 0.5) calc(var(--z) * 0.6),
-    rgb(0 0 0 / 0.85) calc(var(--z) * 0.8),
-    #000 var(--z)
-  );
-  mask-image: linear-gradient(
-    var(--soft-dir),
-    transparent,
-    rgb(0 0 0 / 0.04) calc(var(--z) * 0.2),
-    rgb(0 0 0 / 0.2) calc(var(--z) * 0.4),
-    rgb(0 0 0 / 0.5) calc(var(--z) * 0.6),
-    rgb(0 0 0 / 0.85) calc(var(--z) * 0.8),
-    #000 var(--z)
-  );
-}
-:root[data-bots-app] [data-bots-mode="true"] [data-chat-composer-overlay]::before,
-:root[data-bots-app] [data-bots-mode="true"] [data-chat-composer-overlay]::after {
-  --soft-dir: to bottom;
-  inset: calc(-1 * var(--z)) 0 0;
 }
 :root[data-bots-app] [data-bots-mode="true"] [data-chat-composer-overlay]::before {
-  --z: var(--bots-soft-zone);
-  -webkit-backdrop-filter: blur(2px) !important;
-  backdrop-filter: blur(2px) !important;
+  content: "";
+  position: absolute;
+  inset: 0.375rem 0 0;
+  background: linear-gradient(to top, var(--bots-bar-outer), var(--bots-bar-inner));
+  pointer-events: none;
+  -webkit-backdrop-filter: var(--bots-bar-blur) !important;
+  backdrop-filter: var(--bots-bar-blur) !important;
+}
+:root[data-bots-app] [data-bots-mode="true"] [data-chat-header] + * [data-chat-canvas]::before,
+:root[data-bots-app] [data-bots-mode="true"] [data-chat-composer-overlay]::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  pointer-events: none;
+}
+:root[data-bots-app] [data-bots-mode="true"] [data-chat-header] + * [data-chat-canvas]::before {
+  top: 0;
+  z-index: 5;
+  height: var(--bots-top-skirt);
+  background: linear-gradient(
+    to bottom,
+    var(--bots-page),
+    color-mix(in srgb, var(--bots-page) 88%, transparent) 18%,
+    color-mix(in srgb, var(--bots-page) 48%, transparent) 48%,
+    color-mix(in srgb, var(--bots-page) 14%, transparent) 78%,
+    transparent
+  );
 }
 :root[data-bots-app] [data-bots-mode="true"] [data-chat-composer-overlay]::after {
-  --z: 1.25rem;
-  background-color: var(--bots-soft-fill);
-  -webkit-backdrop-filter: var(--bots-soft-blur) !important;
-  backdrop-filter: var(--bots-soft-blur) !important;
+  bottom: calc(100% - 0.375rem);
+  height: 1rem;
+  background: linear-gradient(
+    to top,
+    var(--bots-bar-inner),
+    color-mix(in srgb, var(--bots-bar-inner) 55%, transparent) 40%,
+    color-mix(in srgb, var(--bots-bar-inner) 18%, transparent) 75%,
+    transparent
+  );
 }
-:root[data-bots-app] [data-chat-header]::after {
-  --soft-dir: to top;
-  --z: 1.5rem;
-  inset: 0 0 calc(-1 * var(--z));
-  z-index: -2;
-  background-color: var(--bots-soft-fill);
-  -webkit-backdrop-filter: var(--bots-soft-blur) !important;
-  backdrop-filter: var(--bots-soft-blur) !important;
+/* The row's own bottom padding and the overlay's top padding already leave a normal gap above the
+   composer; drop the list footer's extra spacer in bot chats. */
+:root[data-bots-app] [data-bots-mode="true"] [data-timeline-footer-gap] {
+  height: 0;
 }
-/* WebKit drops backdrop filters from view-transition snapshots: the layers are opaque through one. */
+/* WebKit drops backdrop filters from view-transition snapshots: every layer turns opaque. */
+html:active-view-transition[data-bots-app] [data-chat-header]::after,
 html:active-view-transition[data-bots-app]
   [data-bots-mode="true"]
-  [data-chat-composer-overlay]::before,
+  [data-chat-composer-overlay]::before {
+  background: var(--bots-page) !important;
+}
 html:active-view-transition[data-bots-app]
   [data-bots-mode="true"]
-  [data-chat-composer-overlay]::after,
-html:active-view-transition[data-bots-app] [data-chat-header]::after {
-  background-color: var(--bots-page) !important;
+  [data-chat-header]
+  + *
+  [data-chat-canvas]::before {
+  background: linear-gradient(to bottom, var(--bots-page), transparent) !important;
+}
+html:active-view-transition[data-bots-app]
+  [data-bots-mode="true"]
+  [data-chat-composer-overlay]::after {
+  background: linear-gradient(to top, var(--bots-page), transparent) !important;
 }
 /* The jump-to-latest disc stays out of the composer field. On a wide lane it sits in the gutter
    after the composer, level with its top edge; on a narrow lane it floats just above the composer
@@ -2222,7 +2245,7 @@ html[data-bots-app]:has(
 }
 
 /* Every list top bar keeps a constant edge and shadow, on a pseudo-element behind the bar's
-   content. A chat's header has none: it is soft (above). */
+   content. A chat's header has none: it is opaque with a gradient skirt below (above). */
 :root[data-bots-app]
   :is([data-bots-top-bar], [data-bots-page] > :is(header, [data-bots-search-bar])) {
   isolation: isolate;

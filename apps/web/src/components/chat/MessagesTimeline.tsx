@@ -211,7 +211,7 @@ function TimelineListFooter({
     <div>
       <div ref={contentRef}>{children}</div>
       <div aria-hidden style={{ height: composerInset }} />
-      <div aria-hidden className="h-3 sm:h-4" />
+      <div aria-hidden data-timeline-footer-gap className="h-3 sm:h-4" />
     </div>
   );
 }
