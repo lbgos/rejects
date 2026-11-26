@@ -2898,6 +2898,8 @@ const CLAUDE_ATTACHMENT_MAX_BYTES = 28 * 1024 * 1024;
 const CLAUDE_ATTACHMENT_MAX_PAGES = 100;
 // Anthropic rejects a request holding more than 20 images if any is over 2000 px on its long edge.
 const CLAUDE_MANY_IMAGES_MAX_EDGE = 2000;
+// Anthropic's per-request image ceiling on 200k-context models.
+const CLAUDE_MAX_REQUEST_IMAGES = 100;
 const fitsManyImageRequest = (bytes: Uint8Array) => {
   const size = readImageDimensions(bytes);
   return size !== null && Math.max(size.width, size.height) <= CLAUDE_MANY_IMAGES_MAX_EDGE;
@@ -3016,7 +3018,7 @@ const makeClaudeUserMessageWithAttachments = Effect.fnUntraced(function* (input:
     input.attachments.filter((attachment) => attachment.type === "image").length >
     PROVIDER_SEND_TURN_MAX_EMBEDDED_ATTACHMENTS;
   for (const [index, attachment] of input.attachments.entries()) {
-    if (attachment.type !== "image") continue;
+    if (attachment.type !== "image" || images.size >= CLAUDE_MAX_REQUEST_IMAGES) continue;
     if (!isSupportedClaudeImageMimeType(attachment.mimeType)) {
       return yield* new ProviderAdapter.ProviderAdapterProtocolError({
         driver: CLAUDE_PROVIDER,

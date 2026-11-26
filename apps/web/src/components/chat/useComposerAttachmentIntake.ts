@@ -1,6 +1,7 @@
 import type { ChatComposerProps } from "./ChatComposer";
 import {
   type ChatFileAttachment,
+  getAttachmentTotalBytesError,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
@@ -151,6 +152,10 @@ export function useComposerAttachmentIntake(input: {
     // accepted files reserve their attachment slots (as preparing images)
     // before the first await, keeping the total under the limit.
     let reservedCount = countReservedAttachments();
+    let reservedBytes = [...composerImagesRef.current, ...composerFilesRef.current].reduce(
+      (total, attachment) => total + attachment.sizeBytes,
+      0,
+    );
     // A pick that matches a needs-reattach marker replaces it in the draft, so
     // it must not consume a slot; a draft full of markers would otherwise hit
     // the capacity error before the replacement path could run.
@@ -180,6 +185,13 @@ export function useComposerAttachmentIntake(input: {
       }
       if (!matchingReattachMarker && reservedCount >= PROVIDER_SEND_TURN_MAX_ATTACHMENTS) {
         error = `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} files per message.`;
+        continue;
+      }
+      const totalBytesError = matchingReattachMarker
+        ? undefined
+        : getAttachmentTotalBytesError(reservedBytes + file.size);
+      if (totalBytesError) {
+        error = totalBytesError;
         continue;
       }
       if (attachmentKind === "unsupported-image") {
@@ -217,6 +229,7 @@ export function useComposerAttachmentIntake(input: {
       }
       if (!matchingReattachMarker) {
         reservedCount += 1;
+        reservedBytes += file.size;
       }
     }
     setThreadError(threadId, error);

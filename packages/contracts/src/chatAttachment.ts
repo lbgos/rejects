@@ -216,6 +216,12 @@ export const ChatAttachment = Schema.Union([
 ]);
 export type ChatAttachment = typeof ChatAttachment.Type;
 
+export function getAttachmentTotalBytesError(totalBytes: number): string | undefined {
+  if (totalBytes > PROVIDER_SEND_TURN_MAX_TOTAL_BYTES) {
+    return "Attachments can total up to 4 GiB per message or question response. Send them in several messages.";
+  }
+}
+
 export function getProviderAttachmentLimitError(
   attachments: ReadonlyArray<Pick<ChatAttachment, "type" | "mimeType" | "sizeBytes">>,
 ): string | undefined {
@@ -233,12 +239,9 @@ export function getProviderAttachmentLimitError(
   if (imageBytes > PROVIDER_SEND_TURN_MAX_TOTAL_IMAGE_BYTES) {
     return "Images can total up to 80 MiB per message or question response. Use smaller images or send fewer at once.";
   }
-  if (
-    attachments.reduce((total, attachment) => total + attachment.sizeBytes, 0) >
-    PROVIDER_SEND_TURN_MAX_TOTAL_BYTES
-  ) {
-    return "Attachments can total up to 4 GiB per message or question response. Send them in several messages.";
-  }
+  return getAttachmentTotalBytesError(
+    attachments.reduce((total, attachment) => total + attachment.sizeBytes, 0),
+  );
 }
 
 export const UploadChatAttachment = Schema.Union([UploadChatImageAttachment]);
