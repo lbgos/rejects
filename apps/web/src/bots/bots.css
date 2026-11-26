@@ -220,8 +220,9 @@ html:active-view-transition[data-bots-app]
   [data-chat-composer-overlay]::after {
   background-color: var(--bots-page) !important;
 }
-/* The jump-to-latest disc stands in the composer's area, so it never covers the transcript. On a
-   wide lane it sits in the gutter after the composer, level with its top edge. */
+/* The jump-to-latest disc stays out of the composer field. On a wide lane it sits in the gutter
+   after the composer, level with its top edge; on a narrow lane it floats just above the composer
+   at its right edge. */
 @media (min-width: 640px) {
   :root[data-bots-app] [data-bots-mode="true"] .chat-scroll-to-bottom {
     bottom: calc(var(--bot-composer-height, 0px) - 2.5rem) !important;
@@ -232,36 +233,12 @@ html:active-view-transition[data-bots-app]
     margin-inline-start: calc((100% + min(100%, var(--chat-content-max-width))) / 2 + 0.5rem);
   }
 }
-/* A narrow lane has no gutter: the disc ends the composer's row, as the attach disc starts it,
-   and the capsule between them gives up that much of its width. */
 @media (max-width: 639px) {
   :root[data-bots-app] [data-bots-mode="true"] .chat-scroll-to-bottom {
-    bottom: max(env(safe-area-inset-bottom), 0.5rem) !important;
+    bottom: calc(var(--bot-composer-height, 0px) + 0.375rem) !important;
     justify-content: flex-end;
-    padding: 0 calc(env(safe-area-inset-right) + 0.75rem) 0 0;
-  }
-  :root[data-bots-app][data-keyboard-open] [data-bots-mode="true"] .chat-scroll-to-bottom {
-    bottom: 0.5rem !important;
-  }
-  :root[data-bots-app] [data-bots-mode="true"] .chat-scroll-to-bottom [data-slot="button"] {
-    width: 2.75rem;
-    height: 2.75rem;
-  }
-  :root[data-bots-app]
-    [data-bots-mode="true"]
-    :has(> .chat-scroll-to-bottom)
-    ~ [data-chat-composer-overlay]
-    [data-bot-composer="true"]
-    [data-chat-composer-surface] {
-    padding-inline-end: 3.25rem;
-  }
-  :root[data-bots-app]
-    [data-bots-mode="true"]
-    :has(> .chat-scroll-to-bottom)
-    ~ [data-chat-composer-overlay]
-    [data-bot-composer="true"]
-    [data-chat-composer-surface]::after {
-    inset-inline-end: 3.25rem;
+    padding: 0 calc(env(safe-area-inset-right) + 0.75rem) 0
+      calc(env(safe-area-inset-left) + 0.75rem);
   }
 }
 /* A tab screen's list ends above the tab bar. */
@@ -375,6 +352,19 @@ html[data-bots-app] body {
   :root[data-bots-app]
     :is([data-slot="button"], [data-bots-tab-bar] button, [data-bots-tab-search]) {
     transition: scale 120ms cubic-bezier(0.2, 0.8, 0.2, 1) !important;
+  }
+  /* The jump-to-latest disc fades in and out in place, then hides so it paints nothing at rest. */
+  :root[data-bots-app] .chat-scroll-to-bottom [data-scroll-to-end] {
+    transition:
+      scale 120ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      opacity 160ms ease-out,
+      visibility 0s linear 160ms !important;
+  }
+  :root[data-bots-app] .chat-scroll-to-bottom[data-visible="true"] [data-scroll-to-end] {
+    transition:
+      scale 120ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      opacity 160ms ease-out,
+      visibility 0s linear 0s !important;
   }
   /* A message, the typing bubble or a bot row that just arrived rises in once (data-row-enter). */
   :root[data-bots-app] [data-row-enter] {
@@ -2050,7 +2040,8 @@ html[data-bots-app]:has(
       [data-bot-header-actions] :is([data-slot="button"], [data-slot="menu-trigger"]),
       [data-settings-page-header] [data-slot="button"]:not([data-settings-bar-action] *),
       [data-bots-mode="true"] [data-composer-banner-surface],
-      [data-bot-composer="true"] [data-chat-composer-attach] button
+      [data-bot-composer="true"] [data-chat-composer-attach] button,
+      [data-bots-mode="true"] .chat-scroll-to-bottom [data-slot="button"]
     ),
   /* The capsule is a pseudo-element, which :is() cannot hold. */
   :root[data-bots-app] [data-bot-composer="true"] [data-chat-composer-surface]::after {
@@ -2083,7 +2074,8 @@ html[data-bots-app]:has(
       [data-bot-header-actions] :is([data-slot="button"], [data-slot="menu-trigger"]),
       [data-settings-page-header] [data-slot="button"]:not([data-settings-bar-action] *),
       [data-bots-mode="true"] [data-composer-banner-surface],
-      [data-bot-composer="true"] [data-chat-composer-attach] button
+      [data-bot-composer="true"] [data-chat-composer-attach] button,
+      [data-bots-mode="true"] .chat-scroll-to-bottom [data-slot="button"]
     ),
   html:active-view-transition[data-bots-app]
     [data-bot-composer="true"]

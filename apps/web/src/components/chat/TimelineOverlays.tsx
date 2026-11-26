@@ -22,18 +22,23 @@ export function WorkspaceFileDropOverlay() {
 /**
  * Sits `bottom` pixels up, clear of the composer and its attached banners. The summary names
  * what waits at the end of the timeline, which is out of view while it shows. `compact` (bot
- * chats) is a round arrow; in bots mode bots.css moves it into the composer's area.
+ * chats) is a round arrow; in bots mode bots.css places it clear of the field.
  */
 export function ScrollToEndButton(props: {
   readonly bottom: number;
   readonly summary: string | null;
   readonly compact?: boolean;
+  readonly visible?: boolean;
   readonly onScrollToEnd: () => void;
 }) {
+  const visible = props.visible ?? true;
   if (props.compact) {
     return (
       <div
         className="chat-scroll-to-bottom pointer-events-none absolute z-30 flex justify-center py-1.5"
+        data-visible={visible ? "true" : "false"}
+        aria-hidden={!visible}
+        inert={!visible}
         style={{ bottom: props.bottom }}
       >
         <Button
@@ -53,6 +58,9 @@ export function ScrollToEndButton(props: {
   return (
     <div
       className="chat-scroll-to-bottom pointer-events-none absolute z-30 flex justify-center py-1.5"
+      data-visible={visible ? "true" : "false"}
+      aria-hidden={!visible}
+      inert={!visible}
       style={{ bottom: props.bottom }}
     >
       <Button
