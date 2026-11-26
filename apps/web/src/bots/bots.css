@@ -2185,13 +2185,21 @@ html[data-bots-app]:has(
   }
 }
 
-/* The chat header and a pushed page's bar keep a constant edge and shadow, on a pseudo-element
-   behind the bar's content. The list screens' bars have none. */
-:root[data-bots-app] :is([data-chat-header], [data-bots-top-bar]) {
+/* Every top bar keeps a constant edge and shadow, on a pseudo-element behind the bar's content. */
+:root[data-bots-app]
+  :is(
+    [data-chat-header],
+    [data-bots-top-bar],
+    [data-bots-page] > :is(header, [data-bots-search-bar])
+  ) {
   isolation: isolate;
 }
 :root[data-bots-app]
-  :is([data-chat-header], [data-bots-top-bar]:has([data-bots-bar-title][data-pinned]))::after {
+  :is(
+    [data-chat-header],
+    [data-bots-top-bar],
+    [data-bots-page] > :is(header, [data-bots-search-bar])
+  )::after {
   content: "";
   position: absolute;
   inset: 0;
