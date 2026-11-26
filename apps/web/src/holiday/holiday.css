@@ -45,9 +45,10 @@
 }
 
 /* The light string, inside the bottom of each `data-holiday-string` bar and behind its controls.
-   Those bars are solid and nothing scrolls into their box. `round` fits whole 3-bulb tiles to each
-   bar, stretching them a little (lights.svg does not keep its aspect ratio), so the wire never
-   breaks and neighbouring bars meet bulb to bulb. The wire stands in for the bar's scrolled edge. */
+   Those bars are solid or frosted, and nothing sharp scrolls into their box. `round` fits whole
+   3-bulb tiles to each bar, stretching them a little (lights.svg does not keep its aspect ratio),
+   so the wire never breaks and neighbouring bars meet bulb to bulb. The wire stands in for the
+   bar's scrolled edge. */
 :root.dark[data-holiday][data-bots-app] [data-holiday-string] {
   isolation: isolate;
   --bots-bar-edge: transparent;
