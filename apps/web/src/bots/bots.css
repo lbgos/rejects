@@ -98,22 +98,21 @@
   }
 }
 
-/* A chat's header and its composer's area are frosted bars over the transcript: text scrolls
-   under them and shows through a static backdrop blur. */
+/* A chat's header and its composer's area are soft frosted bars over the transcript: text scrolls
+   under them, softens over a short ramp at their inner edge, and is frosted behind them. */
 :root[data-bots-app] {
-  --bots-chat-bar-fill: color-mix(in srgb, var(--bots-page) 60%, transparent);
-  --bots-chat-bar-blur: blur(14px);
+  --bots-soft-fill: color-mix(in srgb, var(--bots-page) 40%, transparent);
+  --bots-soft-blur: blur(6px);
 }
 
-/* The chat header runs from the top edge over the transcript (ChatView). */
+/* The chat header runs from the top edge over the transcript (ChatView). Its frost is the
+   ::after layer below, which reaches past its bottom edge. */
 html[data-theme-id] [data-bots-mode="true"] [data-chat-header],
 :root[data-bots-app] [data-chat-header] {
   height: var(--bot-chat-header-height);
   min-height: var(--bot-chat-header-height);
   padding-top: env(safe-area-inset-top);
-  background-color: var(--bots-chat-bar-fill);
-  -webkit-backdrop-filter: var(--bots-chat-bar-blur) !important;
-  backdrop-filter: var(--bots-chat-bar-blur) !important;
+  background-color: transparent;
 }
 
 /* You and the Settings index: the same solid bar, over a page that scrolls from the top edge
@@ -168,18 +167,19 @@ html[data-theme-id] [data-bots-mode="true"] [data-chat-header],
   mask-image: none;
 }
 
-/* A chat's transcript runs under the composer's area to the bottom edge and blurs into it over a
-   soft zone above its top edge, with no line to cut against. The zone is two static backdrop
-   layers, each masked from clear to opaque over its own height `--z`: a light blur over all of
-   it, and the bar's frosted fill and blur over its lower part. */
+/* Both bars of a chat blur the transcript gently and with no line to cut against. Each is static
+   backdrop layers masked from clear to opaque over their own height `--z`, past the bar's inner
+   edge: the composer's area has two (a light blur over all of the zone, and the frosted fill and
+   blur over its lower part), the header one. The transcript's end inset (ChatView) leaves its last
+   message clear of the composer's zone. */
 :root[data-bots-app] [data-bots-mode="true"] [data-chat-composer-overlay]::before,
-:root[data-bots-app] [data-bots-mode="true"] [data-chat-composer-overlay]::after {
+:root[data-bots-app] [data-bots-mode="true"] [data-chat-composer-overlay]::after,
+:root[data-bots-app] [data-chat-header]::after {
   content: "";
   position: absolute;
-  inset: calc(-1 * var(--z)) 0 0;
   pointer-events: none;
   -webkit-mask-image: linear-gradient(
-    to bottom,
+    var(--soft-dir),
     transparent,
     rgb(0 0 0 / 0.04) calc(var(--z) * 0.2),
     rgb(0 0 0 / 0.2) calc(var(--z) * 0.4),
@@ -188,7 +188,7 @@ html[data-theme-id] [data-bots-mode="true"] [data-chat-header],
     #000 var(--z)
   );
   mask-image: linear-gradient(
-    to bottom,
+    var(--soft-dir),
     transparent,
     rgb(0 0 0 / 0.04) calc(var(--z) * 0.2),
     rgb(0 0 0 / 0.2) calc(var(--z) * 0.4),
@@ -197,27 +197,39 @@ html[data-theme-id] [data-bots-mode="true"] [data-chat-header],
     #000 var(--z)
   );
 }
+:root[data-bots-app] [data-bots-mode="true"] [data-chat-composer-overlay]::before,
+:root[data-bots-app] [data-bots-mode="true"] [data-chat-composer-overlay]::after {
+  --soft-dir: to bottom;
+  inset: calc(-1 * var(--z)) 0 0;
+}
 :root[data-bots-app] [data-bots-mode="true"] [data-chat-composer-overlay]::before {
-  --z: 4rem;
-  -webkit-backdrop-filter: blur(5px) !important;
-  backdrop-filter: blur(5px) !important;
+  --z: var(--bots-soft-zone);
+  -webkit-backdrop-filter: blur(2px) !important;
+  backdrop-filter: blur(2px) !important;
 }
 :root[data-bots-app] [data-bots-mode="true"] [data-chat-composer-overlay]::after {
-  --z: 2.5rem;
-  background-color: var(--bots-chat-bar-fill);
-  -webkit-backdrop-filter: var(--bots-chat-bar-blur) !important;
-  backdrop-filter: var(--bots-chat-bar-blur) !important;
+  --z: 1.25rem;
+  background-color: var(--bots-soft-fill);
+  -webkit-backdrop-filter: var(--bots-soft-blur) !important;
+  backdrop-filter: var(--bots-soft-blur) !important;
 }
-/* WebKit drops backdrop filters from view-transition snapshots: the bars are opaque through one. */
-html:active-view-transition[data-bots-app] [data-bots-mode="true"] [data-chat-header] {
-  background-color: var(--bots-page) !important;
+:root[data-bots-app] [data-chat-header]::after {
+  --soft-dir: to top;
+  --z: 1.5rem;
+  inset: 0 0 calc(-1 * var(--z));
+  z-index: -2;
+  background-color: var(--bots-soft-fill);
+  -webkit-backdrop-filter: var(--bots-soft-blur) !important;
+  backdrop-filter: var(--bots-soft-blur) !important;
 }
+/* WebKit drops backdrop filters from view-transition snapshots: the layers are opaque through one. */
 html:active-view-transition[data-bots-app]
   [data-bots-mode="true"]
   [data-chat-composer-overlay]::before,
 html:active-view-transition[data-bots-app]
   [data-bots-mode="true"]
-  [data-chat-composer-overlay]::after {
+  [data-chat-composer-overlay]::after,
+html:active-view-transition[data-bots-app] [data-chat-header]::after {
   background-color: var(--bots-page) !important;
 }
 /* The jump-to-latest disc stays out of the composer field. On a wide lane it sits in the gutter
@@ -2209,21 +2221,14 @@ html[data-bots-app]:has(
   }
 }
 
-/* Every top bar keeps a constant edge and shadow, on a pseudo-element behind the bar's content. */
+/* Every list top bar keeps a constant edge and shadow, on a pseudo-element behind the bar's
+   content. A chat's header has none: it is soft (above). */
 :root[data-bots-app]
-  :is(
-    [data-chat-header],
-    [data-bots-top-bar],
-    [data-bots-page] > :is(header, [data-bots-search-bar])
-  ) {
+  :is([data-bots-top-bar], [data-bots-page] > :is(header, [data-bots-search-bar])) {
   isolation: isolate;
 }
 :root[data-bots-app]
-  :is(
-    [data-chat-header],
-    [data-bots-top-bar],
-    [data-bots-page] > :is(header, [data-bots-search-bar])
-  )::after {
+  :is([data-bots-top-bar], [data-bots-page] > :is(header, [data-bots-search-bar]))::after {
   content: "";
   position: absolute;
   inset: 0;
