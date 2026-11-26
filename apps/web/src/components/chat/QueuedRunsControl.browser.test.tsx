@@ -94,6 +94,9 @@ const baseProps = {
   editBlockedReason: null,
   onEditQueuedRun: () => undefined,
   onCancelEdit: () => undefined,
+  heldMessageIds: [],
+  onRemoveHeld: () => undefined,
+  onEditHeld: () => undefined,
   timestampFormat: "locale",
   onOpenThread: () => undefined,
 } satisfies ComponentProps<typeof QueuedRunsControl>;

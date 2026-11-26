@@ -387,6 +387,8 @@ export interface ChatComposerProps {
   sendDisabledReason: string | null;
   isPreparingWorktree: boolean;
   canSteer: boolean;
+  /** An earlier send has not reached the server; a send now queues behind it. */
+  queuesBehindSend?: boolean;
   bannerItems: readonly ComposerBannerStackItem[];
   resumeCompactionTokens: number | null;
   keepFullHistory: boolean;
@@ -533,7 +535,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     isRevertingCheckpoint = false,
     sendDisabledReason: externalSendDisabledReason,
     isPreparingWorktree,
-    canSteer,
+    canSteer: canSteerActiveTurn,
+    queuesBehindSend = false,
     environmentUnavailable,
     activePendingApproval: incomingPendingApproval,
     pendingApprovals,
@@ -1180,13 +1183,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   });
 
   const isComposerApprovalState = activePendingApproval !== null;
+  // Steering now would land ahead of the earlier send, so the send queues.
+  const canSteer = canSteerActiveTurn && !queuesBehindSend;
   // A send declines the approvals shown here to redirect the agent, so it steers the waiting
   // turn instead of queueing behind it. Approvals the typing guard holds stay unseen and pending.
   const followUpBehavior = pendingApprovals.some(
     (approval) => !heldRequestIds.has(approval.requestId),
   )
     ? "steer"
-    : settings.followUpBehavior;
+    : isBotThread
+      ? "queue"
+      : settings.followUpBehavior;
   const composerSuggestionsVisible = composerMenuOpen;
   const composerSuggestionListVisible = composerSuggestionsVisible && composerMenuItems.length > 0;
   const activePendingUserInput = pendingUserInputs[0] ?? null;
@@ -3784,7 +3791,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     compact={isComposerPrimaryActionsCompact}
                     canOperateThread={canOperateThread}
                     pendingAction={pendingPrimaryAction}
-                    isRunning={phase === "running" || phase === "connecting"}
+                    isRunning={phase === "running" || phase === "connecting" || queuesBehindSend}
                     canInterrupt={canInterrupt}
                     runId={activeThread?.runtime?.activeRunId ?? null}
                     followUpBehavior={followUpBehavior}

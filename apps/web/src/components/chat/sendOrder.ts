@@ -68,8 +68,12 @@ export function useThreadSends(threadKey: string): ThreadSends {
   return useSendOrderStore((state) => state.threads[threadKey] ?? EMPTY_THREAD_SENDS);
 }
 
+export function openSendCount(threadKey: string): number {
+  return chains.get(threadKey)?.length ?? 0;
+}
+
 export function hasOpenSends(threadKey: string): boolean {
-  return (chains.get(threadKey)?.length ?? 0) > 0;
+  return openSendCount(threadKey) > 0;
 }
 
 export function reserveSend(input: {

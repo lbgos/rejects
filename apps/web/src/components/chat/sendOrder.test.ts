@@ -21,7 +21,12 @@ const reserve = (
   messageId: string,
   threadKey = "env:thread",
 ) =>
-  sendOrder.reserveSend({ threadKey, messageId, draftText: `text ${messageId}`, attachmentCount: 0 });
+  sendOrder.reserveSend({
+    threadKey,
+    messageId,
+    draftText: `text ${messageId}`,
+    attachmentCount: 0,
+  });
 
 describe("sendOrder", () => {
   it("holds a follow-up until the send before it is acknowledged", async () => {

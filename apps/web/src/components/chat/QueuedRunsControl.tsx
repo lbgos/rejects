@@ -92,6 +92,10 @@ export function QueuedRunsControl({
   readonly editBlockedReason: string | null;
   readonly onEditQueuedRun: (request: EditQueuedRunRequest) => void;
   readonly onCancelEdit: () => void;
+  /** Messages held behind a send that has not reached the server; they live in this client only. */
+  readonly heldMessageIds: ReadonlyArray<string>;
+  readonly onRemoveHeld: (messageId: string) => void;
+  readonly onEditHeld: (messageId: string) => void;
   readonly timestampFormat: TimestampFormat;
   readonly onOpenThread: (threadId: ThreadId, environmentId?: EnvironmentId) => void;
 }) {
@@ -149,12 +153,14 @@ export function QueuedRunsControl({
           url: queuedImageUrlById.get(attachment.id) ?? null,
         })),
       pending: false,
+      heldMessageId: null,
     })),
     ...optimisticQueued.map((message) => ({
       key: message.id,
       message: undefined,
       runId: null,
       messageId: null,
+      heldMessageId: props.heldMessageIds.includes(message.id) ? message.id : null,
       freshContext: false,
       serverIndex: null,
       text: message.text,
@@ -299,7 +305,7 @@ export function QueuedRunsControl({
                     </Tooltip>
                   </>
                 ) : null}
-                {item.pending ? (
+                {item.pending && item.heldMessageId === null ? (
                   <span className="flex items-center gap-1 px-1">
                     <Clock3Icon aria-hidden className="size-3" />
                     Saving
@@ -327,13 +333,16 @@ export function QueuedRunsControl({
                           variant="ghost-muted"
                           aria-label="Edit queued message"
                           disabled={
-                            item.runId === null ||
-                            !item.editable ||
-                            busyRunId !== null ||
-                            props.editBlockedReason !== null
+                            item.heldMessageId === null &&
+                            (item.runId === null ||
+                              !item.editable ||
+                              busyRunId !== null ||
+                              props.editBlockedReason !== null)
                           }
                           onClick={() => {
-                            if (item.runId !== null && item.messageId !== null) {
+                            if (item.heldMessageId !== null) {
+                              props.onEditHeld(item.heldMessageId);
+                            } else if (item.runId !== null && item.messageId !== null) {
                               props.onEditQueuedRun({
                                 runId: item.runId,
                                 messageId: item.messageId,
@@ -347,8 +356,10 @@ export function QueuedRunsControl({
                         </Button>
                       </TooltipTrigger>
                       <TooltipPopup>
-                        {props.editBlockedReason ??
-                          `Edit in the composer${item.serverIndex === queued.length - 1 && props.editShortcutLabel ? ` (${props.editShortcutLabel})` : ""}`}
+                        {item.heldMessageId !== null
+                          ? "Move back to the composer"
+                          : (props.editBlockedReason ??
+                            `Edit in the composer${item.serverIndex === queued.length - 1 && props.editShortcutLabel ? ` (${props.editShortcutLabel})` : ""}`)}
                       </TooltipPopup>
                     </Tooltip>
                     <Tooltip>
@@ -358,9 +369,14 @@ export function QueuedRunsControl({
                             size="icon-xs"
                             variant="ghost-muted"
                             aria-label="Remove queued message"
-                            disabled={item.runId === null || busyRunId !== null}
+                            disabled={
+                              item.heldMessageId === null &&
+                              (item.runId === null || busyRunId !== null)
+                            }
                             onClick={() => {
-                              if (item.runId !== null) void remove(item.runId);
+                              if (item.heldMessageId !== null)
+                                props.onRemoveHeld(item.heldMessageId);
+                              else if (item.runId !== null) void remove(item.runId);
                             }}
                           />
                         }
