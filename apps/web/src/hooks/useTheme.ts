@@ -279,9 +279,13 @@ function resolveBrowserChromeSurface(): HTMLElement {
 export function syncBrowserChromeTheme() {
   if (typeof document === "undefined" || typeof getComputedStyle === "undefined") return;
   const rootStyles = getComputedStyle(document.documentElement);
-  const themeChromeColor = document.documentElement.dataset.themeId
-    ? normalizeThemeColor(rootStyles.getPropertyValue("--app-chrome-background"))
-    : null;
+  const isBotsApp = document.documentElement.hasAttribute("data-bots-app");
+  // Bots mode derives its page and top-bar surface from --bots-page on the inset, which diverges
+  // from --app-chrome-background on named light themes.
+  const themeChromeColor =
+    !isBotsApp && document.documentElement.dataset.themeId
+      ? normalizeThemeColor(rootStyles.getPropertyValue("--app-chrome-background"))
+      : null;
   const surfaceColor = normalizeThemeColor(
     getComputedStyle(resolveBrowserChromeSurface()).backgroundColor,
   );

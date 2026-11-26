@@ -41,6 +41,7 @@ import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../termina
 import { cn, isMacPlatform } from "../lib/utils";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { useEnvironmentIdentificationMode } from "../hooks/useSettings";
+import { syncBrowserChromeTheme } from "../hooks/useTheme";
 import {
   PanelAnimationSuppressionProvider,
   usePanelAnimationSettings,
@@ -463,7 +464,11 @@ export function AppSidebarLayout({
   useLayoutEffect(() => {
     if (!botsMode.active) return;
     document.documentElement.setAttribute("data-bots-app", "");
-    return () => document.documentElement.removeAttribute("data-bots-app");
+    syncBrowserChromeTheme();
+    return () => {
+      document.documentElement.removeAttribute("data-bots-app");
+      syncBrowserChromeTheme();
+    };
   }, [botsMode.active]);
   const sidebarArea = workspaceAreaProps("sidebar", 0, "Bots");
   const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
