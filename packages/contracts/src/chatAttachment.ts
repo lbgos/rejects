@@ -11,7 +11,15 @@ import {
 } from "./baseSchemas.ts";
 
 export const PROVIDER_SEND_TURN_MAX_INPUT_CHARS = 120_000;
-export const PROVIDER_SEND_TURN_MAX_ATTACHMENTS = 100;
+export const PROVIDER_SEND_TURN_MAX_ATTACHMENTS = 500;
+/**
+ * Most adapters embed content (images, PDFs, text) only from a message's first attachments; the
+ * rest reach agents by path. Claude embeds within its byte and page budgets and uses this as
+ * Anthropic's many-image threshold, past which images over 2000 px are rejected.
+ */
+export const PROVIDER_SEND_TURN_MAX_EMBEDDED_ATTACHMENTS = 20;
+/** Every attachment is copied when a message claims it; this bounds one message's disk use. */
+const PROVIDER_SEND_TURN_MAX_TOTAL_BYTES = 4 * 1024 * 1024 * 1024;
 export const PROVIDER_SEND_TURN_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const PROVIDER_SEND_TURN_MAX_TOTAL_IMAGE_BYTES = 80 * 1024 * 1024;
 /** Files the server or a bot handles in memory: transcripts, bot-made files, files passed between bots. */
@@ -208,6 +216,12 @@ export const ChatAttachment = Schema.Union([
 ]);
 export type ChatAttachment = typeof ChatAttachment.Type;
 
+export function getAttachmentTotalBytesError(totalBytes: number): string | undefined {
+  if (totalBytes > PROVIDER_SEND_TURN_MAX_TOTAL_BYTES) {
+    return "Attachments can total up to 4 GiB per message or question response. Send them in several messages.";
+  }
+}
+
 export function getProviderAttachmentLimitError(
   attachments: ReadonlyArray<Pick<ChatAttachment, "type" | "mimeType" | "sizeBytes">>,
 ): string | undefined {
@@ -225,6 +239,9 @@ export function getProviderAttachmentLimitError(
   if (imageBytes > PROVIDER_SEND_TURN_MAX_TOTAL_IMAGE_BYTES) {
     return "Images can total up to 80 MiB per message or question response. Use smaller images or send fewer at once.";
   }
+  return getAttachmentTotalBytesError(
+    attachments.reduce((total, attachment) => total + attachment.sizeBytes, 0),
+  );
 }
 
 export const UploadChatAttachment = Schema.Union([UploadChatImageAttachment]);

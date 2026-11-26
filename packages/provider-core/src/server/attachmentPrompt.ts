@@ -2,6 +2,7 @@ import {
   type ChatAttachment,
   type ChatImageAttachment,
   isProviderSendTurnSupportedImageMimeType,
+  PROVIDER_SEND_TURN_MAX_EMBEDDED_ATTACHMENTS,
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
   type SnapShotAccessibility,
   type SnapShotAccessibilityNode,
@@ -156,6 +157,13 @@ export function isProviderNativeImageAttachment(attachment: ChatAttachment): boo
   return (
     attachment.type === "image" && isProviderSendTurnSupportedImageMimeType(attachment.mimeType)
   );
+}
+
+/** The attachments an adapter may embed; it names every attachment by path either way. */
+export function providerEmbeddableAttachments<A extends ChatAttachment>(
+  attachments: ReadonlyArray<A>,
+): ReadonlyArray<A> {
+  return attachments.slice(0, PROVIDER_SEND_TURN_MAX_EMBEDDED_ATTACHMENTS);
 }
 
 export const providerMessageTextWithAttachmentPaths = Effect.fn(

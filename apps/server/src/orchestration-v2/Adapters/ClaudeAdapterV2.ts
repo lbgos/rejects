@@ -95,6 +95,7 @@ import {
 } from "@t3tools/shared/claudeCompaction";
 import {
   type ChatAttachment,
+  PROVIDER_SEND_TURN_MAX_EMBEDDED_ATTACHMENTS,
   PROVIDER_SEND_TURN_MAX_FILE_BYTES,
   ClaudeSettings,
   TrimmedNonEmptyString,
@@ -232,6 +233,7 @@ import {
 } from "@t3tools/provider-core/server/failure";
 import { turnScopedSelectionTransition } from "@t3tools/provider-core/server/selectionTransition";
 import { providerMessageTextWithAttachmentPaths } from "@t3tools/provider-core/server/attachmentPrompt";
+import { readImageDimensions } from "@t3tools/shared/imageDimensions";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import {
   ProviderAdapterDriverCreateError,
@@ -2894,6 +2896,14 @@ const estimateClaudePdfPages = (bytes: Buffer): number | null => {
 
 const CLAUDE_ATTACHMENT_MAX_BYTES = 28 * 1024 * 1024;
 const CLAUDE_ATTACHMENT_MAX_PAGES = 100;
+// Anthropic rejects a request holding more than 20 images if any is over 2000 px on its long edge.
+const CLAUDE_MANY_IMAGES_MAX_EDGE = 2000;
+// Anthropic's per-request image ceiling on 200k-context models.
+const CLAUDE_MAX_REQUEST_IMAGES = 100;
+const fitsManyImageRequest = (bytes: Uint8Array) => {
+  const size = readImageDimensions(bytes);
+  return size !== null && Math.max(size.width, size.height) <= CLAUDE_MANY_IMAGES_MAX_EDGE;
+};
 
 const makeClaudeAttachmentBudget = (used?: { pagesUsed: number; bytesUsed: number }) => ({
   committed: { pages: used?.pagesUsed ?? 0, bytes: used?.bytesUsed ?? 0 },
@@ -2942,6 +2952,8 @@ const makeClaudeUserMessageWithAttachments = Effect.fnUntraced(function* (input:
   readonly attachmentsDir: string;
   readonly fileSystem: FileSystem.FileSystem;
   readonly pdfReservation: Effect.Success<ReturnType<typeof reserveClaudePdfBudget>>;
+  /** The model takes PDF document blocks; gateways for other models reject the whole request. */
+  readonly documents: boolean;
   readonly skills?: ReadonlyMap<string, ClaudeSkillTarget>;
   readonly skillMentionsFrom?: number;
 }) {
@@ -3002,8 +3014,11 @@ const makeClaudeUserMessageWithAttachments = Effect.fnUntraced(function* (input:
   );
   input.pdfReservation.budget.pending.bytes += textBytes;
   input.pdfReservation.bytes += textBytes;
+  const manyImages =
+    input.attachments.filter((attachment) => attachment.type === "image").length >
+    PROVIDER_SEND_TURN_MAX_EMBEDDED_ATTACHMENTS;
   for (const [index, attachment] of input.attachments.entries()) {
-    if (attachment.type !== "image") continue;
+    if (attachment.type !== "image" || images.size >= CLAUDE_MAX_REQUEST_IMAGES) continue;
     if (!isSupportedClaudeImageMimeType(attachment.mimeType)) {
       return yield* new ProviderAdapter.ProviderAdapterProtocolError({
         driver: CLAUDE_PROVIDER,
@@ -3033,6 +3048,7 @@ const makeClaudeUserMessageWithAttachments = Effect.fnUntraced(function* (input:
     );
     const retainedBytes = 4 * Math.ceil(bytes.length / 3) + 128;
     if (retainedBytes > input.pdfReservation.budget.remainingBytes) continue;
+    if (manyImages && !fitsManyImageRequest(bytes)) continue;
     input.pdfReservation.budget.pending.bytes += retainedBytes;
     input.pdfReservation.bytes += retainedBytes;
     const block: ClaudeUserContentBlock = {
@@ -3048,6 +3064,7 @@ const makeClaudeUserMessageWithAttachments = Effect.fnUntraced(function* (input:
   for (const [index, attachment] of input.attachments.entries()) {
     if (attachment.type === "file") {
       if (
+        !input.documents ||
         input.pdfReservation.budget.remainingPages <= 0 ||
         attachment.mimeType.toLowerCase().split(";", 1)[0]?.trim() !== "application/pdf" ||
         ("source" in attachment && attachment.source?._tag === "pasted-text")
@@ -12895,6 +12912,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                       attachmentsDir,
                       fileSystem,
                       pdfReservation,
+                      documents: isAnthropicModel(
+                        compileClaudeModelSelection(turnInput.modelSelection, modelCatalog)
+                          .apiModelId,
+                      ),
                       ...(skills === undefined ? {} : { skills }),
                       uuid: promptUuid,
                     }).pipe(
@@ -13592,13 +13613,13 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 existing.openedPermissionMode === currentTurn.queryPolicy.permissionMode)
                 ? steerSelection
                 : undefined;
+            const steeredSelection =
+              liveSteerSelection ??
+              compileClaudeModelSelection(currentTurn.input.modelSelection, modelCatalog);
             const userMessage = yield* makeClaudeUserMessageWithAttachments({
               text: applyClaudePromptEffortPrefix(
                 turnInput.message.text,
-                (
-                  liveSteerSelection ??
-                  compileClaudeModelSelection(currentTurn.input.modelSelection, modelCatalog)
-                ).promptEffort,
+                steeredSelection.promptEffort,
               ),
               attachments: turnInput.message.attachments,
               priority: "now",
@@ -13606,6 +13627,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               attachmentsDir,
               fileSystem,
               pdfReservation,
+              documents: isAnthropicModel(steeredSelection.apiModelId),
               skills: yield* userInvocableSkills(currentTurn.input.runtimePolicy.cwd),
             }).pipe(
               Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),

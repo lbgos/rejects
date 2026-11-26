@@ -407,7 +407,7 @@ describe("handoff budget", () => {
         const selected = selectHistory({ messages, coverage: "Recover omitted history", budget });
         assert.isAtMost(historyCost(selected.messages, selected.context), budget);
       }
-      assert.equal(handoffBudget({ ...input, modelContextWindow: 2_000_000 }), 16_000);
+      assert.equal(handoffBudget({ ...input, modelContextWindow: 6_000_000 }), 16_000);
       assert.equal(handoffBudget({ ...input, modelContextWindow: 20_000 }), 0);
       assert.equal(
         handoffBudget({

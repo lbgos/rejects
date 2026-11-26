@@ -1,6 +1,7 @@
 import {
   ANTIGRAVITY_DEFAULT_MODEL,
   type AntigravityAuthMethod,
+  PROVIDER_SEND_TURN_MAX_EMBEDDED_ATTACHMENTS,
   PROVIDER_SEND_TURN_MAX_FILE_BYTES,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
   type ProviderSendTurnInput,
@@ -410,7 +411,7 @@ export const buildAntigravityPrompt = Effect.fn("buildAntigravityPrompt")(functi
   if (text) blocks.push({ type: "text", text });
   let totalBytes = 0;
 
-  for (const attachment of input.attachments ?? []) {
+  for (const [index, attachment] of (input.attachments ?? []).entries()) {
     const isPastedText =
       attachment.type === "file" &&
       "source" in attachment &&
@@ -434,6 +435,7 @@ export const buildAntigravityPrompt = Effect.fn("buildAntigravityPrompt")(functi
         TEXT_MIME_TYPES.has(mimeType) ||
         TEXT_FILE_EXTENSIONS.has(path.extname(attachment.name).toLowerCase()));
     const isPathOnly =
+      index >= PROVIDER_SEND_TURN_MAX_EMBEDDED_ATTACHMENTS ||
       (attachment.type === "image" && (!image || input.promptCapabilities?.image !== true)) ||
       (attachment.type === "file" &&
         (isPastedText ||

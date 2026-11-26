@@ -18,6 +18,7 @@ import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import { resolveAttachmentPath } from "../attachmentStore.ts";
 import * as ServerConfig from "../config.ts";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
+import { providerEmbeddableAttachments } from "@t3tools/provider-core/server/attachmentPrompt";
 import {
   codexExecLaunchArgs,
   codexMcpListLaunchArgs,
@@ -147,7 +148,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
     }
 
     const imagePaths: string[] = [];
-    for (const attachment of attachments) {
+    for (const attachment of providerEmbeddableAttachments(attachments)) {
       if (attachment.type !== "image") {
         continue;
       }

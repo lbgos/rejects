@@ -5,6 +5,7 @@ import { NonNegativeInt, settingsSecretLiteral, TextGenerationError } from "@t3t
 import type { OpenCodeSettings } from "../settings.ts";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 
+import { providerEmbeddableAttachments } from "@t3tools/provider-core/server/attachmentPrompt";
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import * as TextGenerationOperations from "@t3tools/provider-core/server/textGenerationOperations";
 import * as OpenCodeRuntime from "./OpenCodeRuntime.ts";
@@ -185,7 +186,9 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
     }
 
     const fileParts = OpenCodeRuntime.toOpenCodeFileParts({
-      attachments: input.attachments?.filter((attachment) => attachment.type === "image"),
+      attachments: providerEmbeddableAttachments(input.attachments ?? []).filter(
+        (attachment) => attachment.type === "image",
+      ),
       resolveAttachmentPath: host.resolveAttachmentPath,
     });
 

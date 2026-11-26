@@ -2,8 +2,10 @@ import { describe, expect, it } from "vite-plus/test";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import { PROVIDER_SEND_TURN_MAX_ATTACHMENTS } from "./chatAttachment.ts";
 import {
   COMPOSER_CONTEXT_KINDS,
+  COMPOSER_CONTEXT_MAX_RECORDS,
   ComposerContextRecord,
   OrchestrationMessageContext,
 } from "./composerContext.ts";
@@ -227,9 +229,13 @@ describe("OrchestrationMessageContext", () => {
     expect(decodeContext(wire).records.map((record) => record.contextId)).toEqual(["ctx_1"]);
   });
 
-  it("rejects oversized arrays before dropping malformed records", () => {
+  it("takes a record per attachment and rejects oversized arrays before dropping malformed records", () => {
+    const records = (length: number) => Array.from({ length }, () => ({}));
+    expect(
+      decodeContext({ version: 1, records: records(PROVIDER_SEND_TURN_MAX_ATTACHMENTS) }).records,
+    ).toEqual([]);
     expect(() =>
-      decodeContext({ version: 1, records: Array.from({ length: 201 }, () => ({})) }),
+      decodeContext({ version: 1, records: records(COMPOSER_CONTEXT_MAX_RECORDS + 1) }),
     ).toThrow();
   });
 

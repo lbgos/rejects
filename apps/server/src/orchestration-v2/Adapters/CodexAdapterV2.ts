@@ -148,6 +148,7 @@ import {
 import { turnScopedSelectionTransition } from "@t3tools/provider-core/server/selectionTransition";
 import {
   isProviderNativeImageAttachment,
+  providerEmbeddableAttachments,
   providerMessageTextWithAttachmentPaths,
 } from "@t3tools/provider-core/server/attachmentPrompt";
 import {
@@ -3636,7 +3637,9 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             });
           }
           const attachmentItems = yield* Effect.forEach(
-            turnInput.message.attachments.filter(isProviderNativeImageAttachment),
+            providerEmbeddableAttachments(turnInput.message.attachments).filter(
+              isProviderNativeImageAttachment,
+            ),
             resolveCodexAttachment,
             { concurrency: 1 },
           );

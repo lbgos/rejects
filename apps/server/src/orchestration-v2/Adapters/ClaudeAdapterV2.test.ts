@@ -43,6 +43,7 @@ import {
   type OrchestrationV2PendingBackgroundTask,
   OrchestrationV2ProviderThread,
   ProjectId,
+  PROVIDER_SEND_TURN_MAX_EMBEDDED_ATTACHMENTS,
   ProviderInstanceId,
   type ResolvedProviderInstanceEnvironment,
   ProviderDriverKind,
@@ -2266,6 +2267,9 @@ describe("ClaudeAdapterV2 attachments", () => {
       "partial-images",
       "cancelled-send",
       "cancelled-steer",
+      "embed-cap",
+      "image-ceiling",
+      "non-anthropic-documents",
     ].map((budget) => ({
       name: budget,
       prompt: "Read this PDF.",
@@ -2330,6 +2334,7 @@ describe("ClaudeAdapterV2 attachments", () => {
         );
         const modelSelection = {
           ...CLAUDE_TEST_MODEL_SELECTION,
+          ...(budget === "non-anthropic-documents" ? { model: "deepseek-v4.1-flash" } : {}),
           options: ultrathink ? CLAUDE_TEST_MODEL_SELECTION.options : [],
         };
         const attachmentsDir = yield* fileSystem.makeTempDirectoryScoped({
@@ -2461,6 +2466,70 @@ describe("ClaudeAdapterV2 attachments", () => {
           }),
           nativeThreadHasTurns: resumed,
         };
+        if (
+          budget === "embed-cap" ||
+          budget === "image-ceiling" ||
+          budget === "non-anthropic-documents"
+        ) {
+          // A PNG header is all the many-image rule reads; the bytes are never decoded.
+          const pngHeader = (width: number, height: number) => {
+            const header = Buffer.alloc(24);
+            Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(header);
+            header.write("IHDR", 12, "latin1");
+            header.writeUInt32BE(width, 16);
+            header.writeUInt32BE(height, 20);
+            return header;
+          };
+          const large = ChatImageAttachment.make({
+            ...attachment,
+            id: ChatAttachmentId.make(
+              "thread-claude-attachments-22345678-1234-1234-1234-123456789abc",
+            ),
+            name: "photo.png",
+          });
+          const largePath = path.join(attachmentsDir, attachmentRelativePath(large)!);
+          yield* fileSystem.writeFile(
+            path.join(attachmentsDir, attachmentRelativePath(attachment)!),
+            pngHeader(1200, 800),
+          );
+          yield* fileSystem.writeFile(largePath, pngHeader(4032, 3024));
+          // Past Anthropic's many-image threshold small images still embed; the large one goes by path.
+          // Past its 100-image request ceiling the rest go by path too.
+          const small =
+            budget === "embed-cap"
+              ? PROVIDER_SEND_TURN_MAX_EMBEDDED_ATTACHMENTS + 4
+              : budget === "image-ceiling"
+                ? 101
+                : 0;
+          yield* runtime.startTurn({
+            ...turnInput,
+            message: {
+              ...turnInput.message,
+              attachments: [
+                ...Array.from({ length: small }, () => attachment),
+                ...(budget === "embed-cap" ? [large] : []),
+                document,
+              ],
+            },
+          });
+          const sent = offeredMessages.at(-1)!.message.content;
+          assert.isArray(sent);
+          const blocks = typeof sent === "string" ? [] : sent;
+          assert.lengthOf(
+            blocks.filter((block) => block.type === "image"),
+            Math.min(small, 100),
+          );
+          assert.lengthOf(
+            blocks.filter((block) => block.type === "document"),
+            budget === "non-anthropic-documents" ? 0 : 1,
+          );
+          const documentPath = path.join(attachmentsDir, attachmentRelativePath(document)!);
+          assert.include(JSON.stringify(sent), JSON.stringify(documentPath).slice(1, -1));
+          if (budget === "embed-cap") {
+            assert.include(JSON.stringify(sent), JSON.stringify(largePath).slice(1, -1));
+          }
+          return;
+        }
         if (budget === "cancelled-send" || budget === "cancelled-steer") {
           const documentPath = path.join(attachmentsDir, attachmentRelativePath(document)!);
           const pages = Buffer.from(
