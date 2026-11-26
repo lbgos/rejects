@@ -2671,6 +2671,32 @@ code {
   }
 }
 
+.chat-scroll-to-bottom[data-visible="false"] [data-scroll-to-end] {
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+}
+.chat-scroll-to-bottom[data-visible="true"] [data-scroll-to-end] {
+  opacity: 1;
+  visibility: visible;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .chat-scroll-to-bottom [data-scroll-to-end] {
+    transition:
+      box-shadow 150ms cubic-bezier(0.4, 0, 0.2, 1),
+      scale 150ms cubic-bezier(0.4, 0, 0.2, 1),
+      opacity 160ms ease-out,
+      visibility 0s linear 160ms;
+  }
+  .chat-scroll-to-bottom[data-visible="true"] [data-scroll-to-end] {
+    transition:
+      box-shadow 150ms cubic-bezier(0.4, 0, 0.2, 1),
+      scale 150ms cubic-bezier(0.4, 0, 0.2, 1),
+      opacity 160ms ease-out,
+      visibility 0s linear 0s;
+  }
+}
+
 /* A workspace area with no control of its own takes F6 focus itself; keep that visible.
    workspaceFocus.ts marks those, since :focus-visible also matches a clicked area after a key press.
    The conversation's timeline takes it instead, and its top fade mask would hide its own ring. */

@@ -3599,14 +3599,14 @@ export default function ChatView(props: ChatViewProps) {
                 />
               </WorkspaceMutationIdContext>
 
-              {showScrollToBottom && !isThreadFindActive && (
-                <ScrollToEndButton
-                  bottom={scrollToEndClearance + 4}
-                  summary={scrollToEndSummary}
-                  compact={botChrome !== null}
-                  onScrollToEnd={() => scrollToEnd(true)}
-                />
-              )}
+              <ScrollToEndButton
+                key={displayedTimelineKey}
+                bottom={scrollToEndClearance + 4}
+                summary={scrollToEndSummary}
+                compact={botChrome !== null}
+                visible={showScrollToBottom && !isThreadFindActive}
+                onScrollToEnd={() => scrollToEnd(true)}
+              />
             </div>
 
             <div
