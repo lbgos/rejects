@@ -168,13 +168,42 @@ html[data-theme-id] [data-bots-mode="true"] [data-chat-header],
   mask-image: none;
 }
 
-/* A chat's transcript keeps its full contrast down to the composer's area, which is a frosted bar
-   like the header: the transcript runs under it to the bottom edge. */
-:root[data-bots-app] [data-bots-mode="true"] [data-chat-composer-overlay]::before {
+/* A chat's transcript runs under the composer's area to the bottom edge and blurs into it over a
+   soft zone above its top edge, with no line to cut against. The zone is two static backdrop
+   layers, each masked from clear to opaque over its own height `--z`: a light blur over all of
+   it, and the bar's frosted fill and blur over its lower part. */
+:root[data-bots-app] [data-bots-mode="true"] [data-chat-composer-overlay]::before,
+:root[data-bots-app] [data-bots-mode="true"] [data-chat-composer-overlay]::after {
   content: "";
   position: absolute;
-  inset: 0;
+  inset: calc(-1 * var(--z)) 0 0;
   pointer-events: none;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    rgb(0 0 0 / 0.04) calc(var(--z) * 0.2),
+    rgb(0 0 0 / 0.2) calc(var(--z) * 0.4),
+    rgb(0 0 0 / 0.5) calc(var(--z) * 0.6),
+    rgb(0 0 0 / 0.85) calc(var(--z) * 0.8),
+    #000 var(--z)
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    rgb(0 0 0 / 0.04) calc(var(--z) * 0.2),
+    rgb(0 0 0 / 0.2) calc(var(--z) * 0.4),
+    rgb(0 0 0 / 0.5) calc(var(--z) * 0.6),
+    rgb(0 0 0 / 0.85) calc(var(--z) * 0.8),
+    #000 var(--z)
+  );
+}
+:root[data-bots-app] [data-bots-mode="true"] [data-chat-composer-overlay]::before {
+  --z: 4rem;
+  -webkit-backdrop-filter: blur(5px) !important;
+  backdrop-filter: blur(5px) !important;
+}
+:root[data-bots-app] [data-bots-mode="true"] [data-chat-composer-overlay]::after {
+  --z: 2.5rem;
   background-color: var(--bots-chat-bar-fill);
   -webkit-backdrop-filter: var(--bots-chat-bar-blur) !important;
   backdrop-filter: var(--bots-chat-bar-blur) !important;
@@ -185,7 +214,10 @@ html:active-view-transition[data-bots-app] [data-bots-mode="true"] [data-chat-he
 }
 html:active-view-transition[data-bots-app]
   [data-bots-mode="true"]
-  [data-chat-composer-overlay]::before {
+  [data-chat-composer-overlay]::before,
+html:active-view-transition[data-bots-app]
+  [data-bots-mode="true"]
+  [data-chat-composer-overlay]::after {
   background-color: var(--bots-page) !important;
 }
 /* The jump-to-latest disc stands in the composer's area, so it never covers the transcript. On a
