@@ -52,6 +52,7 @@ import { handleSettingsSectionKeyDown } from "./settingsSectionNavigation";
 import { cn } from "~/lib/utils";
 import { workspaceAreaProps } from "../../lib/workspaceFocus";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
+import { rememberBackPage } from "../../bots/backPage";
 
 const T3ConnectSidebarSignIn = lazy(() =>
   import("../clerk/T3ConnectSidebarSignIn").then((module) => ({
@@ -161,11 +162,20 @@ export function SettingsSidebarNav({ pathname, header }: { pathname: string; hea
   }, []);
 
   const handleSectionClick = (to: SettingsPath) => {
+    if (phone) rememberBackPage();
+    const viewTransition = phone
+      ? { types: ["bots-push"] }
+      : to === pathname
+        ? false
+        : SETTINGS_DETAIL_PAGE_PARENTS[pathname] === to
+          ? { types: ["bots-settings-pop"] }
+          : { types: ["bots-settings-tab"] };
     void navigate({
       to,
       hash: "",
       replace: !phone,
       hashScrollIntoView: false,
+      viewTransition,
     });
   };
 
@@ -181,12 +191,18 @@ export function SettingsSidebarNav({ pathname, header }: { pathname: string; hea
       scrollToSettingsTarget(targetId);
       return;
     }
+    if (phone) rememberBackPage();
     void navigate({
       to: item.to,
       hash: targetId,
       replace: !phone,
       hashScrollIntoView: false,
       state: { settingsTargetHighlight: true },
+      viewTransition: phone
+        ? { types: ["bots-push"] }
+        : item.to !== pathname
+          ? { types: ["bots-settings-tab"] }
+          : false,
     });
   };
 

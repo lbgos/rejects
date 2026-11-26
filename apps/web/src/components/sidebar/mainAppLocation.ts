@@ -1,5 +1,6 @@
 import { useNavigate, useRouter, type AnyRouter } from "@tanstack/react-router";
 
+import { runViewTransition } from "../../bots/viewTransition";
 import { GUEST_PAGE_PATH } from "../../guestPage";
 import { withoutAssistantCitationHash } from "../../lib/assistantCitationNavigation";
 import { resolveThreadRouteTarget, type ThreadRouteTarget } from "../../threadRoutes";
@@ -45,17 +46,25 @@ export function getAppModalReturnThreadTarget() {
 export function useCloseAppModal() {
   const navigate = useNavigate();
   const router = useRouter();
-  return () => {
+  return (viewTransition?: { readonly types: string[] }) => {
     const href = appModalReturnHref ?? "/";
     const returnIndex = appModalReturnHistoryIndex ?? 0;
     const steps = router.state.location.state.__TSR_index - returnIndex;
-    if (returnIndex === 0 || steps <= 0) return navigate({ href });
-    // Go back to the entry before the return page and push it again: only a push drops the
-    // modal's entries from forward history, and reusing the old entry avoids a duplicate stop.
-    const unsubscribe = router.history.subscribe(() => {
-      unsubscribe();
-      void navigate({ href });
-    });
-    router.history.go(-(steps + 1));
+    const go = () => {
+      if (returnIndex === 0 || steps <= 0) return navigate({ href });
+      return new Promise<void>((resolve) => {
+        // Go back to the entry before the return page and push it again: only a push drops the
+        // modal's entries from forward history, and reusing the old entry avoids a duplicate stop.
+        const unsubscribe = router.history.subscribe(() => {
+          unsubscribe();
+          void navigate({ href }).finally(resolve);
+        });
+        router.history.go(-(steps + 1));
+      });
+    };
+    if (viewTransition) {
+      return runViewTransition(viewTransition.types, go);
+    }
+    return go();
   };
 }

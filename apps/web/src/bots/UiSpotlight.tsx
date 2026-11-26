@@ -94,6 +94,7 @@ function useTargetRect(target: UiTarget | null) {
     window.visualViewport?.addEventListener("resize", measure);
     window.visualViewport?.addEventListener("scroll", measure);
     document.addEventListener("transitionend", measure, true);
+    document.addEventListener("animationend", measure, true);
     return () => {
       stopResize?.();
       missing?.disconnect();
@@ -103,6 +104,7 @@ function useTargetRect(target: UiTarget | null) {
       window.visualViewport?.removeEventListener("resize", measure);
       window.visualViewport?.removeEventListener("scroll", measure);
       document.removeEventListener("transitionend", measure, true);
+      document.removeEventListener("animationend", measure, true);
     };
   }, [target]);
   return found?.target === target ? found : null;

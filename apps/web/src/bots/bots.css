@@ -352,17 +352,30 @@ html[data-bots-app] body {
     animation-delay: 0.4s !important;
   }
   /* Opening a chat or a detail page pushes, back pops (view transitions typed by the navigation). */
+  html[data-bots-app]:active-view-transition-type(
+      bots-push, bots-pop
+    )::view-transition-image-pair(root) {
+    isolation: isolate;
+  }
   html[data-bots-app]:active-view-transition-type(bots-push)::view-transition-old(root) {
-    animation: bots-push-out 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    z-index: 1;
+    mix-blend-mode: normal;
+    animation: bots-push-out 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
   }
   html[data-bots-app]:active-view-transition-type(bots-push)::view-transition-new(root) {
-    animation: bots-push-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    z-index: 2;
+    mix-blend-mode: normal;
+    animation: bots-push-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
   }
   html[data-bots-app]:active-view-transition-type(bots-pop)::view-transition-old(root) {
-    animation: bots-push-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1) reverse both;
+    z-index: 2;
+    mix-blend-mode: normal;
+    animation: bots-pop-out 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
   }
   html[data-bots-app]:active-view-transition-type(bots-pop)::view-transition-new(root) {
-    animation: bots-push-out 200ms cubic-bezier(0.2, 0.8, 0.2, 1) reverse both;
+    z-index: 1;
+    mix-blend-mode: normal;
+    animation: bots-pop-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
   }
   /* The desktop sidebar's You and Settings (BOT_TAB_TRANSITION) cross-fade the page. */
   html[data-bots-app]:active-view-transition-type(bots-tab)::view-transition-old(root) {
@@ -371,11 +384,151 @@ html[data-bots-app] body {
   html[data-bots-app]:active-view-transition-type(bots-tab)::view-transition-new(root) {
     animation: bots-tab-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
   }
-  /* A phone tab switch (BotTabHost) swaps the screen in one step, as on iOS: at every frame one
-     page is on screen, never two read through each other. The tab bar sits outside both and
-     carries the change on its selection. */
-  :root[data-bots-app] [data-bot-tab-host] [data-bot-tab-pane] {
-    transition: none !important;
+  /* Desktop: detail and settings pane navigations keep the sidebar still by isolating only the
+     changing pane into its own clipped view-transition group. */
+  @media (min-width: 768px) {
+    html[data-bots-app]:active-view-transition-type(bots-pane-push, bots-pane-pop)
+      [data-slot="sidebar-inset"] {
+      view-transition-name: bots-main;
+    }
+    html[data-bots-app]:active-view-transition-type(
+        bots-settings-tab,
+      bots-settings-push,
+      bots-settings-pop
+      )
+      [data-settings-pane] {
+      view-transition-name: bots-settings-pane;
+    }
+    html[data-bots-app]:active-view-transition-type(
+        bots-pane-push,
+      bots-pane-pop,
+      bots-settings-tab,
+      bots-settings-push,
+      bots-settings-pop
+      )::view-transition-old(root),
+    html[data-bots-app]:active-view-transition-type(
+        bots-pane-push,
+      bots-pane-pop,
+      bots-settings-tab,
+      bots-settings-push,
+      bots-settings-pop
+      )::view-transition-new(root) {
+      animation: none;
+    }
+    html[data-bots-app]:active-view-transition-type(
+        bots-pane-push,
+      bots-pane-pop
+      )::view-transition-group(bots-main),
+    html[data-bots-app]:active-view-transition-type(
+        bots-settings-tab,
+      bots-settings-push,
+      bots-settings-pop
+      )::view-transition-group(bots-settings-pane) {
+      overflow: clip;
+    }
+    html[data-bots-app]:active-view-transition-type(
+        bots-pane-push,
+      bots-pane-pop
+      )::view-transition-image-pair(bots-main),
+    html[data-bots-app]:active-view-transition-type(
+        bots-settings-push,
+      bots-settings-pop
+      )::view-transition-image-pair(bots-settings-pane) {
+      isolation: isolate;
+    }
+    html[data-bots-app]:active-view-transition-type(
+        bots-pane-push
+      )::view-transition-old(bots-main) {
+      z-index: 1;
+      mix-blend-mode: normal;
+      animation: bots-push-out 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    }
+    html[data-bots-app]:active-view-transition-type(
+        bots-pane-push
+      )::view-transition-new(bots-main) {
+      z-index: 2;
+      mix-blend-mode: normal;
+      animation: bots-push-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    }
+    html[data-bots-app]:active-view-transition-type(bots-pane-pop)::view-transition-old(bots-main) {
+      z-index: 2;
+      mix-blend-mode: normal;
+      animation: bots-pop-out 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    }
+    html[data-bots-app]:active-view-transition-type(bots-pane-pop)::view-transition-new(bots-main) {
+      z-index: 1;
+      mix-blend-mode: normal;
+      animation: bots-pop-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    }
+    html[data-bots-app]:active-view-transition-type(
+        bots-settings-tab
+      )::view-transition-old(bots-settings-pane) {
+      animation: bots-tab-out 180ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    }
+    html[data-bots-app]:active-view-transition-type(
+        bots-settings-tab
+      )::view-transition-new(bots-settings-pane) {
+      animation: bots-tab-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    }
+    html[data-bots-app]:active-view-transition-type(
+        bots-settings-push
+      )::view-transition-old(bots-settings-pane) {
+      z-index: 1;
+      mix-blend-mode: normal;
+      animation: bots-push-out 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    }
+    html[data-bots-app]:active-view-transition-type(
+        bots-settings-push
+      )::view-transition-new(bots-settings-pane) {
+      z-index: 2;
+      mix-blend-mode: normal;
+      animation: bots-push-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    }
+    html[data-bots-app]:active-view-transition-type(
+        bots-settings-pop
+      )::view-transition-old(bots-settings-pane) {
+      z-index: 2;
+      mix-blend-mode: normal;
+      animation: bots-pop-out 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    }
+    html[data-bots-app]:active-view-transition-type(
+        bots-settings-pop
+      )::view-transition-new(bots-settings-pane) {
+      z-index: 1;
+      mix-blend-mode: normal;
+      animation: bots-pop-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    }
+  }
+  /* A phone tab switch (BotTabHost) slides the outgoing and incoming opaque screens together in the
+     matching tab direction; the tab bar sits outside both and stays put. */
+  :root[data-bots-app] [data-bot-tab-host][data-dir] [data-bot-tab-pane][data-leaving="true"] {
+    visibility: visible;
+    opacity: 1;
+    z-index: 1;
+    pointer-events: none;
+  }
+  :root[data-bots-app] [data-bot-tab-host][data-dir] [data-bot-tab-pane][data-active="true"] {
+    z-index: 2;
+  }
+  :root[data-bots-app]
+    [data-bot-tab-host][data-dir="forward"]
+    [data-bot-tab-pane][data-active="true"] {
+    animation: bots-tab-slide-in-forward 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both !important;
+  }
+  :root[data-bots-app]
+    [data-bot-tab-host][data-dir="forward"]
+    [data-bot-tab-pane][data-leaving="true"] {
+    animation: bots-tab-slide-out-forward 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both !important;
+  }
+  :root[data-bots-app]
+    [data-bot-tab-host][data-dir="back"]
+    [data-bot-tab-pane][data-active="true"] {
+    animation: bots-tab-slide-in-back 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both !important;
+  }
+  :root[data-bots-app]
+    [data-bot-tab-host][data-dir="back"]
+    [data-bot-tab-pane][data-leaving="true"] {
+    animation: bots-tab-slide-out-back 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both !important;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -413,14 +566,22 @@ html[data-bots-app] body {
 }
 @keyframes bots-push-in {
   from {
-    opacity: 0;
-    transform: translateX(2.5rem);
+    transform: translateX(100%);
   }
 }
 @keyframes bots-push-out {
   to {
-    opacity: 0;
-    transform: translateX(-1.5rem);
+    transform: translateX(-25%);
+  }
+}
+@keyframes bots-pop-in {
+  from {
+    transform: translateX(-25%);
+  }
+}
+@keyframes bots-pop-out {
+  to {
+    transform: translateX(100%);
   }
 }
 @keyframes bots-tab-in {
@@ -431,6 +592,28 @@ html[data-bots-app] body {
 @keyframes bots-tab-out {
   to {
     opacity: 0;
+  }
+}
+@keyframes bots-tab-slide-in-forward {
+  from {
+    transform: translateX(100%);
+  }
+}
+@keyframes bots-tab-slide-out-forward {
+  to {
+    transform: translateX(-100%);
+    visibility: hidden;
+  }
+}
+@keyframes bots-tab-slide-in-back {
+  from {
+    transform: translateX(-100%);
+  }
+}
+@keyframes bots-tab-slide-out-back {
+  to {
+    transform: translateX(100%);
+    visibility: hidden;
   }
 }
 /* Pull to refresh: while a refresh runs the ticks fade round the ring and, unless motion is

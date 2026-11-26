@@ -170,7 +170,7 @@ function SettingsContentLayout() {
                     size="icon"
                     className="z-10 ms-3"
                     aria-label="Back to settings"
-                    render={<Link to="/settings" />}
+                    render={<Link to="/settings" viewTransition={{ types: ["bots-pop"] }} />}
                   >
                     <ChevronLeftIcon />
                   </Button>

@@ -18,6 +18,7 @@ import { botActions, botSwipeActions, useBotActions, type BotActionId } from "./
 import { rememberBackPage } from "./backPage";
 import { BotAvatar } from "./BotAvatar";
 import { BotStateLabel } from "./BotStateLabel";
+import { BOT_TAB_TRANSITION } from "./BotTabBar";
 import { needsFirstRun } from "./firstRun.logic";
 import { BOT_ACTION_ICONS } from "./icons";
 import { PushPrompt } from "../push/PushPrompt";
@@ -257,7 +258,11 @@ export function BotList({
                   void navigate({
                     to: "/$environmentId/$threadId",
                     params: { environmentId, threadId: row.bot.threadId },
-                    viewTransition: phone ? { types: ["bots-push"] } : false,
+                    viewTransition: phone
+                      ? { types: ["bots-push"] }
+                      : selectedThreadId === null
+                        ? BOT_TAB_TRANSITION
+                        : false,
                   });
                 }}
                 onMenu={(point) => void showContextMenu(row.bot, row.schedules, point)}
